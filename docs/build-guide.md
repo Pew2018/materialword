@@ -4,7 +4,7 @@
 
 - Flutter 3.50.1 stable / Dart 3.14.0（本机 `~/development/flutter/bin`）
 - Android SDK 36 + JDK（Android Studio 自带）
-- macOS / iOS 需要**完整 Xcode**（不是 Command Line Tools）+ CocoaPods
+- macOS / iOS 的完整 Xcode 与 CocoaPods 仅使用 GitHub Actions macOS Runner 已有环境；禁止在用户本机安装或升级 Xcode、CLT、Apple SDK 和模拟器。
 
 ## 本地命令
 
@@ -15,13 +15,9 @@ dart run build_runner build
 dart format lib test tool
 flutter analyze
 flutter test
-flutter build macos --release
-flutter build apk --release --target-platform android-arm64
-# 无签名编译验证（不代表可安装）
-flutter build ios --release --no-codesign
 ```
 
-本次实际结果：
+Phase 2 历史结果（当前 Phase 3 结果见 phase3-verification.md）：
 - `flutter pub get` / `build_runner` / `dart format` / `flutter analyze` / `flutter test` 本地通过，
   **102 项测试全部通过**。
 - Android ARM64 构建本机因 Maven/Google Maven 返回 503 未能下载 Gradle 依赖；
@@ -32,7 +28,7 @@ flutter build ios --release --no-codesign
 ## 平台权限与签名
 
 - **Android**：`AndroidManifest.xml` 声明 `INTERNET`；不发明文 HTTP 请求。
-  Release 仍使用 debug 签名以保证既有用户可覆盖安装。**签名身份未改变**。
+  Release 当前使用 runner 的临时 debug keystore，跨 runner 构建的证书可能不同，**不能保证覆盖安装**。不得自行更换安装身份；固定签名与已有安装迁移仍需验证。
 - **macOS**：沙箱 + `com.apple.security.network.client` + 用户选择文件读写。
   **不再声明 `keychain-access-groups`**：那是受限 entitlement，只有带 provisioning
   profile 的签名才能生效；本项目是 ad-hoc 签名，带上它会让 launchd 直接拒绝

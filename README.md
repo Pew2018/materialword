@@ -19,7 +19,7 @@
 | 关键依赖 | drift 2.35.4 / flutter_riverpod 3.5.0 / flutter_tts 4.2.5 / flutter_secure_storage 11.2.0 / http 1.6.0 / crypto 3.0.8 |
 | 应用 ID | `com.pew2018.materialword` |
 | 数据库 schemaVersion | 2（用户库）、1（词典库） |
-| 备份协议 | schemaVersion 2 |
+| 备份协议 | schemaVersion 3（兼容导入 1/2；数据库仍为 2） |
 | 自动化检查 | 102 项测试通过；`flutter analyze` 通过 |
 
 ## 快速开始
@@ -31,15 +31,20 @@ dart run build_runner build
 dart format --output=none --set-exit-if-changed lib test
 flutter analyze
 flutter test
-flutter build macos --release
-flutter build apk --release --target-platform android-arm64
-flutter build ios --release --no-codesign   # 仅编译验证，不可安装
 ```
 
 首次启动 → 首页点「导入词表」载入自己的单词表（TXT 每行一个词即可），
 或点「载入示例词书」先用 30 个词体验学习闭环。右上角「＋」或 `⌘N` 快速添加。
 
-## Phase 2 主要交付
+原生平台完整构建仅在 GitHub Actions 运行；本机禁止安装 Xcode、Apple SDK、CLT 或新模拟器。
+
+## Phase 3（实施中）
+
+已加入稳定分页、明确范围的批量选择、取消无副作用、管理事件与真实答题分离、会话恢复与撤销、共享设置版本、事务快照、WebDAV 强 ETag/条件读取和经典 Material 交互整改。当前完整本地回归为 145 项通过、2 项平台条件跳过；不是三平台最终交付。
+
+逐项范围见 [任务审计](docs/phase3-audit.md)，实际证据见 [验证记录](docs/phase3-verification.md)。收藏/标签、冲刺、练习模式、完整同步能力探测与平台交付仍待完成。
+
+## Phase 2 历史实现
 
 ### 交互与数据正确性
 - 底栏改为项目内 InkSplash + 独立 hover / focus / pressed / selected 反馈，选中时尺寸位置不变
