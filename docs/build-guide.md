@@ -73,10 +73,14 @@ flutter build apk --release --target-platform android-arm64
 | macOS | ad-hoc / 未签名 | 没有 Developer ID 证书，因此**未公证**。首次打开需要「右键 → 打开」绕过 Gatekeeper。 |
 | iOS | 未签名 | `--no-codesign` 只证明工程能编译。**未签名产物不是 IPA，也不能装到 iPhone/iPad**。要出可安装 IPA 需要 Apple Developer 账号 + Team + provisioning profile。 |
 
-## 数据库
+## 数据文件位置（已实测）
 
-- 用户库位于平台应用支持目录：macOS `~/Library/Containers/com.pew2018.materialword/Data/Library/Application Support/com.pew2018.materialword/materialword.sqlite`；
-- 词典库在同一个支持目录下的 `dictionary/ecdict_core.db`（首次启动从 bundle 复制）；
+- 用户库：`drift_flutter` 默认放在应用的 Documents 目录 —
+  macOS 实测为
+  `~/Library/Containers/com.pew2018.materialword/Data/Documents/materialword.sqlite`
+  （7 张表 + 索引，`PRAGMA user_version = 1`）；
+- 词典库：`path_provider` 的 Application Support 目录下 `dictionary/ecdict_core.db`，
+  首次需要查询时从 bundle 复制（资源长度变化会重新复制）；
 - 两者都**不入库、不同步原始文件**；跨设备只同步 JSON 备份。
 
 ## 常见问题

@@ -44,6 +44,11 @@ CREATE INDEX idx_dictionary_frq ON dictionary (frq);
 """
 
 
+def unescape(value: str) -> str:
+    """ECDICT stores multi-line definitions with literal backslash-n escapes."""
+    return value.replace("\\r\\n", "\n").replace("\\n", "\n").replace("\\t", " ").strip()
+
+
 def normalize(word: str) -> str:
     return word.strip().lower()
 
@@ -87,8 +92,8 @@ def main() -> int:
                 row["word"].strip(),
                 (row.get("phonetic") or "").strip(),
                 (row.get("pos") or "").strip(),
-                (row.get("translation") or "").strip(),
-                (row.get("definition") or "").strip(),
+                unescape(row.get("translation") or ""),
+                unescape(row.get("definition") or ""),
                 (row.get("tag") or "").strip(),
                 to_int(row.get("bnc")),
                 to_int(row.get("frq")),
