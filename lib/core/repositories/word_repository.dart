@@ -3,6 +3,7 @@ import 'package:uuid/uuid.dart';
 
 import '../database/app_database.dart';
 import '../text/dictionary_text.dart';
+import 'content_sync_repository.dart';
 
 /// Normalisation key used to detect duplicates ("Hello " and "hello" are the
 /// same word). Kept in one place so import, quick-add and search agree.
@@ -180,7 +181,7 @@ class WordRepository {
     int bncRank = 0,
     int frqRank = 0,
     required DateTime now,
-  }) async {
+  }) => db.transaction(() async {
     final String key = normalizeWordKey(text);
     final Word? existing = await byNormalized(key, includeDeleted: true);
     final int millis = now.millisecondsSinceEpoch;
@@ -191,6 +192,13 @@ class WordRepository {
           deletedAt: const Value<int?>(null),
           updatedAt: millis,
           revision: existing.revision + 1,
+        );
+        await ContentSyncRepository(db).recordEdit(
+          'word',
+          existing.id,
+          existing.toJson(),
+          revived.toJson(),
+          now: now,
         );
         await db.update(db.words).replace(revived);
         return revived;
@@ -220,7 +228,7 @@ class WordRepository {
     );
     await db.into(db.words).insert(word);
     return word;
-  }
+  });
 
   /// Edits made by the user. Marks the row as customised so that dictionary
   /// refreshes never overwrite it (see [applyDictionaryInfo]).
@@ -239,10 +247,18 @@ class WordRepository {
     String? phrase,
     String? note,
     required DateTime now,
-  }) async {
+  }) => db.transaction(() async {
     final Word? existing = await byId(id);
     if (existing == null) {
       throw StateError('word not found: $id');
+    }
+    if (existing.deletedAt != null) throw StateError('词条已删除，请通过重新添加恢复');
+    if (text != null) {
+      if (normalizeWordKey(text).isEmpty) throw StateError('单词不能为空');
+      final duplicate = await byNormalized(text, includeDeleted: true);
+      if (duplicate != null && duplicate.id != id) {
+        throw StateError('该单词已存在，请编辑已有词条');
+      }
     }
     final Word updated = existing.copyWith(
       word: text?.trim(),
@@ -264,9 +280,17 @@ class WordRepository {
       revision: existing.revision + 1,
       updatedAt: now.millisecondsSinceEpoch,
     );
+    if (existing.customized &&
+        !ContentSyncRepository.wordFields.any(
+          (field) => existing.toJson()[field] != updated.toJson()[field],
+        )) {
+      return existing;
+    }
+    await ContentSyncRepository(db)
+        .recordEdit('word', id, existing.toJson(), updated.toJson(), now: now);
     await db.update(db.words).replace(updated);
     return updated;
-  }
+  });
 
   /// Fills in phonetic / translation / definition from the offline dictionary.
   /// Never overwrites content the user typed (T20).
@@ -280,7 +304,10 @@ class WordRepository {
     int bncRank = 0,
     int frqRank = 0,
     required DateTime now,
-  }) async {
+  }) => db.transaction(() async {
+    final current = await byId(word.id);
+    if (current == null) throw StateError('词条不存在');
+    word = current;
     String pick(String current, String? incoming) {
       if (incoming == null) return current;
       final String normalized = normalizeDictionaryText(incoming);
@@ -300,22 +327,20 @@ class WordRepository {
       updatedAt: now.millisecondsSinceEpoch,
       revision: word.revision + 1,
     );
+    if (word.deletedAt != null) return word;
+    if (!ContentSyncRepository.wordFields.any(
+      (field) => word.toJson()[field] != updated.toJson()[field],
+    )) {
+      return word;
+    }
+    await ContentSyncRepository(db)
+        .recordEdit('word', word.id, word.toJson(), updated.toJson(), now: now);
     await db.update(db.words).replace(updated);
     return updated;
-  }
+  });
 
   Future<void> softDelete(String id, {required DateTime now}) async {
-    final Word? existing = await byId(id);
-    if (existing == null) return;
-    await db
-        .update(db.words)
-        .replace(
-          existing.copyWith(
-            deletedAt: Value<int?>(now.millisecondsSinceEpoch),
-            updatedAt: now.millisecondsSinceEpoch,
-            revision: existing.revision + 1,
-          ),
-        );
+    await softDeleteMany([id], now: now);
   }
 
   /// Soft-deletes many words in one transaction. Tombstones (not hard deletes)
@@ -329,15 +354,15 @@ class WordRepository {
       for (final String id in ids.toList(growable: false)) {
         final Word? existing = await byId(id);
         if (existing == null || existing.deletedAt != null) continue;
-        await db
-            .update(db.words)
-            .replace(
-              existing.copyWith(
-                deletedAt: Value<int?>(now.millisecondsSinceEpoch),
-                updatedAt: now.millisecondsSinceEpoch,
-                revision: existing.revision + 1,
-              ),
-            );
+        final updated = existing.copyWith(
+          deletedAt: Value(now.millisecondsSinceEpoch),
+          updatedAt: now.millisecondsSinceEpoch,
+          revision: existing.revision + 1,
+        );
+        await ContentSyncRepository(
+          db,
+        ).recordEdit('word', id, existing.toJson(), updated.toJson(), now: now);
+        await db.update(db.words).replace(updated);
         deleted++;
       }
     });

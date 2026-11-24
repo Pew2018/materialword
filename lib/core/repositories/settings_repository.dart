@@ -137,23 +137,24 @@ class SettingsRepository {
   }
 
   /// A stable per-install identifier used to attribute review events.
-  Future<String> deviceId() async {
-    final String? existing = await db.readMeta(deviceIdKey);
-    if (existing != null && existing.isNotEmpty) return existing;
-    final String created = _uuid.v4();
-    await db.writeMeta(deviceIdKey, created);
-    return created;
-  }
+  Future<String> deviceId() => _stableIdentity(deviceIdKey);
 
-  /// Stable identity of *this* dataset. It must not change between exports,
-  /// otherwise every sync looks like a brand-new dataset to the remote side.
-  Future<String> datasetId() async {
-    final String? existing = await db.readMeta(datasetIdKey);
+  /// Stable dataset identity, created once even when first-use callers overlap.
+  Future<String> datasetId() => _stableIdentity(datasetIdKey);
+
+  Future<String> _stableIdentity(String key) => db.transaction(() async {
+    final existing = await db.readMeta(key);
     if (existing != null && existing.isNotEmpty) return existing;
-    final String created = _uuid.v4();
-    await db.writeMeta(datasetIdKey, created);
-    return created;
-  }
+    await db
+        .into(db.appMeta)
+        .insert(
+          AppMetaCompanion.insert(key: key, value: _uuid.v4()),
+          mode: InsertMode.insertOrIgnore,
+        );
+    final value = await db.readMeta(key);
+    if (value == null || value.isEmpty) throw StateError('设备身份未能创建');
+    return value;
+  });
 
   Future<bool> isSampleSeeded() async =>
       (await db.readMeta(seededKey)) == 'true';

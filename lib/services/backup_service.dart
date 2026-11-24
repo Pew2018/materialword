@@ -9,6 +9,7 @@ import 'package:uuid/uuid.dart';
 import '../core/database/app_database.dart';
 import '../core/models/enums.dart';
 import '../core/repositories/settings_repository.dart';
+import '../core/repositories/content_sync_repository.dart';
 import '../core/repositories/study_repository.dart';
 import '../core/repositories/word_repository.dart';
 import '../core/text/dictionary_text.dart';
@@ -82,7 +83,7 @@ class MergeReport {
       if (newEntries > 0) '新增词书关联 $newEntries 条',
       if (removedEntries > 0) '同步移出词书 $removedEntries 条',
       if (rebuiltStates > 0) '重算学习状态 $rebuiltStates 个',
-      if (conflicts > 0) '内容冲突 $conflicts 个（按更新时间保留较新版本）',
+      if (conflicts > 0) '内容冲突 $conflicts 个（按字段版本、时间和来源确定保留值）',
     ];
     return parts.join('，');
   }
@@ -158,6 +159,27 @@ class BackupService {
                 ]))
               .get()
         : const <ReviewEvent>[];
+    final stampRows = await db.select(db.contentVersions).get();
+    final aliasRows = await db.select(db.syncAliases).get();
+    final stamps = <String, Map<String, Object?>>{};
+    final aliases = <String, List<String>>{};
+    for (final row in stampRows) {
+      (stamps['${row.kind}:${row.entityId}'] ??= {})[row.field] = {
+        'version': row.version,
+        'updatedAt': row.updatedAt,
+        'deviceId': row.deviceId,
+      };
+    }
+    for (final row in aliasRows) {
+      (aliases['${row.kind}:${row.localId}'] ??= []).add(row.aliasId);
+    }
+    Map<String, Object?> withIdentity(String kind, Map<String, Object?> row) {
+      final key = '$kind:${row['id']}';
+      if (stamps.containsKey(key)) row['fieldVersions'] = stamps[key];
+      if (aliases.containsKey(key)) row['aliases'] = aliases[key]!..sort();
+      return row;
+    }
+
     final StudySettingsRow current = await settings.load();
 
     return <String, Object?>{
@@ -167,8 +189,12 @@ class BackupService {
       'deviceId': deviceId,
       'exportedAt': now.toUtc().toIso8601String(),
       'appVersion': '1.1.0',
-      'words': wordRows.map(_wordToJson).toList(growable: false),
-      'wordBooks': bookRows.map(_bookToJson).toList(growable: false),
+      'words': wordRows
+          .map((w) => withIdentity('word', _wordToJson(w)))
+          .toList(growable: false),
+      'wordBooks': bookRows
+          .map((b) => withIdentity('book', _bookToJson(b)))
+          .toList(growable: false),
       'entries': entryRows.map(_entryToJson).toList(growable: false),
       'reviewEvents': eventRows.map(_eventToJson).toList(growable: false),
       // Only *shared* settings travel. Theme, accent, TTS and the active book
@@ -342,6 +368,39 @@ class BackupService {
       }
     }
 
+    final claimed = <String, Set<String>>{};
+    void identity(Map<String, dynamic> row, String kind) {
+      final aliases = row['aliases'];
+      if (aliases != null &&
+          (aliases is! List ||
+              aliases.length > 256 ||
+              aliases.any((id) => id is! String || id.trim().isEmpty) ||
+              aliases.toSet().length != aliases.length)) {
+        invalid('aliases');
+      }
+      final ids = <String>{row['id'] as String, ...?aliases?.cast<String>()};
+      final known = claimed.putIfAbsent(kind, () => <String>{});
+      if (ids.any(known.contains)) invalid('aliases:重复身份');
+      known.addAll(ids);
+      final stamps = row['fieldVersions'];
+      if (stamps == null) return;
+      if (stamps is! Map) invalid('fieldVersions');
+      for (final entry in stamps.entries) {
+        if (!ContentSyncRepository.fields(kind).contains(entry.key) ||
+            entry.value is! Map) {
+          invalid('fieldVersions');
+        }
+        final stamp = Map<String, dynamic>.from(entry.value as Map);
+        if (stamp['version'] is! int ||
+            stamp['updatedAt'] is! int ||
+            stamp['deviceId'] is! String) {
+          invalid('fieldVersions');
+        }
+        number(stamp, 'version');
+        timestamp(stamp, 'updatedAt', required: true);
+      }
+    }
+
     final words = records('words'),
         books = records('wordBooks'),
         entries = records('entries'),
@@ -353,6 +412,7 @@ class BackupService {
     for (final word in words) {
       text(word, 'id', required: true);
       text(word, 'word', required: true);
+      identity(word, 'word');
       final key = normalizeWordKey(word['word'] as String);
       if (word['normalized'] != null && word['normalized'] != key) {
         invalid('normalized');
@@ -386,6 +446,7 @@ class BackupService {
     for (final book in books) {
       text(book, 'id', required: true);
       text(book, 'name', required: true);
+      identity(book, 'book');
       if (!bookIds.add(book['id'] as String)) invalid('wordBooks:重复身份');
       for (final field in ['description', 'sourceType', 'sourceUrl']) {
         text(book, field);
@@ -512,13 +573,15 @@ class BackupService {
       wordKeys[w['id'] as String] = w['normalized'] as String;
     }
     for (final b in books) {
-      bookKeys[b['id'] as String] = b['name'] as String;
+      bookKeys[b['id'] as String] = jsonEncode([b['name'], b['deletedAt']]);
     }
     for (final w in words) {
+      w.remove('aliases');
       w.remove('id');
       w.remove('createdAt');
     }
     for (final b in books) {
+      b.remove('aliases');
       b.remove('id');
       b.remove('createdAt');
     }
@@ -607,114 +670,147 @@ class BackupService {
       final Map<String, String> wordIdMap = <String, String>{};
       final Map<String, String> bookIdMap = <String, String>{};
 
-      for (final dynamic node in rawWords) {
-        if (node is! Map<String, dynamic>) {
-          skipped++;
-          continue;
-        }
-        final Word? incoming = _wordFromJson(node);
-        if (incoming == null) {
-          skipped++;
-          continue;
-        }
-        final Word? local = await words.byNormalized(
-          incoming.normalized,
-          includeDeleted: true,
+      final content = ContentSyncRepository(db);
+      List<String> aliases(Map<String, dynamic> node) =>
+          (node['aliases'] as List?)?.cast<String>() ?? const [];
+      Map<String, Object?> presentFields(
+        Map<String, dynamic> raw,
+        Map<String, Object?> normalized,
+      ) => {
+        for (final key in raw.keys)
+          if (normalized.containsKey(key))
+            key: normalized[key]
+          else
+            key: raw[key],
+      };
+      for (final dynamic raw in rawWords) {
+        final node = raw as Map<String, dynamic>;
+        final incoming = _wordFromJson(node)!;
+        final resolved = await content.resolve(
+          'word',
+          incoming.id,
+          aliases(node),
         );
+        final local = resolved == null
+            ? await words.byNormalized(
+                incoming.normalized,
+                includeDeleted: true,
+              )
+            : await words.byId(resolved);
+        final id = local?.id ?? incoming.id;
+        wordIdMap[incoming.id] = id;
+        await content.remember('word', id, [incoming.id, ...aliases(node)]);
         if (local == null) {
-          String id = incoming.id;
-          if (await words.byId(id) != null) {
-            // A different word already owns this UUID on this device.
-            id = _uuid.v4();
+          await db.into(db.words).insert(incoming);
+          if (node['fieldVersions'] != null) {
+            await content.saveVersions(
+              'word',
+              id,
+              (node['fieldVersions'] as Map).map(
+                (key, value) => MapEntry(
+                  key as String,
+                  Map<String, Object?>.from(value as Map),
+                ),
+              ),
+            );
           }
-          await db.into(db.words).insert(incoming.copyWith(id: id));
-          wordIdMap[incoming.id] = id;
           newWords++;
           continue;
         }
-
-        wordIdMap[incoming.id] = local.id;
-        final ({bool apply, bool conflict, bool deletion}) verdict = _mergeWord(
-          local,
-          incoming,
+        final merged = await content.merge(
+          'word',
+          id,
+          _wordToJson(local),
+          presentFields(node, _wordToJson(incoming)),
         );
-        if (verdict.apply) {
-          await db.update(db.words).replace(_applyWord(local, incoming));
-          if (verdict.deletion) {
+        if (merged.changed) {
+          final row = Map<String, dynamic>.from(merged.row)
+            ..['normalized'] = normalizeWordKey(merged.row['word'] as String);
+          final updated = _wordFromJson(row)!
+              .copyWith(id: id, createdAt: local.createdAt);
+          final duplicate = await words.byNormalized(
+            updated.normalized,
+            includeDeleted: true,
+          );
+          if (duplicate != null && duplicate.id != id) {
+            throw const BackupException('重命名与本机已有词条冲突，未合并任何数据');
+          }
+          await db.update(db.words).replace(updated);
+          if (updated.deletedAt != null && local.deletedAt == null) {
             deletedWords++;
           } else {
             updatedWords++;
           }
         }
-        if (verdict.conflict) conflicts++;
+        if (merged.conflict) conflicts++;
       }
 
-      // ------------------------------------------------------------- books
-      for (final dynamic node in rawBooks) {
-        if (node is! Map<String, dynamic>) {
-          skipped++;
-          continue;
-        }
-        final WordBook? incoming = _bookFromJson(node);
-        if (incoming == null) {
-          skipped++;
-          continue;
-        }
-        final WordBook? local = await (db.select(
-          db.wordBooks,
-        )..where((t) => t.id.equals(incoming.id))).getSingleOrNull();
-        if (local != null) {
-          bookIdMap[incoming.id] = local.id;
-          if (_versionOf(incoming.revision, incoming.updatedAt) >
-              _versionOf(local.revision, local.updatedAt)) {
-            await db
-                .update(db.wordBooks)
-                .replace(
-                  local.copyWith(
-                    name: incoming.name,
-                    description: incoming.description,
-                    sourceType: incoming.sourceType,
-                    sourceUrl: incoming.sourceUrl,
-                    revision: incoming.revision,
-                    updatedAt: incoming.updatedAt,
-                    deletedAt: Value<int?>(incoming.deletedAt),
-                  ),
-                );
-            updatedBooks++;
+      // IDs and retained aliases take precedence over names, so later renames
+      // keep existing entries and events attached to their original identity.
+      for (final dynamic raw in rawBooks) {
+        final node = raw as Map<String, dynamic>;
+        final incoming = _bookFromJson(node)!;
+        final resolved = await content.resolve(
+          'book',
+          incoming.id,
+          aliases(node),
+        );
+        WordBook? local;
+        if (resolved != null) {
+          local = await (db.select(
+            db.wordBooks,
+          )..where((t) => t.id.equals(resolved))).getSingleOrNull();
+        } else {
+          final candidates = await (db.select(
+            db.wordBooks,
+          )..where((t) => t.name.equals(incoming.name))).get();
+          final compatible = candidates
+              .where(
+                (b) =>
+                    !(b.deletedAt != null &&
+                        incoming.createdAt > b.deletedAt!) &&
+                    !(incoming.deletedAt != null &&
+                        b.createdAt > incoming.deletedAt!),
+              )
+              .toList();
+          if (compatible.length > 1) {
+            throw const BackupException('词书同名身份不明确，未合并任何数据');
           }
+          local = compatible.firstOrNull;
+        }
+        final id = local?.id ?? incoming.id;
+        bookIdMap[incoming.id] = id;
+        await content.remember('book', id, [incoming.id, ...aliases(node)]);
+        if (local == null) {
+          await db.into(db.wordBooks).insert(incoming);
+          if (node['fieldVersions'] != null) {
+            await content.saveVersions(
+              'book',
+              id,
+              (node['fieldVersions'] as Map).map(
+                (key, value) => MapEntry(
+                  key as String,
+                  Map<String, Object?>.from(value as Map),
+                ),
+              ),
+            );
+          }
+          if (incoming.deletedAt == null) newBooks++;
           continue;
         }
-
-        // Two devices independently created a book with the same name: treat
-        // them as the same book instead of showing a duplicate after sync.
-        if (incoming.deletedAt == null) {
-          final WordBook? sameName =
-              await (db.select(db.wordBooks)..where(
-                    (t) => t.name.equals(incoming.name) & t.deletedAt.isNull(),
-                  ))
-                  .getSingleOrNull();
-          if (sameName != null) {
-            bookIdMap[incoming.id] = sameName.id;
-            if (_versionOf(incoming.revision, incoming.updatedAt) >
-                _versionOf(sameName.revision, sameName.updatedAt)) {
-              await db
-                  .update(db.wordBooks)
-                  .replace(
-                    incoming.copyWith(
-                      id: sameName.id,
-                      createdAt: sameName.createdAt,
-                    ),
-                  );
-              updatedBooks++;
-            }
-            continue;
-          }
+        final merged = await content.merge(
+          'book',
+          id,
+          _bookToJson(local),
+          presentFields(node, _bookToJson(incoming)),
+        );
+        if (merged.changed) {
+          final updated = _bookFromJson(Map<String, dynamic>.from(merged.row))!
+              .copyWith(id: id, createdAt: local.createdAt);
+          await db.update(db.wordBooks).replace(updated);
+          updatedBooks++;
         }
-        await db
-            .into(db.wordBooks)
-            .insert(incoming, mode: InsertMode.insertOrIgnore);
-        bookIdMap[incoming.id] = incoming.id;
-        if (incoming.deletedAt == null) newBooks++;
+        if (merged.conflict) conflicts++;
       }
 
       // ----------------------------------------------------------- entries
@@ -943,121 +1039,6 @@ class BackupService {
         .getSingle();
     return row.read<int>('c');
   }
-
-  // ----------------------------------------------------------- merge rules
-
-  /// Merge rules for one word, in order of precedence:
-  ///  1. a deletion beats an *older* edit, a newer edit revives a deletion;
-  ///  2. identical content is a no-op;
-  ///  3. otherwise the higher (revision, updatedAt) wins;
-  ///  4. when both sides edited the *same* word (both `customized`) the change
-  ///     is also reported as a conflict so the user is told that a merge
-  ///     happened, instead of silently losing one side.
-  ///
-  /// The local row always keeps its id, so no book link or review event can be
-  /// orphaned by a content merge.
-  ({bool apply, bool conflict, bool deletion}) _mergeWord(
-    Word local,
-    Word incoming,
-  ) {
-    final bool localDeleted = local.deletedAt != null;
-    final bool remoteDeleted = incoming.deletedAt != null;
-
-    if (localDeleted || remoteDeleted) {
-      final _Version localVersion = _versionOf(
-        local.revision,
-        local.deletedAt ?? local.updatedAt,
-      );
-      final _Version remoteVersion = _versionOf(
-        incoming.revision,
-        incoming.deletedAt ?? incoming.updatedAt,
-      );
-      if (localDeleted && !remoteDeleted) {
-        // Revived on the other device: only if that edit is newer.
-        return (
-          apply: remoteVersion > localVersion,
-          conflict: remoteVersion > localVersion,
-          deletion: false,
-        );
-      }
-      if (remoteDeleted && !localDeleted) {
-        return (
-          apply: remoteVersion >= localVersion,
-          conflict: false,
-          deletion: remoteVersion >= localVersion,
-        );
-      }
-      return (
-        apply: remoteVersion > localVersion,
-        conflict: false,
-        deletion: false,
-      );
-    }
-
-    if (_sameWordContent(local, incoming)) {
-      return (
-        apply:
-            _versionOf(incoming.revision, incoming.updatedAt) >
-            _versionOf(local.revision, local.updatedAt),
-        conflict: false,
-        deletion: false,
-      );
-    }
-
-    final _Version localVersion = _versionOf(local.revision, local.updatedAt);
-    final _Version remoteVersion = _versionOf(
-      incoming.revision,
-      incoming.updatedAt,
-    );
-    final bool bothEdited = local.customized && incoming.customized;
-    if (remoteVersion > localVersion ||
-        (remoteVersion.compareTo(localVersion) == 0 &&
-            _wordTieKey(incoming).compareTo(_wordTieKey(local)) > 0)) {
-      return (apply: true, conflict: bothEdited, deletion: false);
-    }
-    return (apply: false, conflict: bothEdited, deletion: false);
-  }
-
-  String _wordTieKey(Word word) {
-    final json = _wordToJson(word)
-      ..remove('id')
-      ..remove('createdAt');
-    return jsonEncode(json);
-  }
-
-  bool _sameWordContent(Word a, Word b) =>
-      a.word == b.word &&
-      a.phonetic == b.phonetic &&
-      a.partOfSpeech == b.partOfSpeech &&
-      sameDictionaryText(a.translation, b.translation) &&
-      sameDictionaryText(a.definition, b.definition) &&
-      sameDictionaryText(a.example, b.example) &&
-      sameDictionaryText(a.phrase, b.phrase) &&
-      a.note == b.note &&
-      a.examTags == b.examTags &&
-      a.source == b.source &&
-      a.bncRank == b.bncRank &&
-      a.frqRank == b.frqRank;
-
-  Word _applyWord(Word local, Word incoming) => local.copyWith(
-    word: incoming.word,
-    phonetic: normalizeDictionaryText(incoming.phonetic),
-    partOfSpeech: normalizeDictionaryText(incoming.partOfSpeech),
-    translation: normalizeDictionaryText(incoming.translation),
-    definition: normalizeDictionaryText(incoming.definition),
-    example: normalizeDictionaryText(incoming.example),
-    phrase: normalizeDictionaryText(incoming.phrase),
-    // Notes are user text: stored exactly as received.
-    note: incoming.note,
-    source: incoming.source,
-    examTags: incoming.examTags,
-    bncRank: incoming.bncRank,
-    frqRank: incoming.frqRank,
-    customized: local.customized || incoming.customized,
-    revision: incoming.revision,
-    updatedAt: incoming.updatedAt,
-    deletedAt: Value<int?>(incoming.deletedAt),
-  );
 
   _Version _versionOf(int revision, int updatedAt) =>
       _Version(revision, updatedAt);

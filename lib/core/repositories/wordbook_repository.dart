@@ -2,6 +2,7 @@ import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 
 import '../database/app_database.dart';
+import 'content_sync_repository.dart';
 
 const Uuid _uuid = Uuid();
 
@@ -120,52 +121,54 @@ SELECT b.id, b.name, b.description, b.source_type, b.source_url,
     return book;
   }
 
-  Future<void> rename(String id, String name, {required DateTime now}) async {
-    final WordBook? book = await byId(id);
-    if (book == null) return;
-    await db
-        .update(db.wordBooks)
-        .replace(
-          book.copyWith(
-            name: name.trim(),
-            updatedAt: now.millisecondsSinceEpoch,
-            revision: book.revision + 1,
-          ),
-        );
-  }
+  Future<void> rename(String id, String name, {required DateTime now}) =>
+      _edit(id, now: now, name: name.trim());
 
   Future<void> updateDescription(
     String id,
     String description, {
     required DateTime now,
-  }) async {
-    final WordBook? book = await byId(id);
-    if (book == null) return;
-    await db
-        .update(db.wordBooks)
-        .replace(
-          book.copyWith(
-            description: description,
-            updatedAt: now.millisecondsSinceEpoch,
-            revision: book.revision + 1,
-          ),
-        );
-  }
+  }) => _edit(id, now: now, description: description);
+
+  Future<void> _edit(
+    String id, {
+    required DateTime now,
+    String? name,
+    String? description,
+  }) => db.transaction(() async {
+    final book = await byId(id);
+    if (book == null || book.deletedAt != null) return;
+    if (name != null && name.isEmpty) throw StateError('词书名称不能为空');
+    final updated = book.copyWith(
+      name: name,
+      description: description,
+      updatedAt: now.millisecondsSinceEpoch,
+      revision: book.revision + 1,
+    );
+    if (!ContentSyncRepository.bookFields.any(
+      (field) => book.toJson()[field] != updated.toJson()[field],
+    )) {
+      return;
+    }
+    await ContentSyncRepository(db)
+        .recordEdit('book', id, book.toJson(), updated.toJson(), now: now);
+    await db.update(db.wordBooks).replace(updated);
+  });
 
   /// Soft delete keeps the row (and its sync tombstone) while hiding the book.
   Future<void> softDelete(String id, {required DateTime now}) async {
     await db.transaction(() async {
       final WordBook? book = await byId(id);
       if (book == null) return;
-      await db
-          .update(db.wordBooks)
-          .replace(
-            book.copyWith(
-              deletedAt: Value<int?>(now.millisecondsSinceEpoch),
-              updatedAt: now.millisecondsSinceEpoch,
-              revision: book.revision + 1,
-            ),
-          );
+      if (book.deletedAt != null) return;
+      final updated = book.copyWith(
+        deletedAt: Value(now.millisecondsSinceEpoch),
+        updatedAt: now.millisecondsSinceEpoch,
+        revision: book.revision + 1,
+      );
+      await ContentSyncRepository(db)
+          .recordEdit('book', id, book.toJson(), updated.toJson(), now: now);
+      await db.update(db.wordBooks).replace(updated);
       await (db.update(db.studySettings)
             ..where((t) => t.currentWordBookId.equals(id)))
           .write(const StudySettingsCompanion(currentWordBookId: Value(null)));
