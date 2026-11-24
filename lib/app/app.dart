@@ -26,6 +26,7 @@ class MaterialWordApp extends ConsumerWidget {
 
     return MaterialApp(
       title: 'MaterialWord',
+      scrollBehavior: const ClassicScrollBehavior(),
       debugShowCheckedModeBanner: false,
       theme: AppTheme.of(Brightness.light, accent),
       darkTheme: AppTheme.of(Brightness.dark, accent),
@@ -44,4 +45,15 @@ class MaterialWordApp extends ConsumerWidget {
       home: const AppShell(),
     );
   }
+}
+
+/// Keep native platform physics and scrollbars; omit decorative edge effects.
+class ClassicScrollBehavior extends MaterialScrollBehavior {
+  const ClassicScrollBehavior();
+  @override
+  Widget buildOverscrollIndicator(
+    BuildContext context,
+    Widget child,
+    ScrollableDetails details,
+  ) => child;
 }

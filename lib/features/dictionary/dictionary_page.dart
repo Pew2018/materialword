@@ -78,8 +78,7 @@ class _DictionaryPageState extends ConsumerState<DictionaryPage> {
       );
       final List<WordWithState> mine = await ref
           .read(wordRepositoryProvider)
-          .watchSearch(term, limit: 20)
-          .first;
+          .listWords(query: term, limit: 20);
       if (!mounted || !_generation.isCurrent(generation)) return;
       setState(() {
         _results = found;

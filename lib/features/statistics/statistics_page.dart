@@ -23,7 +23,19 @@ class StatisticsPage extends ConsumerWidget {
     final AsyncValue<List<WordBookSummary>> books = ref.watch(
       bookSummariesProvider,
     );
-    final String? filter = ref.watch(statisticsBookFilterProvider);
+    final String? selected = ref.watch(statisticsBookFilterProvider);
+    final bool invalid =
+        selected != null &&
+        books.hasValue &&
+        !books.value!.any((b) => b.book.id == selected);
+    final String? filter = invalid ? null : selected;
+    if (invalid) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (context.mounted) {
+          ref.read(statisticsBookFilterProvider.notifier).select(null);
+        }
+      });
+    }
     final ThemeData theme = Theme.of(context);
     final StudyStatistics? data = stats.value;
 

@@ -146,7 +146,7 @@ class _WordDetailPageState extends ConsumerState<WordDetailPage> {
     final bool ok = await confirmDialog(
       context,
       title: '标记为已掌握',
-      message: '记录一次「认识」复习事件并推进下次复习时间；该事件会同步到其他设备。',
+      message: '标记为掌握，30 天后复习。保留历史，不计入作答次数和正确率。',
       confirmLabel: '标记',
     );
     if (!ok) return;

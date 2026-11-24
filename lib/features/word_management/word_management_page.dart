@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
@@ -45,34 +47,139 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
   int _total = 0;
   bool _busy = false;
 
-  static const int _pageSize = 300;
+  static const int _pageSize = 100;
+  Timer? _searchDebounce;
+  Timer? _dataDebounce;
+  StreamSubscription<dynamic>? _dataChanges;
+  int _generation = 0;
+  bool _loadingMore = false;
+  bool _twoPane = false;
+  final ScrollController _scroll = ScrollController();
 
   @override
   void initState() {
     super.initState();
+    _scroll.addListener(() {
+      if (_scroll.position.extentAfter < 400) _loadMore();
+    });
+    _dataChanges = ref.read(databaseProvider).tableUpdates().listen((updates) {
+      if (!updates.any(
+        (u) => <String>{
+          'words',
+          'learning_states',
+          'word_book_entries',
+          'word_books',
+        }.contains(u.table),
+      )) {
+        return;
+      }
+      _generation++;
+      _dataDebounce?.cancel();
+      _dataDebounce = Timer(const Duration(milliseconds: 120), () {
+        if (mounted && !_busy) _bootstrap();
+      });
+    });
     _bootstrap();
   }
 
   @override
   void dispose() {
+    _generation++;
+    _dataDebounce?.cancel();
+    _dataChanges?.cancel();
+    _searchDebounce?.cancel();
+    _scroll.dispose();
     _search.dispose();
     super.dispose();
   }
 
   Future<void> _bootstrap() async {
-    final List<WordBook> books = await ref
-        .read(wordBookRepositoryProvider)
-        .listBooks();
-    if (!mounted) return;
-    setState(() => _books = books);
-    await _load();
+    try {
+      final books = await ref.read(wordBookRepositoryProvider).listBooks();
+      if (!mounted) return;
+      setState(() {
+        _books = books;
+        if (_bookId != null && !books.any((b) => b.id == _bookId)) {
+          _bookId = null;
+        }
+      });
+      await _load();
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = '读取词书失败，请重试';
+        });
+      }
+    }
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
+    _searchDebounce?.cancel();
+    final int generation = ++_generation;
+    final String search = _search.text;
+    final String? bookId = _bookId;
+    final ManagedStageFilter stage = _stage;
+    final ManagedSort sort = _sort;
     setState(() {
       _loading = true;
+      _loadingMore = false;
       _error = null;
+      _selected.clear();
     });
+    try {
+      final repository = ref.read(studyRepositoryProvider);
+      final result = await repository.db.transaction(
+        () async => (
+          await repository.managedWords(
+            bookId: bookId,
+            search: search,
+            stage: stage,
+            sort: sort,
+            limit: _pageSize,
+          ),
+          await repository.managedCount(
+            bookId: bookId,
+            search: search,
+            stage: stage,
+          ),
+        ),
+      );
+      if (!mounted || generation != _generation) return;
+      setState(() {
+        _rows = result.$1;
+        _total = result.$2;
+        _loading = false;
+        if (!_rows.any((r) => r.word.id == _focusedWordId)) {
+          _focusedWordId = _rows.firstOrNull?.word.id;
+        }
+      });
+    } catch (_) {
+      if (!mounted || generation != _generation) return;
+      setState(() {
+        _loading = false;
+        _error = '加载失败，请重试';
+      });
+    }
+  }
+
+  void _searchChanged(String value) {
+    // Invalidate in-flight work immediately, before the debounce expires.
+    _generation++;
+    _searchDebounce?.cancel();
+    setState(() {});
+    if (value.trim().isEmpty) {
+      _load();
+      return;
+    }
+    _searchDebounce = Timer(const Duration(milliseconds: 250), _load);
+  }
+
+  Future<void> _loadMore() async {
+    if (_loading || _loadingMore || _rows.length >= _total) return;
+    final int generation = _generation;
+    setState(() => _loadingMore = true);
     try {
       final rows = await ref
           .read(studyRepositoryProvider)
@@ -82,32 +189,38 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
             stage: _stage,
             sort: _sort,
             limit: _pageSize,
+            offset: _rows.length,
           );
-      final int total = await ref
-          .read(studyRepositoryProvider)
-          .managedCount(bookId: _bookId, search: _search.text, stage: _stage);
-      if (!mounted) return;
+      if (!mounted || generation != _generation) return;
       setState(() {
-        _rows = rows;
-        _total = total;
-        _loading = false;
-        // Drop selections that no longer exist in the filtered list.
-        _selected.removeWhere(
-          (String id) => !rows.any((ManagedWord r) => r.word.id == id),
-        );
-        if (_focusedWordId != null &&
-            !rows.any((ManagedWord r) => r.word.id == _focusedWordId)) {
-          _focusedWordId = rows.isEmpty ? null : rows.first.word.id;
-        } else if (_focusedWordId == null && rows.isNotEmpty) {
-          _focusedWordId = rows.first.word.id;
-        }
+        _rows = [..._rows, ...rows];
       });
-    } catch (e) {
+    } catch (_) {
+      if (mounted && generation == _generation) {
+        showMessage(context, '加载失败，请重试', error: true);
+      }
+    } finally {
+      if (mounted && generation == _generation) {
+        setState(() => _loadingMore = false);
+      }
+    }
+  }
+
+  Future<void> _runBatch(Future<String> Function() operation) async {
+    if (_busy || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      final String message = await operation();
       if (!mounted) return;
-      setState(() {
-        _loading = false;
-        _error = '加载失败：$e';
-      });
+      ref.invalidate(todayProgressProvider);
+      ref.invalidate(statisticsProvider);
+      ref.invalidate(bookSummariesProvider);
+      showMessage(context, message);
+      await _load();
+    } catch (_) {
+      if (mounted) showMessage(context, '操作失败，数据未更改。请重试', error: true);
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -129,40 +242,59 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
     });
   }
 
+  Future<void> _selectFiltered() async {
+    final generation = _generation;
+    setState(() => _busy = true);
+    try {
+      final ids = await ref
+          .read(studyRepositoryProvider)
+          .managedWordIds(bookId: _bookId, search: _search.text, stage: _stage);
+      if (!mounted || generation != _generation) return;
+      setState(() {
+        _selected
+          ..clear()
+          ..addAll(ids);
+      });
+    } catch (_) {
+      if (mounted) showMessage(context, '选择失败，请重试', error: true);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<String> _deviceId() => ref.read(settingsRepositoryProvider).deviceId();
 
-  Future<void> _markMastered(Iterable<String> ids) async {
+  Future<void> _markMastered(Iterable<String> selection) async {
+    final List<String> ids = selection.toList(growable: false);
     final bool ok = await confirmDialog(
       context,
       title: '标记为已掌握',
       message:
-          '将为选中的 ${ids.length} 个单词记录一次「认识」复习事件，'
-          '并按复习算法推进下次复习时间。该操作会同步到其他设备，也出现在作答历史里。',
+          '将选中的 ${ids.length} 个单词标记为掌握，30 天后复习。'
+          '保留学习历史，不计入作答次数和正确率。',
       confirmLabel: '标记掌握',
     );
     if (!ok) return;
-    setState(() => _busy = true);
-    final DateTime now = ref.read(clockProvider).now();
-    final String device = await _deviceId();
-    for (final String id in ids) {
-      await ref
-          .read(studyRepositoryProvider)
-          .markMastered(
+    if (!mounted) return;
+    await _runBatch(() async {
+      final repository = ref.read(studyRepositoryProvider);
+      final device = await _deviceId();
+      await repository.db.transaction(() async {
+        for (final id in ids) {
+          await repository.markMastered(
             wordId: id,
             deviceId: device,
-            now: now,
+            now: ref.read(clockProvider).now(),
             eventId: _uuid.v4(),
           );
-    }
-    ref.invalidate(todayProgressProvider);
-    ref.invalidate(statisticsProvider);
-    if (!mounted) return;
-    setState(() => _busy = false);
-    showMessage(context, '已标记 ${ids.length} 个单词为已掌握');
-    await _load();
+        }
+      });
+      return '已标记 ${ids.length} 个单词为已掌握';
+    });
   }
 
-  Future<void> _resetProgress(Iterable<String> ids) async {
+  Future<void> _resetProgress(Iterable<String> selection) async {
+    final List<String> ids = selection.toList(growable: false);
     final bool ok = await confirmDialog(
       context,
       title: '重置学习进度',
@@ -173,33 +305,26 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
       destructive: true,
     );
     if (!ok) return;
-    setState(() => _busy = true);
-    final DateTime now = ref.read(clockProvider).now();
-    final String device = await _deviceId();
-    for (final String id in ids) {
+    if (!mounted) return;
+    await _runBatch(() async {
       await ref
           .read(studyRepositoryProvider)
-          .resetProgress(
-            wordId: id,
-            deviceId: device,
-            now: now,
-            eventId: _uuid.v4(),
+          .resetProgressBatch(
+            wordIds: ids,
+            deviceId: await _deviceId(),
+            now: ref.read(clockProvider).now(),
+            eventIdFor: (_) => _uuid.v4(),
           );
-    }
-    ref.invalidate(todayProgressProvider);
-    ref.invalidate(statisticsProvider);
-    if (!mounted) return;
-    setState(() => _busy = false);
-    showMessage(context, '已重置 ${ids.length} 个单词');
-    await _load();
+      return '已重置 ${ids.length} 个单词';
+    });
   }
 
-  Future<void> _addToBook(Iterable<String> ids) async {
+  Future<void> _addToBook(Iterable<String> selection) async {
+    final List<String> ids = selection.toList(growable: false);
     if (_books.isEmpty) {
       showMessage(context, '还没有词书，请先创建', error: true);
       return;
     }
-    String? target = _bookId ?? (_books.length == 1 ? _books.first.id : null);
     final String? picked = await showDialog<String>(
       context: context,
       builder: (BuildContext context) => SimpleDialog(
@@ -213,21 +338,17 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
         ],
       ),
     );
-    target = picked ?? target;
-    if (target == null) return;
-    setState(() => _busy = true);
-    final int linked = await ref
-        .read(wordBookRepositoryProvider)
-        .addWords(target, ids, now: ref.read(clockProvider).now());
-    ref.invalidate(bookSummariesProvider);
-    ref.invalidate(todayProgressProvider);
-    if (!mounted) return;
-    setState(() => _busy = false);
-    showMessage(context, '已加入 $linked 个单词');
-    await _load();
+    if (picked == null || !mounted) return;
+    await _runBatch(() async {
+      final linked = await ref
+          .read(wordBookRepositoryProvider)
+          .addWords(picked, ids, now: ref.read(clockProvider).now());
+      return '已加入 $linked 个单词';
+    });
   }
 
-  Future<void> _removeFromBook(Iterable<String> ids) async {
+  Future<void> _removeFromBook(Iterable<String> selection) async {
+    final List<String> ids = selection.toList(growable: false);
     final String? bookId = _bookId;
     if (bookId == null) {
       showMessage(context, '请先在上方选择一个词书，再执行「移出词书」', error: true);
@@ -246,44 +367,35 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
       destructive: true,
     );
     if (!ok) return;
-    setState(() => _busy = true);
-    final int removed = await ref
-        .read(wordBookRepositoryProvider)
-        .removeWords(bookId, ids, now: ref.read(clockProvider).now());
-    ref.invalidate(bookSummariesProvider);
-    ref.invalidate(todayProgressProvider);
     if (!mounted) return;
-    setState(() => _busy = false);
-    showMessage(context, '已从词书移出 $removed 个单词');
-    await _load();
+    await _runBatch(() async {
+      final removed = await ref
+          .read(wordBookRepositoryProvider)
+          .removeWords(bookId, ids, now: ref.read(clockProvider).now());
+      return '已从词书移出 $removed 个单词';
+    });
   }
 
-  Future<void> _deleteWords(Iterable<String> ids) async {
+  Future<void> _deleteWords(Iterable<String> selection) async {
+    final List<String> ids = selection.toList(growable: false);
     final bool ok = await confirmDialog(
       context,
       title: '删除单词',
       message:
-          '从**全部用户词汇**中删除选中的 ${ids.length} 个单词？'
+          '从全部用户词汇中删除选中的 ${ids.length} 个单词？'
           '它们会从所有词书中消失。作答历史作为同步墓碑保留，'
           '旧备份不会让它们复活。\n\n如果只是想从某个词书移除，请用「移出词书」。',
       confirmLabel: '删除',
       destructive: true,
     );
     if (!ok) return;
-    setState(() => _busy = true);
-    final int deleted = await ref
-        .read(wordRepositoryProvider)
-        .softDeleteMany(ids, now: ref.read(clockProvider).now());
-    ref.invalidate(bookSummariesProvider);
-    ref.invalidate(todayProgressProvider);
-    ref.invalidate(statisticsProvider);
     if (!mounted) return;
-    setState(() {
-      _busy = false;
-      _selected.clear();
+    await _runBatch(() async {
+      final deleted = await ref
+          .read(wordRepositoryProvider)
+          .softDeleteMany(ids, now: ref.read(clockProvider).now());
+      return '已删除 $deleted 个单词';
     });
-    showMessage(context, '已删除 $deleted 个单词');
-    await _load();
   }
 
   @override
@@ -333,9 +445,15 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
                         ? '换个筛选条件，或先添加/导入单词。'
                         : '没有匹配「${_search.text}」的词条。',
                   )
-                : AdaptiveTwoPane(
-                    list: _list(theme),
-                    detail: _detailPane(theme),
+                : LayoutBuilder(
+                    builder: (context, constraints) {
+                      _twoPane =
+                          constraints.maxWidth >= AppDimens.twoPaneBreakpoint;
+                      return AdaptiveTwoPane(
+                        list: _list(theme),
+                        detail: _detailPane(theme),
+                      );
+                    },
                   ),
           ),
         ],
@@ -373,7 +491,7 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
                       ),
               ),
               onSubmitted: (_) => _load(),
-              onChanged: (_) => setState(() {}),
+              onChanged: _searchChanged,
             ),
             const SizedBox(height: 8),
             SingleChildScrollView(
@@ -433,12 +551,17 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
                     },
                   ),
                   AppSpacing.w8,
+                  if (_total > _rows.length)
+                    TextButton(
+                      onPressed: _busy || _loading ? null : _selectFiltered,
+                      child: Text('选择筛选结果全部 $_total 项'),
+                    ),
                   TextButton(
-                    onPressed: _selectAll,
+                    onPressed: _busy || _loading ? null : _selectAll,
                     child: Text(
                       _selected.length == _rows.length && _rows.isNotEmpty
-                          ? '取消全选'
-                          : '全选',
+                          ? '取消选择'
+                          : '选择已加载的 ${_rows.length} 项',
                     ),
                   ),
                 ],
@@ -454,7 +577,9 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
     return Container(
       color: theme.colorScheme.primary.withValues(alpha: 0.08),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      child: Row(
+      child: Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
         children: <Widget>[
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -463,7 +588,6 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
               style: theme.textTheme.bodyMedium,
             ),
           ),
-          const Spacer(),
           IconButton(
             tooltip: '加入词书',
             icon: const Icon(Icons.playlist_add),
@@ -499,10 +623,21 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
 
   Widget _list(ThemeData theme) {
     return ListView.separated(
-      itemCount: _rows.length,
+      controller: _scroll,
+      itemCount: _rows.length + (_rows.length < _total ? 1 : 0),
       separatorBuilder: (_, _) =>
           Divider(height: 1, indent: 56, color: theme.dividerColor),
       itemBuilder: (BuildContext context, int index) {
+        if (index == _rows.length) {
+          return Padding(
+            padding: const EdgeInsets.all(16),
+            child: Center(
+              child: _loadingMore
+                  ? const CircularProgressIndicator()
+                  : TextButton(onPressed: _loadMore, child: const Text('加载更多')),
+            ),
+          );
+        }
         final ManagedWord row = _rows[index];
         final bool selected = _selected.contains(row.word.id);
         final bool focused = _focusedWordId == row.word.id;
@@ -518,7 +653,7 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
               children: <Widget>[
                 Checkbox(
                   value: selected,
-                  onChanged: (_) => _toggleSelect(row.word.id),
+                  onChanged: _busy ? null : (_) => _toggleSelect(row.word.id),
                 ),
               ],
             ),
@@ -563,8 +698,7 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
               ],
             ),
             onTap: () {
-              if (MediaQuery.sizeOf(context).width >=
-                  AppDimens.twoPaneBreakpoint) {
+              if (_twoPane) {
                 setState(() => _focusedWordId = row.word.id);
               } else {
                 Navigator.of(context).push<void>(
@@ -869,7 +1003,7 @@ class _WordDetailPaneState extends ConsumerState<_WordDetailPane> {
     final bool ok = await confirmDialog(
       context,
       title: '标记为已掌握',
-      message: '记录一次「认识」复习事件并推进下次复习时间。这个操作会同步到其他设备。',
+      message: '标记为掌握，30 天后复习。保留学习历史，不计入作答次数和正确率。',
       confirmLabel: '标记',
     );
     if (!ok) return;

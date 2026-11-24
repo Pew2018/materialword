@@ -1,12 +1,10 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path_provider/path_provider.dart';
 
 import '../../app/providers.dart';
 import '../../app/theme.dart';
 import '../../core/time_utils.dart';
+import '../../services/backup_files.dart';
 import '../../services/sync/credential_store.dart';
 import '../../services/sync/github_sync_provider.dart';
 import '../../services/sync/local_file_sync_provider.dart';
@@ -144,7 +142,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
 
   String _field(String key, {String fallback = ''}) => _fields[key] ?? fallback;
 
-  SyncProvider? _buildProvider() {
+  SyncProvider? _buildProvider({bool draft = false}) {
     switch (_provider) {
       case 'local-file':
         return LocalFileSyncProvider(filePath: _field('path'));
@@ -155,6 +153,9 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
           branch: _field('branch', fallback: 'main'),
           path: _field('path', fallback: 'materialword-data.json'),
           credentials: ref.read(credentialStoreProvider),
+          tokenOverride: draft && _githubToken.text.trim().isNotEmpty
+              ? _githubToken.text.trim()
+              : null,
         );
       case 'webdav':
         return WebDavSyncProvider(
@@ -162,6 +163,15 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
           remoteDir: _field('dir', fallback: 'materialword'),
           fileName: _field('file', fallback: 'materialword-data.json'),
           credentials: ref.read(credentialStoreProvider),
+          usernameOverride: draft && _webdavUser.text.trim().isNotEmpty
+              ? _webdavUser.text.trim()
+              : null,
+          passwordOverride:
+              draft &&
+                  _webdavPassword.text.isNotEmpty &&
+                  _webdavPassword.text != '••••••••'
+              ? _webdavPassword.text
+              : null,
         );
       default:
         return null;
@@ -237,7 +247,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
   }
 
   Future<void> _runTest() async {
-    final SyncProvider? provider = _buildProvider();
+    final SyncProvider? provider = _buildProvider(draft: true);
     if (provider == null) return;
     setState(() {
       _busy = true;
@@ -245,10 +255,6 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       _status = null;
       _testResult = null;
     });
-    if (!await _saveConfig(persistSecrets: true)) {
-      if (mounted) setState(() => _busy = false);
-      return;
-    }
     try {
       final SyncTestResult result = await provider.testConnection();
       if (!mounted) return;
@@ -280,12 +286,13 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       return;
     }
 
-    if (_lastSyncAt == null) {
+    if (!await coordinator.hasSyncedTarget(provider)) {
+      if (!mounted) return;
       final bool ok = await confirmDialog(
         context,
         title: '首次同步',
         message:
-            '首次同步会把远程数据与本机数据**合并**（按单词、作答记录去重），'
+            '首次同步会把远程数据与本机数据合并（按单词、作答记录去重），'
             '不会用远程数据覆盖本地学习进度，也不会删除本地单词。'
             '如果远程已有大量数据，合并后可能出现重复词条以外的额外记录。\n\n继续吗？',
         confirmLabel: '开始合并',
@@ -343,18 +350,16 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
   }
 
   Future<void> _exportBackup() async {
+    if (_busy) return;
+    setState(() => _busy = true);
     try {
-      final Directory docs = await getApplicationDocumentsDirectory();
-      final Directory dir = Directory('${docs.path}/MaterialWord');
-      if (!dir.existsSync()) dir.createSync(recursive: true);
-      final File file = await ref
-          .read(backupServiceProvider)
-          .writeBackupFile(directory: dir, now: DateTime.now());
-      if (!mounted) return;
-      showMessage(context, '已导出：${file.path}');
-    } catch (e) {
-      if (!mounted) return;
-      showMessage(context, '导出失败：$e', error: true);
+      final saved = await BackupFiles(ref.read(backupServiceProvider))
+          .export(now: ref.read(clockProvider).now());
+      if (saved && mounted) showMessage(context, '备份已导出');
+    } catch (_) {
+      if (mounted) showMessage(context, '导出失败，请重新选择保存位置', error: true);
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 

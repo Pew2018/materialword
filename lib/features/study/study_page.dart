@@ -77,6 +77,7 @@ class _StudyPageState extends ConsumerState<StudyPage> {
     if (id == _lastCardId) return;
     _lastCardId = id;
     // Keep the header at the same place for every card: no jumpy layout.
+    _tts.stop();
     if (_scroll.hasClients) _scroll.jumpTo(0);
     if (card != null && (_settings?.ttsAutoSpeak ?? false)) {
       _speak(card.word.word);
@@ -142,6 +143,16 @@ class _StudyPageState extends ConsumerState<StudyPage> {
 
   Future<void> _answer(AnswerResult result) async {
     await _session.submit(result);
+    if (!mounted) return;
+    ref.invalidate(todayProgressProvider);
+    ref.invalidate(statisticsProvider);
+  }
+
+  Future<void> _undo() async {
+    await _session.undo();
+    if (!mounted) return;
+    ref.invalidate(todayProgressProvider);
+    ref.invalidate(statisticsProvider);
   }
 
   bool get _shortcutsBlocked {
@@ -178,6 +189,11 @@ class _StudyPageState extends ConsumerState<StudyPage> {
               ),
             ),
             actions: <Widget>[
+              IconButton(
+                tooltip: '撤销上一作答',
+                onPressed: _session.canUndo ? _undo : null,
+                icon: const Icon(Icons.undo),
+              ),
               if (!_session.isLoading && !_session.isEmpty)
                 Padding(
                   padding: const EdgeInsets.only(right: 16),
@@ -194,6 +210,9 @@ class _StudyPageState extends ConsumerState<StudyPage> {
           ),
           body: CallbackShortcuts(
             bindings: <ShortcutActivator, VoidCallback>{
+              const SingleActivator(LogicalKeyboardKey.keyZ, meta: true): () {
+                if (!_shortcutsBlocked && _session.canUndo) _undo();
+              },
               const SingleActivator(LogicalKeyboardKey.space): () {
                 if (_shortcutsBlocked) return;
                 _session.reveal();

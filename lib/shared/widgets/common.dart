@@ -503,17 +503,18 @@ class AdaptiveTwoPane extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final double width = MediaQuery.sizeOf(context).width;
-    if (width < AppDimens.twoPaneBreakpoint) {
-      return list;
-    }
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        SizedBox(width: listWidth, child: list),
-        const VerticalDivider(width: 1),
-        Expanded(child: detail),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < AppDimens.twoPaneBreakpoint) return list;
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(width: listWidth, child: list),
+            const VerticalDivider(width: 1),
+            Expanded(child: detail),
+          ],
+        );
+      },
     );
   }
 }
@@ -531,6 +532,7 @@ Future<bool> confirmDialog(
     context: context,
     builder: (BuildContext context) => AlertDialog(
       title: Text(title),
+      scrollable: true,
       content: Text(message),
       actions: <Widget>[
         TextButton(
@@ -568,33 +570,61 @@ Future<String?> promptForText(
   String initialValue = '',
   String confirmLabel = '确定',
 }) async {
-  final TextEditingController controller = TextEditingController(
-    text: initialValue,
-  );
-  final String? result = await showDialog<String>(
+  return showDialog<String>(
     context: context,
-    builder: (BuildContext context) => AlertDialog(
-      title: Text(title),
-      content: TextField(
-        controller: controller,
-        autofocus: true,
-        decoration: InputDecoration(labelText: label),
-        onSubmitted: (String value) => Navigator.of(context).pop(value),
-      ),
-      actions: <Widget>[
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('取消'),
-        ),
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(controller.text),
-          child: Text(confirmLabel),
-        ),
-      ],
+    builder: (_) => _TextPrompt(
+      title: title,
+      label: label,
+      initialValue: initialValue,
+      confirmLabel: confirmLabel,
     ),
   );
-  controller.dispose();
-  return result;
+}
+
+class _TextPrompt extends StatefulWidget {
+  const _TextPrompt({
+    required this.title,
+    required this.label,
+    required this.initialValue,
+    required this.confirmLabel,
+  });
+  final String title, label, initialValue, confirmLabel;
+  @override
+  State<_TextPrompt> createState() => _TextPromptState();
+}
+
+class _TextPromptState extends State<_TextPrompt> {
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.initialValue,
+  );
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: Text(widget.title),
+    scrollable: true,
+    content: TextField(
+      controller: _controller,
+      autofocus: true,
+      textInputAction: TextInputAction.done,
+      decoration: InputDecoration(labelText: widget.label),
+      onSubmitted: (value) => Navigator.of(context).pop(value),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.of(context).pop(),
+        child: const Text('取消'),
+      ),
+      TextButton(
+        onPressed: () => Navigator.of(context).pop(_controller.text),
+        child: Text(widget.confirmLabel),
+      ),
+    ],
+  );
 }
 
 /// Monotonic query generation.

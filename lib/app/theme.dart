@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
 
 /// Static colours that are *not* part of the accent system: surfaces, text and
@@ -51,7 +52,10 @@ class AppDimens {
   static const double twoLineItemHeight = 72;
   static const double iconSize = 24;
   static const double iconSizeSmall = 20;
-  static const double radius = 4;
+  static const double radius = 6;
+  static const double buttonRadius = 10;
+  static const double primaryButtonRadius = 12;
+  static const double navigationRadius = 16;
   static const double gutter = 16;
   static const double compactGutter = 12;
   static const double minTouchTarget = 48;
@@ -239,6 +243,15 @@ class AppTheme {
 
     final ThemeData base2 = ThemeData(
       useMaterial3: false,
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: {
+          TargetPlatform.android: FadeUpwardsPageTransitionsBuilder(),
+          TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.windows: FadeUpwardsPageTransitionsBuilder(),
+          TargetPlatform.linux: FadeUpwardsPageTransitionsBuilder(),
+        },
+      ),
       brightness: brightness,
       primarySwatch: swatch,
       primaryColor: primary,
@@ -249,7 +262,7 @@ class AppTheme {
       dividerColor: divider,
       disabledColor: isDark ? const Color(0xFF616161) : const Color(0xFF9E9E9E),
       // InkSplash keeps the classic Material 1/2 "expanding circle" feedback.
-      splashFactory: InkSplash.splashFactory,
+      splashFactory: InkRipple.splashFactory,
       typography: typography,
       textTheme: textTheme,
       visualDensity: VisualDensity.standard,
@@ -279,7 +292,7 @@ class AppTheme {
     return base2.copyWith(
       appBarTheme: AppBarTheme(
         toolbarHeight: AppDimens.appBarHeight,
-        elevation: 4,
+        elevation: 1,
         centerTitle: false,
         backgroundColor: isDark
             ? Color.alphaBlend(primary.withValues(alpha: 0.16), surface)
@@ -300,7 +313,7 @@ class AppTheme {
         ),
       ),
       cardTheme: CardThemeData(
-        elevation: 2,
+        elevation: 0,
         margin: EdgeInsets.zero,
         color: surface,
         shape: const RoundedRectangleBorder(
@@ -323,7 +336,7 @@ class AppTheme {
         selectedItemColor: primary,
         unselectedItemColor: textSecondary,
         type: BottomNavigationBarType.fixed,
-        elevation: 8,
+        elevation: 3,
         selectedLabelStyle: const TextStyle(
           fontSize: 12,
           fontWeight: FontWeight.w500,
@@ -338,7 +351,7 @@ class AppTheme {
           backgroundColor: primary,
           foregroundColor: onPrimary,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppDimens.radius),
+            borderRadius: BorderRadius.circular(AppDimens.primaryButtonRadius),
           ),
           textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
         ),
@@ -349,7 +362,7 @@ class AppTheme {
           padding: const EdgeInsets.symmetric(horizontal: 16),
           foregroundColor: primary,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppDimens.radius),
+            borderRadius: BorderRadius.circular(AppDimens.buttonRadius),
           ),
           side: BorderSide(color: divider),
           textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
@@ -361,7 +374,7 @@ class AppTheme {
           padding: const EdgeInsets.symmetric(horizontal: 12),
           foregroundColor: primary,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppDimens.radius),
+            borderRadius: BorderRadius.circular(AppDimens.buttonRadius),
           ),
           textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
         ),
@@ -517,18 +530,9 @@ class AppTheme {
   static Color _lighten(Color base, double amount) =>
       _mix(base, Colors.white, amount);
 
-  /// A complementary accent for the Material 2 "secondary" role. Kept close to
-  /// the primary hue so the classic look survives, but distinguishable.
-  static Color _secondaryOf(Color accent, bool isDark) {
-    final HSLColor hsl = HSLColor.fromColor(accent);
-    final double hue = (hsl.hue + 28) % 360;
-    return HSLColor.fromAHSL(
-      1,
-      hue,
-      (hsl.saturation * 0.85).clamp(0.35, 0.9),
-      isDark ? 0.62 : 0.48,
-    ).toColor();
-  }
+  /// Interactive secondary controls share the user's chosen hue.
+  static Color _secondaryOf(Color accent, bool isDark) =>
+      isDark ? _lighten(accent, 0.22) : accent;
 }
 
 /// Spacing helpers so paddings stay consistent across screens.

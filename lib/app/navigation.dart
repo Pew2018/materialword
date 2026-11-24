@@ -68,8 +68,7 @@ ShellLayout layoutFor({
     if (width >= AppDimens.desktopBreakpoint) return ShellLayout.rail;
     // A narrow macOS window keeps a (compact) side rail instead of dropping to
     // a phone-style bottom bar: the pointer-driven workflow is unchanged.
-    if (width >= 620) return ShellLayout.compactRail;
-    return ShellLayout.bottomBar;
+    return ShellLayout.compactRail;
   }
   // Tablets in landscape get the rail; phones keep the classic bottom bar.
   if (width >= AppDimens.desktopBreakpoint) return ShellLayout.rail;
@@ -95,6 +94,10 @@ class _AppShellState extends ConsumerState<AppShell>
   final Set<int> _built = <int>{0};
   final FocusNode _searchFocus = FocusNode(debugLabel: 'dictionary-search');
   Timer? _dayTimer;
+  Timer? _dueTimer;
+  Timer? _duePlanTimer;
+  StreamSubscription<dynamic>? _databaseChanges;
+  int _dueGeneration = 0;
   bool _autoSyncStarted = false;
 
   @override
@@ -102,6 +105,27 @@ class _AppShellState extends ConsumerState<AppShell>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _scheduleDayBoundary();
+    _scheduleDueRefresh();
+    _databaseChanges = ref.read(databaseProvider).tableUpdates().listen((
+      updates,
+    ) {
+      if (!updates.any(
+        (u) => <String>{
+          'words',
+          'learning_states',
+          'word_books',
+          'word_book_entries',
+          'study_settings',
+        }.contains(u.table),
+      )) {
+        return;
+      }
+      _duePlanTimer?.cancel();
+      _duePlanTimer = Timer(const Duration(milliseconds: 250), () {
+        _refreshDailyData();
+        _scheduleDueRefresh();
+      });
+    });
     WidgetsBinding.instance.addPostFrameCallback(
       (_) => _maybeAutoSync(start: true),
     );
@@ -111,6 +135,10 @@ class _AppShellState extends ConsumerState<AppShell>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _dayTimer?.cancel();
+    _dueTimer?.cancel();
+    _duePlanTimer?.cancel();
+    _dueGeneration++;
+    _databaseChanges?.cancel();
     _searchFocus.dispose();
     super.dispose();
   }
@@ -119,6 +147,7 @@ class _AppShellState extends ConsumerState<AppShell>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _refreshDailyData();
+      _scheduleDueRefresh();
       _maybeAutoSync(start: false);
     }
   }
@@ -138,6 +167,27 @@ class _AppShellState extends ConsumerState<AppShell>
     );
   }
 
+  Future<void> _scheduleDueRefresh() async {
+    if (!mounted) return;
+    final generation = ++_dueGeneration;
+    _dueTimer?.cancel();
+    try {
+      final now = ref.read(clockProvider).now();
+      final next = await ref.read(studyRepositoryProvider).nextDueAfter(now);
+      if (!mounted || generation != _dueGeneration) return;
+      // An hourly ceiling also rechecks timezone/system clock changes.
+      final millis = next == null
+          ? 3600000
+          : next.difference(now).inMilliseconds + 100;
+      _dueTimer = Timer(Duration(milliseconds: millis.clamp(50, 3600000)), () {
+        _refreshDailyData();
+        _scheduleDueRefresh();
+      });
+    } catch (_) {
+      // Resume and subsequent database writes schedule a new attempt.
+    }
+  }
+
   void _refreshDailyData() {
     if (!mounted) return;
     ref.invalidate(todayProgressProvider);
@@ -146,11 +196,12 @@ class _AppShellState extends ConsumerState<AppShell>
   }
 
   Future<void> _maybeAutoSync({required bool start}) async {
+    if (!mounted) return;
     if (_autoSyncStarted && start) return;
     final Map<String, Object?>? config = await ref
         .read(settingsRepositoryProvider)
         .syncConfig();
-    if (config == null) return;
+    if (config == null || !mounted) return;
     final bool enabled = start
         ? config['autoOnStart'] == true
         : config['autoOnResume'] == true;
@@ -172,6 +223,7 @@ class _AppShellState extends ConsumerState<AppShell>
   }
 
   void _select(int index) {
+    FocusManager.instance.primaryFocus?.unfocus();
     setState(() {
       _index = index;
       _built.add(index);
@@ -277,21 +329,31 @@ class _AppShellState extends ConsumerState<AppShell>
       ),
       body: SafeArea(
         top: false,
-        child: hasRail
-            ? Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  _SideNavigation(
-                    index: _index,
-                    compact: layout == ShellLayout.compactRail,
-                    onSelect: _select,
-                    onManageWords: _openWordManagement,
-                  ),
-                  const VerticalDivider(width: 1),
-                  Expanded(child: body),
-                ],
-              )
-            : body,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(
+              width: hasRail
+                  ? (layout == ShellLayout.compactRail
+                        ? AppDimens.navRailCompactWidth
+                        : AppDimens.navRailWidth)
+                  : 0,
+              child: hasRail
+                  ? _SideNavigation(
+                      index: _index,
+                      compact: layout == ShellLayout.compactRail,
+                      onSelect: _select,
+                      onManageWords: _openWordManagement,
+                    )
+                  : null,
+            ),
+            SizedBox(
+              width: hasRail ? 1 : 0,
+              child: const VerticalDivider(width: 1),
+            ),
+            Expanded(child: body),
+          ],
+        ),
       ),
       bottomNavigationBar: hasRail
           ? null
@@ -309,8 +371,10 @@ class _AppShellState extends ConsumerState<AppShell>
   /// Mounts a first-level page only after its tab has been opened at least
   /// once. Keeps start-up cheap: five pages would otherwise fire five sets of
   /// database queries (and the dictionary provider) immediately.
-  Widget _lazy(int index, Widget page) =>
-      _built.contains(index) ? page : const SizedBox.shrink();
+  Widget _lazy(int index, Widget page) => ExcludeFocus(
+    excluding: index != _index,
+    child: _built.contains(index) ? page : const SizedBox.shrink(),
+  );
 }
 
 /// Classic Material 1/2 bottom navigation bar.
@@ -343,7 +407,7 @@ class ClassicBottomNavigationBar extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     return Material(
       color: theme.bottomNavigationBarTheme.backgroundColor ?? theme.cardColor,
-      elevation: 8,
+      elevation: 3,
       child: SafeArea(
         top: false,
         child: SizedBox(
@@ -397,10 +461,16 @@ class _BottomNavItem extends StatelessWidget {
       excludeSemantics: true,
       child: Material(
         type: MaterialType.transparency,
-        // Confines the ripple to this item's rectangle.
-        clipBehavior: Clip.hardEdge,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppDimens.navigationRadius),
+        ),
+        clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: onTap,
+          customBorder: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppDimens.navigationRadius),
+          ),
+          splashFactory: InkRipple.splashFactory,
           canRequestFocus: true,
           // Four distinct feedbacks: hover (pointer), focus (keyboard),
           // highlight (pressed) and the persistent selected state.
@@ -408,39 +478,44 @@ class _BottomNavItem extends StatelessWidget {
           focusColor: activeColor.withValues(alpha: 0.14),
           highlightColor: activeColor.withValues(alpha: 0.10),
           splashColor: activeColor.withValues(alpha: 0.16),
-          child: Tooltip(
-            message: destination.label,
-            waitDuration: const Duration(milliseconds: 700),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: <Widget>[
-                // Fixed 24dp icon box: the icon never grows or shrinks when
-                // the item becomes selected.
-                SizedBox(
-                  height: AppDimens.iconSize,
-                  width: AppDimens.iconSize,
-                  child: Icon(
-                    selected ? destination.activeIcon : destination.icon,
-                    size: AppDimens.iconSize,
-                    color: color,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                SizedBox(
-                  height: 16,
-                  child: Text(
-                    destination.label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 12,
-                      height: 1.1,
-                      color: color,
-                      fontWeight: selected ? FontWeight.w500 : FontWeight.w400,
+          child: TweenAnimationBuilder<Color?>(
+            tween: ColorTween(end: color),
+            duration: const Duration(milliseconds: 210),
+            curve: Curves.easeInOut,
+            builder: (context, animatedColor, _) => Tooltip(
+              message: destination.label,
+              waitDuration: const Duration(milliseconds: 700),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: <Widget>[
+                  // Fixed 24dp icon box: the icon never grows or shrinks when
+                  // the item becomes selected.
+                  SizedBox(
+                    height: AppDimens.iconSize,
+                    width: AppDimens.iconSize,
+                    child: Icon(
+                      selected ? destination.activeIcon : destination.icon,
+                      size: AppDimens.iconSize,
+                      color: animatedColor,
                     ),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 2),
+                  SizedBox(
+                    height: 16,
+                    child: Text(
+                      destination.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        height: 1.1,
+                        color: animatedColor,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -470,60 +545,62 @@ class _SideNavigation extends StatelessWidget {
       width: compact ? AppDimens.navRailCompactWidth : AppDimens.navRailWidth,
       child: Material(
         color: theme.cardColor,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            if (!compact)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
-                child: Row(
-                  children: <Widget>[
-                    Icon(Icons.menu_book, size: 22, color: active),
-                    AppSpacing.w8,
-                    Expanded(
-                      child: Text(
-                        'MaterialWord',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              if (!compact)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+                  child: Row(
+                    children: <Widget>[
+                      Icon(Icons.menu_book, size: 22, color: active),
+                      AppSpacing.w8,
+                      Expanded(
+                        child: Text(
+                          'MaterialWord',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
+                )
+              else
+                AppSpacing.h12,
+              const Divider(height: 1),
+              AppSpacing.h8,
+              for (int i = 0; i < appDestinations.length; i++)
+                _RailItem(
+                  key: ValueKey<String>('nav-${appDestinations[i].label}'),
+                  destination: appDestinations[i],
+                  selected: i == index,
+                  compact: compact,
+                  onTap: () => onSelect(i),
                 ),
-              )
-            else
-              AppSpacing.h12,
-            const Divider(height: 1),
-            AppSpacing.h8,
-            for (int i = 0; i < appDestinations.length; i++)
+              const Divider(height: 16, indent: 12, endIndent: 12),
               _RailItem(
-                key: ValueKey<String>('nav-${appDestinations[i].label}'),
-                destination: appDestinations[i],
-                selected: i == index,
+                key: const ValueKey<String>('nav-词汇'),
+                destination: const AppDestination(
+                  label: '词汇',
+                  icon: Icons.table_rows_outlined,
+                  activeIcon: Icons.table_rows,
+                ),
+                selected: false,
                 compact: compact,
-                onTap: () => onSelect(i),
+                onTap: onManageWords,
               ),
-            const Divider(height: 16, indent: 12, endIndent: 12),
-            _RailItem(
-              key: const ValueKey<String>('nav-词汇'),
-              destination: const AppDestination(
-                label: '词汇',
-                icon: Icons.table_rows_outlined,
-                activeIcon: Icons.table_rows,
-              ),
-              selected: false,
-              compact: compact,
-              onTap: onManageWords,
-            ),
-            const Spacer(),
-            if (!compact)
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text('离线可用 · 本地优先', style: theme.textTheme.bodySmall),
-              ),
-          ],
+
+              if (!compact)
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text('离线可用 · 本地优先', style: theme.textTheme.bodySmall),
+                ),
+            ],
+          ),
         ),
       ),
     );

@@ -1,7 +1,5 @@
-import 'dart:convert';
 import 'dart:io';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
@@ -10,6 +8,7 @@ import '../../app/providers.dart';
 import '../../app/theme.dart';
 import '../../core/time_utils.dart';
 import '../../services/backup_service.dart';
+import '../../services/backup_files.dart';
 import '../../shared/widgets/common.dart';
 import '../sync/sync_settings_page.dart';
 
@@ -60,27 +59,37 @@ class _BackupPageState extends ConsumerState<BackupPage> {
     try {
       final DateTime now = ref.read(clockProvider).now();
       final BackupService service = ref.read(backupServiceProvider);
-      final String json = await service.exportToJson(now: now);
       String message;
       if (chooseLocation) {
-        final Uri? target = await FilePicker.saveFile(
-          fileName: 'materialword-backup.json',
-          bytes: utf8.encode(json),
-          mimeType: 'application/json',
-          dialogTitle: '保存备份文件',
-        );
-        if (target == null) {
+        final bool saved = await BackupFiles(service).export(now: now);
+        if (!mounted) return;
+        if (!saved) {
           setState(() => _busy = false);
           return;
         }
-        message = '已导出到 ${target.toFilePath()}';
+        message = '备份已导出';
       } else {
         final Directory dir = Directory(await _appDirectory());
         final File file = await service.writeBackupFile(
           directory: dir,
           now: now,
         );
-        message = '已导出到 ${file.path}';
+        message = '恢复副本已保存';
+        final files = await dir
+            .list()
+            .where(
+              (f) =>
+                  f is File &&
+                  f.path.contains('materialword-backup-') &&
+                  f.path.endsWith('.json'),
+            )
+            .cast<File>()
+            .toList();
+        files.sort((a, b) => b.path.compareTo(a.path));
+        for (final old in files.skip(5)) {
+          await old.delete();
+        }
+        assert(file.existsSync());
       }
       await ref
           .read(databaseProvider)
@@ -105,22 +114,28 @@ class _BackupPageState extends ConsumerState<BackupPage> {
       _error = null;
       _status = null;
     });
-    final List<PlatformFile> files = await FilePicker.pickFiles(
-      dialogTitle: '选择备份文件',
-      type: FileType.custom,
-      allowedExtensions: <String>['json'],
-    );
-    if (files.isEmpty) return;
-    final String? path = files.first.path;
-    if (path == null) {
-      setState(() => _error = '无法读取该文件');
-      return;
-    }
+    if (_busy) return;
     setState(() => _busy = true);
     try {
-      final MergeReport report = await ref
-          .read(backupServiceProvider)
-          .importFromFile(path);
+      final service = ref.read(backupServiceProvider);
+      final data = await BackupFiles(service).pick();
+      if (data == null || !mounted) return;
+      final words = (data['words'] as List?)?.length ?? 0;
+      final books = (data['wordBooks'] as List?)?.length ?? 0;
+      final events = (data['reviewEvents'] as List?)?.length ?? 0;
+      final ok = await confirmDialog(
+        context,
+        title: '合并备份',
+        message:
+            '词条 $words 个，词书 $books 个，学习记录 $events 条。\n'
+            '备份时间：${data['exportedAt'] ?? '未记录'}\n将合并到本机，保留现有学习历史。',
+        confirmLabel: '合并',
+      );
+      if (!ok || !mounted) return;
+      final report = await service.mergeDataset(
+        data,
+        now: ref.read(clockProvider).now(),
+      );
       ref.invalidate(todayProgressProvider);
       ref.invalidate(bookSummariesProvider);
       ref.invalidate(statisticsProvider);
@@ -139,8 +154,10 @@ class _BackupPageState extends ConsumerState<BackupPage> {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _error = '导入失败：$e（本地数据未被修改）';
+        _error = '导入失败，请检查文件并重试（本地数据未被修改）';
       });
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -174,8 +191,8 @@ class _BackupPageState extends ConsumerState<BackupPage> {
               ),
               SettingsTile(
                 leading: const Icon(Icons.folder_outlined),
-                title: '导出到应用目录',
-                subtitle: '保存在应用文档目录，便于再同步或手动拷贝',
+                title: '保存恢复副本',
+                subtitle: '保留最近 5 份；需要取出备份时使用「导出到…」',
                 trailing: const Icon(Icons.chevron_right),
                 onTap: _busy ? null : () => _export(chooseLocation: false),
               ),
@@ -194,9 +211,9 @@ class _BackupPageState extends ConsumerState<BackupPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 Text(
-                  '备份是带版本号（schemaVersion 2）的 JSON 文件，包含词条、词书、'
+                  '备份包含词条、词书、'
                   '词书关联（含删除标记）、作答历史和学习目标。'
-                  '不包含 Token、密码、主题或设备 ID。',
+                  '不包含 Token 或密码，不会覆盖本机主题和设备身份。',
                   style: theme.textTheme.bodySmall,
                 ),
                 if (_lastBackup != null) ...<Widget>[
