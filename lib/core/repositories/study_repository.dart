@@ -37,6 +37,7 @@ class StudyRepository {
   /// that book"; treating it as a member would resurrect removed words.
   static const String _activeEntry =
       'EXISTS (SELECT 1 FROM word_book_entries e '
+      'JOIN word_books scope_book ON scope_book.id = e.word_book_id AND scope_book.deleted_at IS NULL '
       'WHERE e.word_book_id = ? AND e.word_id = w.id AND e.deleted_at IS NULL)';
 
   String _bookFilter({required bool active}) =>
@@ -137,8 +138,7 @@ SELECT $wordColumnsWithState
     switch (kind) {
       case SpecialReview.hard:
         filter = 'AND (ls.wrong_count + ls.hazy_count) > 0';
-        order =
-            'ORDER BY ls.wrong_count DESC, ls.hazy_count DESC, w.normalized';
+        order = 'ORDER BY ls.wrong_count DESC, ls.hazy_count DESC, w.normalized, w.id';
       case SpecialReview.recentMistakes:
         variables.add(
           Variable<int>(
@@ -150,10 +150,10 @@ SELECT $wordColumnsWithState
             'WHERE re.word_id = w.id AND re.result = 0 AND re.answered_at >= ?)';
         order =
             'ORDER BY (SELECT COUNT(*) FROM review_events re2 '
-            'WHERE re2.word_id = w.id AND re2.result = 0) DESC, w.normalized';
+            'WHERE re2.word_id = w.id AND re2.result = 0) DESC, w.normalized, w.id';
       case SpecialReview.inBook:
         filter = 'AND ls.stage != 0';
-        order = 'ORDER BY ls.next_review_at ASC, w.normalized';
+        order = 'ORDER BY ls.next_review_at ASC, w.normalized, w.id';
       case SpecialReview.none:
         return const <WordWithState>[];
     }
@@ -186,6 +186,22 @@ SELECT $wordColumnsWithState
         )
         .get();
     return _toWordWithState(rows);
+  }
+
+  Future<DateTime?> nextDueAfter(DateTime now) async {
+    final row = await db
+        .customSelect(
+          'SELECT MIN(ls.next_review_at) AS due '
+          'FROM learning_states ls JOIN words w ON w.id = ls.word_id '
+          'WHERE w.deleted_at IS NULL AND ls.stage != 0 AND ls.next_review_at > ?',
+          variables: [Variable<int>(now.millisecondsSinceEpoch)],
+          readsFrom: {db.words, db.learningStates},
+        )
+        .getSingle();
+    final millis = row.readNullable<int>('due');
+    return millis == null
+        ? null
+        : DateTime.fromMillisecondsSinceEpoch(millis, isUtc: true);
   }
 
   Future<int> dueCount({required DateTime now, String? bookId}) async {
@@ -355,11 +371,19 @@ SELECT COUNT(*) AS c
 
       final LearningSnapshot snapshot = _snapshotOf(state);
 
-      final ScheduleOutcome outcome = scheduler.schedule(
+      final ScheduleOutcome outcome = _scheduleEvent(
         current: snapshot,
         result: result,
         now: now,
         type: type,
+        mode: mode,
+        algorithmVersion: StudyScheduler.algorithmVersion,
+        previousNext: state?.nextReviewAt == null
+            ? null
+            : DateTime.fromMillisecondsSinceEpoch(
+                state!.nextReviewAt!,
+                isUtc: true,
+              ),
       );
 
       await db
@@ -380,6 +404,19 @@ SELECT COUNT(*) AS c
             ),
           );
 
+      if (ReviewEventMode.isManagement(mode)) {
+        await rebuildStateFromEvents(wordId);
+        return AnswerRecord(
+          eventId: eventId,
+          duplicate: false,
+          stage: mode == ReviewEventMode.manualMastered
+              ? StudyStage.review
+              : StudyStage.newWord,
+          nextReviewAt: now.add(const Duration(days: 30)),
+          intervalDays: 30,
+          repeatInSession: false,
+        );
+      }
       await _writeState(
         wordId: wordId,
         snapshot: _snapshotOfOutcome(outcome),
@@ -416,6 +453,23 @@ SELECT COUNT(*) AS c
       deviceId: deviceId,
       now: now,
       mode: ReviewEventMode.manualMastered,
+    );
+  }
+
+  Future<void> unmarkMastered({
+    required String wordId,
+    required String deviceId,
+    required DateTime now,
+    required String eventId,
+  }) async {
+    await recordAnswer(
+      wordId: wordId,
+      deviceId: deviceId,
+      now: now,
+      eventId: eventId,
+      result: AnswerResult.known,
+      type: ReviewType.review,
+      mode: ReviewEventMode.manualUnmastered,
     );
   }
 
@@ -471,7 +525,45 @@ SELECT COUNT(*) AS c
     DateTime? nextReviewAt;
     bool hasProgress = false;
 
+    final Set<String> undone = events
+        .where((e) => e.mode.startsWith(ReviewEventMode.undoPrefix))
+        .map((e) => e.mode.substring(ReviewEventMode.undoPrefix.length))
+        .toSet();
+    final revokedMastery = <String>{};
+    final pendingMastery = <String>{};
+    for (final event in events) {
+      if (undone.contains(event.id)) continue;
+      if (event.mode == ReviewEventMode.manualMastered) {
+        pendingMastery.add(event.id);
+      }
+      if (event.mode == ReviewEventMode.manualUnmastered) {
+        revokedMastery.addAll(pendingMastery);
+        pendingMastery.clear();
+      }
+    }
     for (final ReviewEvent event in events) {
+      if (undone.contains(event.id) ||
+          revokedMastery.contains(event.id) ||
+          event.mode == ReviewEventMode.manualUnmastered ||
+          event.mode.startsWith(ReviewEventMode.undoPrefix)) {
+        continue;
+      }
+      if (event.mode == ReviewEventMode.manualMastered) {
+        snapshot = LearningSnapshot(
+          stage: StudyStage.review,
+          correctCount: snapshot.correctCount,
+          hazyCount: snapshot.hazyCount,
+          wrongCount: snapshot.wrongCount,
+          streak: snapshot.streak,
+          intervalDays: 30,
+        );
+        nextReviewAt = DateTime.fromMillisecondsSinceEpoch(
+          event.answeredAt,
+          isUtc: true,
+        ).add(const Duration(days: 30));
+        hasProgress = true;
+        continue;
+      }
       if (ReviewEventMode.isReset(event.mode)) {
         snapshot = const LearningSnapshot.empty();
         lastStudiedAt = null;
@@ -479,11 +571,14 @@ SELECT COUNT(*) AS c
         hasProgress = false;
         continue;
       }
-      final ScheduleOutcome outcome = scheduler.schedule(
+      final ScheduleOutcome outcome = _scheduleEvent(
         current: snapshot,
         result: AnswerResult.fromCode(event.result),
         now: DateTime.fromMillisecondsSinceEpoch(event.answeredAt, isUtc: true),
         type: ReviewType.fromCode(event.type),
+        mode: event.mode,
+        algorithmVersion: event.algoVersion,
+        previousNext: nextReviewAt,
       );
       snapshot = _snapshotOfOutcome(outcome);
       lastStudiedAt = DateTime.fromMillisecondsSinceEpoch(
@@ -508,6 +603,56 @@ SELECT COUNT(*) AS c
       nextReviewAt: nextReviewAt,
       now: DateTime.now(),
     );
+  }
+
+  ScheduleOutcome _scheduleEvent({
+    required LearningSnapshot current,
+    required AnswerResult result,
+    required DateTime now,
+    required ReviewType type,
+    required String mode,
+    required int algorithmVersion,
+    DateTime? previousNext,
+  }) {
+    if (mode == ReviewEventMode.manualMastered) {
+      return ScheduleOutcome(
+        stage: StudyStage.review,
+        correctCount: current.correctCount,
+        hazyCount: current.hazyCount,
+        wrongCount: current.wrongCount,
+        streak: current.streak,
+        intervalDays: 30,
+        nextReviewAt: now.add(const Duration(days: 30)),
+        repeatInSession: false,
+      );
+    }
+    final outcome = scheduler.schedule(
+      current: current,
+      result: result,
+      now: now,
+      type: type,
+    );
+    final practice =
+        mode == ReviewEventMode.repeat ||
+        mode.startsWith('special-') ||
+        mode.startsWith('practice-') ||
+        mode == 'sprint';
+    if (algorithmVersion >= 2 &&
+        practice &&
+        result == AnswerResult.known &&
+        current.intervalDays > 0) {
+      return ScheduleOutcome(
+        stage: current.stage,
+        correctCount: outcome.correctCount,
+        hazyCount: outcome.hazyCount,
+        wrongCount: outcome.wrongCount,
+        streak: current.streak,
+        intervalDays: current.intervalDays,
+        nextReviewAt: previousNext ?? outcome.nextReviewAt,
+        repeatInSession: false,
+      );
+    }
+    return outcome;
   }
 
   Future<void> _writeState({
@@ -558,6 +703,44 @@ SELECT COUNT(*) AS c
 
   // ------------------------------------------------------------- progress
 
+  static String _realAnswer(String alias) =>
+      "$alias.mode NOT IN ('reset', 'manual-mastered', 'manual-unmastered') "
+      "AND $alias.mode NOT LIKE 'undo:%' "
+      "AND NOT EXISTS (SELECT 1 FROM review_events undo "
+      "WHERE undo.mode = 'undo:' || $alias.id AND undo.word_id = $alias.word_id)";
+
+  Future<void> undoAnswer({
+    required String eventId,
+    required String undoId,
+    required String deviceId,
+    required DateTime now,
+  }) async {
+    await db.transaction(() async {
+      final event = await (db.select(
+        db.reviewEvents,
+      )..where((t) => t.id.equals(eventId))).getSingleOrNull();
+      if (event == null || ReviewEventMode.isManagement(event.mode)) {
+        throw StateError('没有可撤销的作答');
+      }
+      await db
+          .into(db.reviewEvents)
+          .insert(
+            ReviewEventsCompanion.insert(
+              id: undoId,
+              wordId: event.wordId,
+              deviceId: deviceId,
+              answeredAt: now.millisecondsSinceEpoch,
+              localDay: _dayKey(now),
+              result: 0,
+              type: event.type,
+              mode: Value('undo:$eventId'),
+            ),
+            mode: InsertMode.insertOrIgnore,
+          );
+      await rebuildStateFromEvents(event.wordId);
+    });
+  }
+
   Future<int> todayCount({
     required DateTime now,
     required ReviewType type,
@@ -569,11 +752,11 @@ SELECT COUNT(DISTINCT re.word_id) AS c
   FROM review_events re
   JOIN words w ON w.id = re.word_id
  WHERE re.local_day = ? AND re.type = ? AND w.deleted_at IS NULL
-   AND re.mode != ?''',
+   AND ${_realAnswer('re')} AND re.mode = ?''',
           variables: <Variable<Object>>[
             Variable<String>(_dayKey(now)),
             Variable<String>(type.code),
-            const Variable<String>(ReviewEventMode.reset),
+            const Variable<String>(ReviewEventMode.normal),
           ],
           readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
             db.reviewEvents,
@@ -721,12 +904,12 @@ SELECT $wordColumnsWithState
     final QueryRow totals = await db
         .customSelect(
           '''
-SELECT COALESCE(SUM(ls.correct_count), 0) AS correct,
-       COALESCE(SUM(ls.hazy_count), 0)    AS hazy,
-       COALESCE(SUM(ls.wrong_count), 0)   AS wrong
+SELECT COALESCE(SUM(CASE WHEN re.result = 2 THEN 1 ELSE 0 END), 0) AS correct,
+       COALESCE(SUM(CASE WHEN re.result = 1 THEN 1 ELSE 0 END), 0) AS hazy,
+       COALESCE(SUM(CASE WHEN re.result = 0 THEN 1 ELSE 0 END), 0) AS wrong
   FROM words w
-  JOIN learning_states ls ON ls.word_id = w.id
- WHERE w.deleted_at IS NULL
+  JOIN review_events re ON re.word_id = w.id
+ WHERE w.deleted_at IS NULL AND ${_realAnswer('re')}
  $bookClause''',
           variables: variables,
           readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
@@ -807,14 +990,14 @@ SELECT COALESCE(SUM(ls.correct_count), 0) AS correct,
   }
 
   String _managedOrder(ManagedSort sort) => switch (sort) {
-    ManagedSort.addedDesc => 'ORDER BY w.created_at DESC, w.normalized',
-    ManagedSort.alpha => 'ORDER BY w.normalized',
+    ManagedSort.addedDesc => 'ORDER BY w.created_at DESC, w.normalized, w.id',
+    ManagedSort.alpha => 'ORDER BY w.normalized, w.id',
     ManagedSort.wrongDesc =>
       'ORDER BY (COALESCE(ls.wrong_count, 0) + COALESCE(ls.hazy_count, 0)) DESC, '
-          'w.normalized',
+          'w.normalized, w.id',
     ManagedSort.lastStudiedDesc =>
       'ORDER BY CASE WHEN ls.last_studied_at IS NULL THEN -1 '
-          'ELSE ls.last_studied_at END DESC, w.normalized',
+          'ELSE ls.last_studied_at END DESC, w.normalized, w.id',
   };
 
   /// One page of the word-management list (user words, not the dictionary).
@@ -883,6 +1066,29 @@ SELECT $wordColumnsWithState,
           );
         })
         .toList(growable: false);
+  }
+
+  /// IDs only: selecting a filtered library never loads definitions or event history.
+  Future<List<String>> managedWordIds({
+    String? bookId,
+    String search = '',
+    ManagedStageFilter stage = ManagedStageFilter.all,
+  }) async {
+    final variables = <Variable<Object>>[];
+    final where = _managedWhere(
+      search: search,
+      bookId: bookId,
+      stage: stage,
+      variables: variables,
+    );
+    final rows = await db
+        .customSelect(
+          'SELECT w.id FROM words w $_stateJoin WHERE $where ORDER BY w.id',
+          variables: variables,
+          readsFrom: {db.words, db.learningStates, db.wordBookEntries},
+        )
+        .get();
+    return rows.map((row) => row.read<String>('id')).toList(growable: false);
   }
 
   Future<int> managedCount({
@@ -971,17 +1177,19 @@ SELECT $wordColumnsWithState,
     required DateTime now,
     required String Function(String wordId) eventIdFor,
   }) async {
-    int count = 0;
-    for (final String wordId in wordIds.toList(growable: false)) {
-      await resetProgress(
-        wordId: wordId,
-        deviceId: deviceId,
-        now: now,
-        eventId: eventIdFor(wordId),
-      );
-      count++;
-    }
-    return count;
+    return db.transaction(() async {
+      int count = 0;
+      for (final String wordId in wordIds.toList(growable: false)) {
+        await resetProgress(
+          wordId: wordId,
+          deviceId: deviceId,
+          now: now,
+          eventId: eventIdFor(wordId),
+        );
+        count++;
+      }
+      return count;
+    });
   }
 
   String _dayKey(DateTime moment) {

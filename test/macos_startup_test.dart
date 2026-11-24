@@ -232,8 +232,17 @@ VALUES (1, 17, 100, 'book-1', 'mixed', 'dark');
         clock: env.clock,
       );
 
+      // This regression exercises an already confirmed target. New targets
+      // intentionally require a manual merge before automatic sync is allowed.
+      final target = coordinator.providerFromConfig(
+        await env.settings.syncConfig(),
+      )!;
+      await env.db.writeMeta(
+        'sync_target:${SyncCoordinator.targetKey(target)}',
+        '{}',
+      );
       final SyncReport? report = await coordinator.autoSync();
-      expect(report, isNotNull, reason: '配置了 provider 就应尝试同步');
+      expect(report, isNotNull, reason: '已确认的 provider 应尝试同步');
       expect(report!.ok, isFalse);
       expect(report.message, contains('钥匙串'), reason: '必须告诉用户是钥匙串的问题、需要重新输入');
 

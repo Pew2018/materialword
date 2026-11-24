@@ -1,11 +1,13 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:crypto/crypto.dart';
 import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 
 import '../core/database/app_database.dart';
+import '../core/models/enums.dart';
 import '../core/repositories/settings_repository.dart';
 import '../core/repositories/study_repository.dart';
 import '../core/repositories/word_repository.dart';
@@ -20,7 +22,7 @@ const Uuid _uuid = Uuid();
 /// * v2 — phase 2: stable `datasetId`, per-row `revision`/`version`/`updatedAt`,
 ///   entry tombstones (`deletedAt`), review-event `mode`, shared/device
 ///   settings split, and a stable `contentHash` used to skip no-op uploads.
-const int backupSchemaVersion = 2;
+const int backupSchemaVersion = 3;
 const String backupKind = 'materialword-backup';
 
 /// Summary of what an import/merge actually changed.
@@ -125,7 +127,7 @@ class BackupService {
   Future<Map<String, Object?>> buildDataset({
     required DateTime now,
     bool includeEvents = true,
-  }) async {
+  }) => db.transaction(() async {
     final String deviceId = await settings.deviceId();
     final String datasetId = await settings.datasetId();
     final List<Word> wordRows =
@@ -174,18 +176,17 @@ class BackupService {
         'dailyNewTarget': current.dailyNewTarget,
         'dailyReviewLimit': current.dailyReviewLimit,
         'studyMode': current.studyMode,
+        'version': await settings.sharedVersion(),
       },
     };
-  }
+  });
 
   Future<String> exportToJson({
     required DateTime now,
     bool pretty = true,
   }) async {
     final Map<String, Object?> dataset = await buildDataset(now: now);
-    return pretty
-        ? const JsonEncoder.withIndent('  ').convert(dataset)
-        : jsonEncode(dataset);
+    return encodeDatasetJson(dataset, pretty: pretty);
   }
 
   Future<File> writeBackupFile({
@@ -207,7 +208,20 @@ class BackupService {
       throw const BackupException('备份文件不存在');
     }
     final String raw = await file.readAsString();
-    return decodeDataset(raw);
+    return decodeDatasetAsync(raw);
+  }
+
+  Future<Map<String, Object?>> decodeDatasetAsync(String raw) async {
+    final Object? decoded;
+    try {
+      decoded = await decodeDatasetJson(raw);
+    } on FormatException {
+      throw const BackupException('不是合法的 JSON 文件');
+    }
+    if (decoded is! Map<String, dynamic>) {
+      throw const BackupException('备份文件根节点必须是对象');
+    }
+    return validateDataset(decoded);
   }
 
   /// Validates structure and protocol version. Used by every entry point
@@ -249,6 +263,34 @@ class BackupService {
         throw BackupException('字段 $field 必须是数组');
       }
     }
+    if (version < 1) throw const BackupException('不支持的备份版本');
+    for (final event in (dataset['reviewEvents'] as List?) ?? const []) {
+      if (event is! Map) throw const BackupException('学习记录结构无效');
+      final algorithm = event['algoVersion'];
+      if (algorithm is int && algorithm > StudyScheduler.algorithmVersion) {
+        throw const BackupException('学习算法版本过新，请升级应用');
+      }
+      final mode = event['mode'] ?? 'normal';
+      if (mode is! String ||
+          !(<String>{
+                'normal',
+                'special-hard',
+                'special-mistakes',
+                'special-book',
+                'manual-mastered',
+                'manual-unmastered',
+                'reset',
+                'repeat',
+                'sprint',
+                'practice-spelling',
+                'practice-dictation',
+                'practice-choice',
+                'practice-cloze',
+              }.contains(mode) ||
+              (mode.startsWith('undo:') && mode.length > 5))) {
+        throw const BackupException('学习记录类型不受支持，请升级应用');
+      }
+    }
     return dataset;
   }
 
@@ -256,14 +298,62 @@ class BackupService {
   /// `deviceId`, `appVersion`) is excluded, so two exports of the same data
   /// produce the same hash and a no-op sync does not upload anything.
   static String contentHashOf(Map<String, Object?> dataset) {
-    final Map<String, Object?> canonical = <String, Object?>{
+    final wordKeys = <String, String>{};
+    final bookKeys = <String, String>{};
+    List<Map<String, Object?>> rows(String field) =>
+        ((dataset[field] as List?) ?? [])
+            .map((e) => Map<String, Object?>.from(e as Map))
+            .toList();
+    final words = rows('words');
+    final books = rows('wordBooks');
+    for (final w in words) {
+      wordKeys[w['id'] as String] = w['normalized'] as String;
+    }
+    for (final b in books) {
+      bookKeys[b['id'] as String] = b['name'] as String;
+    }
+    for (final w in words) {
+      w.remove('id');
+      w.remove('createdAt');
+    }
+    for (final b in books) {
+      b.remove('id');
+      b.remove('createdAt');
+    }
+    final entries = rows('entries');
+    final events = rows('reviewEvents');
+    for (final e in [...entries, ...events]) {
+      e['wordId'] = wordKeys[e['wordId']] ?? e['wordId'];
+      if (e.containsKey('wordBookId')) {
+        e['wordBookId'] = bookKeys[e['wordBookId']] ?? e['wordBookId'];
+      }
+    }
+    for (final e in entries) {
+      e.remove('addedAt');
+    }
+    Object? canonicalize(Object? value) {
+      if (value is Map) {
+        final keys = value.keys.cast<String>().toList()..sort();
+        return <String, Object?>{
+          for (final k in keys) k: canonicalize(value[k]),
+        };
+      }
+      if (value is List) {
+        final result = value.map(canonicalize).toList();
+        result.sort((a, b) => jsonEncode(a).compareTo(jsonEncode(b)));
+        return result;
+      }
+      return value;
+    }
+
+    final canonical = canonicalize(<String, Object?>{
       'schemaVersion': dataset['schemaVersion'],
-      'words': dataset['words'] ?? const <Object?>[],
-      'wordBooks': dataset['wordBooks'] ?? const <Object?>[],
-      'entries': dataset['entries'] ?? const <Object?>[],
-      'reviewEvents': dataset['reviewEvents'] ?? const <Object?>[],
-      'settings': dataset['settings'] ?? const <Object?>{},
-    };
+      'words': words,
+      'wordBooks': books,
+      'entries': entries,
+      'reviewEvents': events,
+      'settings': dataset['settings'] ?? const <String, Object?>{},
+    });
     return 'sha256:${sha256.convert(utf8.encode(jsonEncode(canonical)))}';
   }
 
@@ -304,6 +394,8 @@ class BackupService {
     final Set<String> touchedWords = <String>{};
 
     await db.transaction(() async {
+      final bool originallyEmpty =
+          await _countWords() == 0 && await _countEvents() == 0;
       // ------------------------------------------------------------- words
       // remote id → canonical local id. This is the fix for the phase-1 bug
       // where entries/events kept pointing at the remote UUID and were dropped.
@@ -398,6 +490,18 @@ class BackupService {
                   .getSingleOrNull();
           if (sameName != null) {
             bookIdMap[incoming.id] = sameName.id;
+            if (_versionOf(incoming.revision, incoming.updatedAt) >
+                _versionOf(sameName.revision, sameName.updatedAt)) {
+              await db
+                  .update(db.wordBooks)
+                  .replace(
+                    incoming.copyWith(
+                      id: sameName.id,
+                      createdAt: sameName.createdAt,
+                    ),
+                  );
+              updatedBooks++;
+            }
             continue;
           }
         }
@@ -447,8 +551,13 @@ class BackupService {
           }
           continue;
         }
-        if (_versionOf(incoming.version, incoming.updatedAt) <=
-            _versionOf(local.version, local.updatedAt)) {
+        final order = _versionOf(
+          incoming.version,
+          incoming.updatedAt,
+        ).compareTo(_versionOf(local.version, local.updatedAt));
+        if (order < 0 ||
+            (order == 0 &&
+                (incoming.deletedAt == null || local.deletedAt != null))) {
           continue;
         }
         await db
@@ -504,15 +613,28 @@ class BackupService {
         touchedWords.add(wordId);
       }
 
-      // ---------------------------------------------------------- settings
-      // Shared goals are only adopted when this device has no learning data
-      // yet; otherwise the local (possibly deliberate) targets win.
+      // Shared settings use a Lamport counter plus a stable source-device tie break.
       final Object? sharedSettings = valid['settings'];
       if (sharedSettings is Map<String, dynamic>) {
-        final int localWords = await _countWords();
-        final int localEvents = await _countEvents();
-        if (localWords == 0 && localEvents == 0) {
-          final StudySettingsRow current = await settings.load();
+        final rawVersion = sharedSettings['version'];
+        final Map<String, Object?>? incomingVersion = rawVersion is Map
+            ? Map<String, Object?>.from(rawVersion)
+            : null;
+        if (incomingVersion != null &&
+            (incomingVersion['counter'] is! int ||
+                (incomingVersion['counter'] as int) < 0 ||
+                incomingVersion['deviceId'] is! String)) {
+          throw const BackupException('共享设置版本无效');
+        }
+        final localVersion = await settings.sharedVersion();
+        if ((incomingVersion != null &&
+                SettingsRepository.compareVersions(
+                      incomingVersion,
+                      localVersion,
+                    ) >
+                    0) ||
+            (originallyEmpty && (localVersion['counter'] as int) == 0)) {
+          final current = await settings.load();
           await settings.save(
             dailyNewTarget: _positiveInt(
               sharedSettings['dailyNewTarget'],
@@ -522,6 +644,12 @@ class BackupService {
               sharedSettings['dailyReviewLimit'],
               current.dailyReviewLimit,
             ),
+            studyMode: StudyMode.fromCode(
+              sharedSettings['studyMode'] as String?,
+            ),
+            importedVersion:
+                incomingVersion ??
+                <String, Object?>{'counter': 0, 'deviceId': ''},
           );
         }
       }
@@ -617,11 +745,21 @@ class BackupService {
           deletion: remoteVersion >= localVersion,
         );
       }
-      return (apply: false, conflict: false, deletion: false);
+      return (
+        apply: remoteVersion > localVersion,
+        conflict: false,
+        deletion: false,
+      );
     }
 
     if (_sameWordContent(local, incoming)) {
-      return (apply: false, conflict: false, deletion: false);
+      return (
+        apply:
+            _versionOf(incoming.revision, incoming.updatedAt) >
+            _versionOf(local.revision, local.updatedAt),
+        conflict: false,
+        deletion: false,
+      );
     }
 
     final _Version localVersion = _versionOf(local.revision, local.updatedAt);
@@ -630,10 +768,19 @@ class BackupService {
       incoming.updatedAt,
     );
     final bool bothEdited = local.customized && incoming.customized;
-    if (remoteVersion > localVersion) {
+    if (remoteVersion > localVersion ||
+        (remoteVersion.compareTo(localVersion) == 0 &&
+            _wordTieKey(incoming).compareTo(_wordTieKey(local)) > 0)) {
       return (apply: true, conflict: bothEdited, deletion: false);
     }
     return (apply: false, conflict: bothEdited, deletion: false);
+  }
+
+  String _wordTieKey(Word word) {
+    final json = _wordToJson(word)
+      ..remove('id')
+      ..remove('createdAt');
+    return jsonEncode(json);
   }
 
   bool _sameWordContent(Word a, Word b) =>
@@ -890,3 +1037,16 @@ class _Version implements Comparable<_Version> {
   bool operator <(_Version other) => compareTo(other) < 0;
   bool operator <=(_Version other) => compareTo(other) <= 0;
 }
+
+/// Large JSON work runs away from the UI isolate. Only the snapshot travels.
+Future<String> encodeDatasetJson(
+  Map<String, Object?> dataset, {
+  bool pretty = false,
+}) => Isolate.run(
+  () => pretty
+      ? const JsonEncoder.withIndent('  ').convert(dataset)
+      : jsonEncode(dataset),
+);
+
+Future<Object?> decodeDatasetJson(String raw) =>
+    Isolate.run(() => jsonDecode(raw));

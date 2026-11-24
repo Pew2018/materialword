@@ -220,7 +220,8 @@ apple,"n. 苹果\nn. 苹果树"''',
       var state = await env.words.stateFor(row.word.id);
       expect(state, isNotNull);
       expect(state!.stage, isNot(0));
-      expect(state.correctCount, 1);
+      expect(state.correctCount, 0, reason: '人工管理不伪造正确作答');
+      expect(state.intervalDays, 30);
 
       await env.study.resetProgress(
         wordId: row.word.id,

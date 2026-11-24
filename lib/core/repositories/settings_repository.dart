@@ -21,6 +21,8 @@ class SettingsRepository {
 
   final AppDatabase db;
 
+  static const String sharedVersionKey = 'shared_settings_version';
+
   static const String deviceIdKey = 'device_id';
   static const String datasetIdKey = 'dataset_id';
   static const String seededKey = 'sample_seeded';
@@ -36,28 +38,20 @@ class SettingsRepository {
     if (row != null) return row;
     await db
         .into(db.studySettings)
-        .insertOnConflictUpdate(
+        .insert(
           StudySettingsCompanion.insert(id: const Value<int>(1)),
+          mode: InsertMode.insertOrIgnore,
         );
     return (db.select(
       db.studySettings,
     )..where((t) => t.id.equals(1))).getSingle();
   }
 
-  Stream<StudySettingsRow> watch() {
-    return (db.select(db.studySettings)..where((t) => t.id.equals(1)))
-        .watchSingleOrNull()
-        .asyncMap((StudySettingsRow? row) async {
-          if (row != null) return row;
-          await db
-              .into(db.studySettings)
-              .insertOnConflictUpdate(
-                StudySettingsCompanion.insert(id: const Value<int>(1)),
-              );
-          return (db.select(
-            db.studySettings,
-          )..where((t) => t.id.equals(1))).getSingle();
-        });
+  Stream<StudySettingsRow> watch() async* {
+    await load();
+    yield* (db.select(
+      db.studySettings,
+    )..where((t) => t.id.equals(1))).watchSingle();
   }
 
   /// Saves only the fields that are passed in. Returns once the row is written.
@@ -72,10 +66,15 @@ class SettingsRepository {
     String? ttsLocale,
     int? ttsRate,
     bool? ttsAutoSpeak,
-  }) async {
+    Map<String, Object?>? importedVersion,
+  }) => db.transaction(() async {
     // Make sure the row exists, but never rewrite its contents here.
-    await load();
-
+    final before = await load();
+    final bool sharedChanged =
+        (dailyNewTarget != null && dailyNewTarget != before.dailyNewTarget) ||
+        (dailyReviewLimit != null &&
+            dailyReviewLimit != before.dailyReviewLimit) ||
+        (studyMode != null && studyMode.code != before.studyMode);
     final StudySettingsCompanion patch = StudySettingsCompanion(
       dailyNewTarget: dailyNewTarget == null
           ? const Value<int>.absent()
@@ -110,6 +109,31 @@ class SettingsRepository {
     await (db.update(
       db.studySettings,
     )..where((t) => t.id.equals(1))).write(patch);
+    if (importedVersion != null) {
+      await db.writeMeta(sharedVersionKey, jsonEncode(importedVersion));
+    } else if (sharedChanged) {
+      final version = await sharedVersion();
+      await db.writeMeta(
+        sharedVersionKey,
+        jsonEncode(<String, Object?>{
+          'counter': (version['counter'] as int) + 1,
+          'deviceId': await deviceId(),
+        }),
+      );
+    }
+  });
+
+  Future<Map<String, Object?>> sharedVersion() async {
+    final raw = await db.readMeta(sharedVersionKey);
+    if (raw == null) return <String, Object?>{'counter': 0, 'deviceId': ''};
+    return Map<String, Object?>.from(jsonDecode(raw) as Map);
+  }
+
+  static int compareVersions(Map<String, Object?> a, Map<String, Object?> b) {
+    final counter = (a['counter'] as int).compareTo(b['counter'] as int);
+    return counter != 0
+        ? counter
+        : (a['deviceId'] as String).compareTo(b['deviceId'] as String);
   }
 
   /// A stable per-install identifier used to attribute review events.

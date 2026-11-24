@@ -262,7 +262,7 @@ void main() {
           final String body = isFile && !noEtag && etag != null
               ? '<?xml version="1.0"?><d:multistatus xmlns:d="DAV:"><d:response>'
                     '<d:propstat><d:prop><d:getetag>"$etag"</d:getetag>'
-                    '</d:prop></d:propstat></d:response></d:multistatus>'
+                    '</d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>'
               : '<?xml version="1.0"?><d:multistatus xmlns:d="DAV:"/>';
           return http.Response(body, 207);
         }
@@ -278,7 +278,7 @@ void main() {
         if (method == 'PUT') {
           final String? ifMatch = request.headers['if-match'];
           final String? ifNoneMatch = request.headers['if-none-match'];
-          if (ifMatch != null && ifMatch != etag) {
+          if (ifMatch != null && ifMatch != '"$etag"') {
             return http.Response('precondition failed', 412);
           }
           if (ifNoneMatch == '*' && etag != null) {
@@ -325,8 +325,8 @@ void main() {
     test('下载返回 ETag，上传使用 If-Match', () async {
       final p = provider(buildClient());
       final payload = await p.download();
-      expect(payload!.revision, 'abc123');
-      final result = await p.upload(dataset(), ifRevision: 'abc123');
+      expect(payload!.revision, '"abc123"');
+      final result = await p.upload(dataset(), ifRevision: '"abc123"');
       expect(result.ok, isTrue);
       expect(result.revision, isNotNull);
     });
@@ -334,7 +334,7 @@ void main() {
     test('过期 ETag 触发 412 冲突', () async {
       final p = provider(buildClient());
       await expectLater(
-        p.upload(dataset(), ifRevision: 'stale-etag'),
+        p.upload(dataset(), ifRevision: '"stale-etag"'),
         throwsA(isA<SyncConflictException>()),
       );
     });

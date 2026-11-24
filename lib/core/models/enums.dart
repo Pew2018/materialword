@@ -154,6 +154,15 @@ class ReviewEventMode {
   /// Recorded when the user resets the word's progress. Replay treats it as
   /// "forget everything before this point".
   static const String reset = 'reset';
+  static const String manualUnmastered = 'manual-unmastered';
+  static const String repeat = 'repeat';
+  static const String undoPrefix = 'undo:';
+
+  static bool isManagement(String mode) =>
+      mode == reset ||
+      mode == manualMastered ||
+      mode == manualUnmastered ||
+      mode.startsWith(undoPrefix);
 
   static bool isReset(String? value) => value == reset;
 

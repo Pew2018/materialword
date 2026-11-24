@@ -92,7 +92,22 @@ class WordRepository {
     String query = '',
     int limit = listLimit,
   }) {
-    return watchWords(bookId: bookId, query: query, limit: limit).first;
+    final needle = '%${query.trim().toLowerCase()}%';
+    final joined = _joinedWords(bookId);
+    if (query.trim().isNotEmpty) {
+      joined.where(
+        db.words.normalized.like(needle) |
+            db.words.translation.like(needle) |
+            db.words.definition.like(needle) |
+            db.words.note.like(needle),
+      );
+    }
+    joined.orderBy([
+      OrderingTerm(expression: db.words.normalized),
+      OrderingTerm(expression: db.words.id),
+    ]);
+    joined.limit(limit);
+    return joined.get().then(_mapRows);
   }
 
   Future<int> countWords({String? bookId}) async {

@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:crypto/crypto.dart';
+
 import '../../core/database/app_database.dart';
 import '../../core/repositories/settings_repository.dart';
 import '../../core/repositories/study_repository.dart';
@@ -93,6 +95,7 @@ class SyncCoordinator {
   static const Duration autoSyncFailureBackoff = Duration(minutes: 5);
 
   bool _running = false;
+  String? _activeTarget;
   DateTime? _lastAutoAttempt;
   bool _lastAutoFailed = false;
 
@@ -132,6 +135,7 @@ class SyncCoordinator {
       throw const SyncException('该同步方式尚未启用');
     }
     _running = true;
+    _activeTarget = targetKey(provider);
     final DateTime startedAt = clock.now();
     final List<String> notes = <String>[];
     try {
@@ -147,7 +151,7 @@ class SyncCoordinator {
           ),
         );
         if (!test.supportsConditionalWrites) {
-          notes.add('服务器未提供 ETag：可能无法检测并发修改，建议只在单个设备上自动同步');
+          notes.add('该目标仅适合手动备份，不保证自动双向同步');
         }
       }
 
@@ -161,6 +165,11 @@ class SyncCoordinator {
           onProgress?.call(SyncStage.downloading, '读取远程数据');
           final SyncPayload? remote = await provider.download();
 
+          if (provider is WebDavSyncProvider &&
+              remote != null &&
+              remote.revision == null) {
+            throw const SyncException('WebDAV 未提供强 ETag，无法安全同步。请使用手动备份');
+          }
           final Map<String, Object?> localBefore = await backup.buildDataset(
             now: clock.now(),
           );
@@ -282,7 +291,10 @@ class SyncCoordinator {
   Future<SyncReport?> autoSync() async {
     final Map<String, Object?>? config = await settings.syncConfig();
     final SyncProvider? provider = providerFromConfig(config);
-    if (provider == null) return null;
+    if (provider == null || !provider.supportsConditionalWrites || _running) {
+      return null;
+    }
+    if (!await hasSyncedTarget(provider)) return null;
     final DateTime now = clock.now();
     final DateTime? last = _lastAutoAttempt;
     final Duration interval = _lastAutoFailed
@@ -301,18 +313,12 @@ class SyncCoordinator {
   }
 
   Future<void> _verifyUpload(SyncProvider provider, String expectedHash) async {
-    try {
-      final SyncPayload? after = await provider.download();
-      if (after == null) {
-        throw const SyncException('上传后无法读回远程数据');
-      }
-      final String actual = BackupService.contentHashOf(after.dataset);
-      if (actual != expectedHash) {
-        throw const SyncException('上传校验失败：远程内容与本地快照不一致');
-      }
-    } on SyncConflictException {
-      // Reading right after a write can race with another device; the next run
-      // will merge it. Not a failure of this run.
+    final after = await provider.download();
+    if (after == null) throw const SyncException('上传后无法读回远程数据');
+    backup.validateDataset(after.dataset);
+    final actual = BackupService.contentHashOf(after.dataset);
+    if (actual != expectedHash) {
+      throw const SyncConflictException('上传后远程内容再次变化，重新读取并合并');
     }
   }
 
@@ -329,7 +335,42 @@ class SyncCoordinator {
       await db.writeMeta(lastRemoteRevisionKey, revision);
     }
     await db.deleteMeta(SettingsRepository.pendingRebuildKey);
+    final target = _activeTarget;
+    if (target != null) {
+      await db.writeMeta(
+        'sync_target:$target',
+        jsonEncode({
+          'at': now.toUtc().toIso8601String(),
+          'hash': hash,
+          'revision': revision,
+        }),
+      );
+    }
   }
+
+  static String targetKey(SyncProvider provider) {
+    final String identity = switch (provider) {
+      GitHubSyncProvider p => jsonEncode([
+        'github',
+        p.owner.toLowerCase(),
+        p.repo.toLowerCase(),
+        p.branch,
+        p.path,
+      ]),
+      WebDavSyncProvider p => jsonEncode([
+        'webdav',
+        p.baseUrl.trim().replaceAll(RegExp(r'/+$'), ''),
+        p.remoteDir,
+        p.fileName,
+      ]),
+      LocalFileSyncProvider p => jsonEncode(['local-file', p.filePath]),
+      _ => provider.id,
+    };
+    return sha256.convert(utf8.encode(identity)).toString();
+  }
+
+  Future<bool> hasSyncedTarget(SyncProvider provider) async =>
+      await db.readMeta('sync_target:${targetKey(provider)}') != null;
 
   Future<void> _recordFailure(DateTime now) async {
     await settings.setLastSyncResult('同步失败');
@@ -375,7 +416,13 @@ class SyncCoordinator {
   /// Local changes that have not been pushed yet (best-effort indicator for the
   /// sync page). Compares the current content hash with the last synced hash.
   Future<bool> hasLocalChanges() async {
-    final String? last = await db.readMeta(lastLocalHashKey);
+    final provider = providerFromConfig(await settings.syncConfig());
+    final raw = provider == null
+        ? null
+        : await db.readMeta('sync_target:${targetKey(provider)}');
+    final String? last = raw == null
+        ? null
+        : (jsonDecode(raw) as Map)['hash'] as String?;
     if (last == null) return true;
     final Map<String, Object?> dataset = await backup.buildDataset(
       now: clock.now(),

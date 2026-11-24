@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../backup_service.dart' show decodeDatasetJson;
 import 'credential_store.dart';
 import 'sync_provider.dart';
 
@@ -55,7 +56,7 @@ class GitHubSyncProvider implements SyncProvider {
 
   /// Contents API is documented for files up to 100 MB, but anything above a
   /// few MB is a bad idea for a JSON document that is rewritten every sync.
-  static const int maxPayloadBytes = 4 * 1024 * 1024;
+  static const int maxPayloadBytes = 90 * 1024 * 1024;
 
   static Uri get apiRoot => Uri.parse('https://api.github.com');
 
@@ -79,9 +80,23 @@ class GitHubSyncProvider implements SyncProvider {
       '通过 GitHub Contents API 同步到独立的私有数据仓库（Fine-grained PAT，仅存系统安全存储）。';
 
   bool get isConfigured =>
-      owner.trim().isNotEmpty &&
-      repo.trim().isNotEmpty &&
-      path.trim().isNotEmpty;
+      RegExp(r'^[A-Za-z0-9][A-Za-z0-9-]*$').hasMatch(owner) &&
+      RegExp(r'^[A-Za-z0-9_.-]+$').hasMatch(repo) &&
+      repo != '.' &&
+      repo != '..' &&
+      branch.trim().isNotEmpty &&
+      !RegExp(r'[\r\n]').hasMatch(branch) &&
+      path.trim().isNotEmpty &&
+      !path.startsWith('/') &&
+      !path.contains('\\') &&
+      !path
+          .split('/')
+          .any(
+            (segment) => segment.isEmpty || segment == '.' || segment == '..',
+          ) &&
+      !RegExp(r'[\r\n]').hasMatch(path) &&
+      !(owner.toLowerCase() == 'pew2018' &&
+          repo.toLowerCase() == 'materialword');
 
   http.Client get _http => _client ?? http.Client();
 
@@ -278,14 +293,47 @@ class GitHubSyncProvider implements SyncProvider {
     final Map<String, dynamic> node =
         jsonDecode(response.body) as Map<String, dynamic>;
     final String? sha = node['sha'] as String?;
-    final String? encoded = node['content'] as String?;
-    if (encoded == null) {
-      throw const SyncDataException('GitHub 返回的文件内容为空或不是文件');
+    final int? size = node['size'] as int?;
+    if (size != null && size > maxPayloadBytes) {
+      throw const SyncDataException('远程备份超过 90 MB，请改用 WebDAV 或手动备份');
     }
-    final List<int> bytes = base64Decode(encoded.replaceAll('\n', ''));
+    final String? encoded = node['content'] as String?;
+    final List<int> bytes;
+    if (node['encoding'] == 'none' ||
+        encoded == null ||
+        (encoded.isEmpty && (size ?? 0) > 0)) {
+      if (sha == null || sha.isEmpty) {
+        throw const SyncDataException('GitHub 未提供文件 SHA');
+      }
+      final rawUri = Uri.parse(
+        'https://api.github.com/repos/$owner/$repo/git/blobs/${Uri.encodeComponent(sha)}',
+      );
+      final request = http.Request('GET', rawUri)
+        ..followRedirects = false
+        ..headers.addAll({
+          ..._headers(token),
+          'Accept': 'application/vnd.github.raw+json',
+        });
+      final raw = await _guard(
+        () async =>
+            http.Response.fromStream(await _http.send(request))
+                .timeout(const Duration(seconds: 60)),
+      );
+      if (raw.statusCode != 200) _raise(raw, '读取大文件');
+      bytes = raw.bodyBytes;
+    } else {
+      try {
+        bytes = base64Decode(encoded.replaceAll('\n', ''));
+      } on FormatException {
+        throw const SyncDataException('GitHub 返回了无效的 Base64 内容');
+      }
+    }
+    if (bytes.length > maxPayloadBytes) {
+      throw const SyncDataException('远程备份超过 90 MB，请改用 WebDAV 或手动备份');
+    }
     Object? decoded;
     try {
-      decoded = jsonDecode(utf8.decode(bytes));
+      decoded = await decodeDatasetJson(utf8.decode(bytes));
     } on FormatException {
       throw const SyncDataException('远程数据文件不是合法 JSON');
     }
@@ -315,7 +363,7 @@ class GitHubSyncProvider implements SyncProvider {
     if (bytes.length > maxPayloadBytes) {
       throw SyncDataException(
         '数据集过大（${(bytes.length / 1024 / 1024).toStringAsFixed(1)} MB），'
-        'GitHub Contents API 单文件建议不超过 4 MB。请减少学习记录或改用 WebDAV。',
+        '本应用 GitHub 备份上限为 90 MB。请使用 WebDAV 或手动备份，保留学习记录。',
       );
     }
 

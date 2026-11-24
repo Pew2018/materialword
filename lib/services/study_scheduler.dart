@@ -69,7 +69,7 @@ class StudyScheduler {
 
   /// Stored with every ReviewEvent so that history stays interpretable after
   /// the algorithm changes.
-  static const int algorithmVersion = 1;
+  static const int algorithmVersion = 2;
 
   static const List<int> ladderDays = <int>[1, 3, 7, 14, 30];
 

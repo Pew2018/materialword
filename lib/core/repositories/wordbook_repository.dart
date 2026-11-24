@@ -154,17 +154,22 @@ SELECT b.id, b.name, b.description, b.source_type, b.source_url,
 
   /// Soft delete keeps the row (and its sync tombstone) while hiding the book.
   Future<void> softDelete(String id, {required DateTime now}) async {
-    final WordBook? book = await byId(id);
-    if (book == null) return;
-    await db
-        .update(db.wordBooks)
-        .replace(
-          book.copyWith(
-            deletedAt: Value<int?>(now.millisecondsSinceEpoch),
-            updatedAt: now.millisecondsSinceEpoch,
-            revision: book.revision + 1,
-          ),
-        );
+    await db.transaction(() async {
+      final WordBook? book = await byId(id);
+      if (book == null) return;
+      await db
+          .update(db.wordBooks)
+          .replace(
+            book.copyWith(
+              deletedAt: Value<int?>(now.millisecondsSinceEpoch),
+              updatedAt: now.millisecondsSinceEpoch,
+              revision: book.revision + 1,
+            ),
+          );
+      await (db.update(db.studySettings)
+            ..where((t) => t.currentWordBookId.equals(id)))
+          .write(const StudySettingsCompanion(currentWordBookId: Value(null)));
+    });
   }
 
   /// Adds words to a book. A previously removed word is *revived* (version + 1)

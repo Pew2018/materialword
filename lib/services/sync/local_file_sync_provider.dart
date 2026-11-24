@@ -34,15 +34,29 @@ class LocalFileSyncProvider implements SyncProvider {
   bool get requiresNetwork => false;
 
   @override
-  bool get supportsConditionalWrites => true;
+  bool get supportsConditionalWrites => false;
 
   @override
   String get description => '通过导出的 JSON 文件在设备之间手动同步，完全离线可用。';
 
   String get backupPath => '$filePath.bak';
 
+  void _validatePath() {
+    final String path = filePath.trim();
+    if (path.isEmpty) throw const SyncException('请先选择备份文件');
+    if (Uri.tryParse(path)?.hasScheme ?? false) {
+      throw const SyncException('请使用系统文件选择器导入或导出文件');
+    }
+    if (!File(path).isAbsolute) throw const SyncException('请选择完整的文件路径');
+  }
+
   @override
   Future<SyncTestResult> testConnection() async {
+    try {
+      _validatePath();
+    } on SyncException catch (e) {
+      return SyncTestResult(ok: false, message: e.message);
+    }
     final File file = File(filePath);
     final Directory parent = file.parent;
     if (!parent.existsSync()) {
@@ -55,7 +69,9 @@ class LocalFileSyncProvider implements SyncProvider {
     } catch (e) {
       return SyncTestResult(ok: false, message: '目录不可写：$e');
     }
-    final List<String> details = <String>[];
+    final List<String> details = <String>[
+      'NO_CONDITIONAL_WRITE:本地文件仅支持手动合并，不保证跨进程并发安全',
+    ];
     if (file.existsSync()) {
       details.add('现有文件 ${await file.length()} 字节');
     } else {
@@ -76,6 +92,7 @@ class LocalFileSyncProvider implements SyncProvider {
 
   @override
   Future<SyncPayload?> download() async {
+    _validatePath();
     final File file = File(filePath);
     if (!file.existsSync()) return null;
     List<int> bytes;
@@ -110,7 +127,11 @@ class LocalFileSyncProvider implements SyncProvider {
     Map<String, Object?> dataset, {
     String? ifRevision,
   }) async {
+    _validatePath();
     final File file = File(filePath);
+    if (ifRevision == null && file.existsSync()) {
+      throw const SyncConflictException('同步文件已存在，请先读取并合并');
+    }
     if (ifRevision != null) {
       if (!file.existsSync()) {
         throw const SyncConflictException('同步文件已被删除，请重新读取后再上传');

@@ -30,6 +30,7 @@ dependencies:
   flutter_tts: ^4.2.5
   flutter_secure_storage: ^11.2.0
   crypto: ^3.0.8
+  xml: ^7.1.0
 
 dev_dependencies:
   flutter_test:

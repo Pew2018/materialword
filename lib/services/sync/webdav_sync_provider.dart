@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:xml/xml.dart';
 
 import 'credential_store.dart';
 import 'sync_provider.dart';
@@ -82,7 +83,19 @@ class WebDavSyncProvider implements SyncProvider {
 
   bool get isConfigured {
     final Uri? uri = Uri.tryParse(baseUrl.trim());
-    return uri != null && uri.hasScheme && uri.host.isNotEmpty;
+    return uri != null &&
+        uri.hasScheme &&
+        uri.host.isNotEmpty &&
+        uri.userInfo.isEmpty &&
+        !uri.hasQuery &&
+        !uri.hasFragment &&
+        fileName.isNotEmpty &&
+        fileName != '.' &&
+        fileName != '..' &&
+        !fileName.contains('/') &&
+        !fileName.contains('\\') &&
+        !remoteDir.split('/').any((part) => part == '.' || part == '..') &&
+        !RegExp(r'[\r\n]').hasMatch(remoteDir + fileName);
   }
 
   bool get isSecure => baseUrl.trim().toLowerCase().startsWith('https://');
@@ -171,7 +184,7 @@ class WebDavSyncProvider implements SyncProvider {
         final String? location = response.headers['location'];
         if (location == null) return response;
         final Uri next = current.resolve(location);
-        if (next.host != current.host) {
+        if (next.origin != current.origin) {
           throw const SyncException('WebDAV 服务器重定向到其他主机，已拒绝携带认证信息继续请求');
         }
         keepAuth = true;
@@ -213,14 +226,41 @@ class WebDavSyncProvider implements SyncProvider {
       '</d:prop></d:propfind>';
 
   /// Extracts the ETag from a PROPFIND response.
+  static String? strongEtag(String? value) {
+    if (value == null) return null;
+    final String tag = value.trim();
+    // RFC 9110 entity-tag: retain the quotes; weak validators cannot protect PUT.
+    return RegExp(r'^"[\x21\x23-\x7E\x80-\xFF]*"$').hasMatch(tag) ? tag : null;
+  }
+
   String? _etagOf(String xml) {
-    final RegExpMatch? match = RegExp(
-      r'<[^>]*getetag[^>]*>\s*([^<]+?)\s*</',
-      caseSensitive: false,
-    ).firstMatch(xml);
-    final String? raw = match?.group(1)?.trim();
-    if (raw == null || raw.isEmpty) return null;
-    return raw.replaceAll('"', '');
+    try {
+      final document = XmlDocument.parse(xml);
+      for (final response in document.descendants.whereType<XmlElement>().where(
+        (e) => e.name.local == 'response' && e.namespaceUri == 'DAV:',
+      )) {
+        for (final propstat in response.childElements.where(
+          (e) => e.name.local == 'propstat',
+        )) {
+          final status =
+              propstat.childElements
+                  .where((e) => e.name.local == 'status')
+                  .firstOrNull
+                  ?.innerText ??
+              '';
+          if (!RegExp(r'HTTP/\S+ 200(?: |$)').hasMatch(status)) continue;
+          for (final tag in propstat.descendants.whereType<XmlElement>().where(
+            (e) => e.name.local == 'getetag' && e.namespaceUri == 'DAV:',
+          )) {
+            final value = strongEtag(tag.innerText);
+            if (value != null) return value;
+          }
+        }
+      }
+      return null;
+    } on XmlException {
+      throw const SyncDataException('WebDAV 返回了无效的 XML');
+    }
   }
 
   Future<({int status, String? etag, String body})> _propfind(
@@ -240,7 +280,9 @@ class WebDavSyncProvider implements SyncProvider {
     );
     return (
       status: response.statusCode,
-      etag: _etagOf(response.body),
+      etag: response.statusCode == 207 || response.statusCode == 200
+          ? _etagOf(response.body)
+          : null,
       body: response.body,
     );
   }
@@ -322,8 +364,10 @@ class WebDavSyncProvider implements SyncProvider {
 
   @override
   Future<SyncPayload?> download() async {
-    if (!isConfigured) throw const SyncException('WebDAV 同步尚未配置完整');
-    final http.Response response = await _send(
+    if (!isConfigured || !isSecure) {
+      throw const SyncException('请配置有效的 HTTPS WebDAV 地址');
+    }
+    http.Response response = await _send(
       'GET',
       _fileUri,
       headers: await _headers(
@@ -332,6 +376,23 @@ class WebDavSyncProvider implements SyncProvider {
     );
     if (response.statusCode == 404) return null;
     if (response.statusCode != 200) _raise(response, '读取数据');
+    String? etag = strongEtag(response.headers['etag']);
+    if (etag == null) {
+      final probe = await _propfind(_fileUri, 'PROPFIND');
+      etag = probe.etag;
+      if (etag != null) {
+        // Pair the bytes with this validator. A PROPFIND after an unconditional
+        // GET may describe a newer document we have never read.
+        response = await _send(
+          'GET',
+          _fileUri,
+          headers: await _headers(
+            extra: {'Accept': 'application/json', 'If-Match': etag},
+          ),
+        );
+        if (response.statusCode != 200) _raise(response, '读取数据');
+      }
+    }
     Object? decoded;
     try {
       decoded = jsonDecode(utf8.decode(response.bodyBytes));
@@ -340,12 +401,6 @@ class WebDavSyncProvider implements SyncProvider {
     }
     if (decoded is! Map<String, dynamic>) {
       throw const SyncDataException('远程数据文件根节点必须是对象');
-    }
-    String? etag = response.headers['etag']?.replaceAll('"', '');
-    if (etag == null || etag.isEmpty) {
-      // Some servers only return the ETag on PROPFIND.
-      final probe = await _propfind(_fileUri, 'PROPFIND');
-      etag = probe.etag;
     }
     return SyncPayload(
       dataset: decoded,
@@ -360,7 +415,12 @@ class WebDavSyncProvider implements SyncProvider {
     Map<String, Object?> dataset, {
     String? ifRevision,
   }) async {
-    if (!isConfigured) throw const SyncException('WebDAV 同步尚未配置完整');
+    if (!isConfigured || !isSecure) {
+      throw const SyncException('请配置有效的 HTTPS WebDAV 地址');
+    }
+    if (ifRevision != null && strongEtag(ifRevision) == null) {
+      throw const SyncException('服务器未提供强 ETag，请使用手动备份');
+    }
     final List<int> bytes = utf8.encode(jsonEncode(dataset));
     final Map<String, String> conditional =
         ifRevision != null && ifRevision.isNotEmpty
@@ -391,7 +451,7 @@ class WebDavSyncProvider implements SyncProvider {
     if (response.statusCode == 201 ||
         response.statusCode == 204 ||
         response.statusCode == 200) {
-      String? etag = response.headers['etag']?.replaceAll('"', '');
+      String? etag = strongEtag(response.headers['etag']);
       if (etag == null || etag.isEmpty) {
         final probe = await _propfind(_fileUri, 'PROPFIND');
         etag = probe.etag;
