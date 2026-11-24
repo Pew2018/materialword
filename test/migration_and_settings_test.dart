@@ -11,6 +11,7 @@ import 'package:materialword/core/repositories/word_repository.dart';
 import 'package:sqlite3/sqlite3.dart' as sql;
 
 import 'helpers/test_env.dart';
+import 'helpers/legacy_schema.dart';
 
 /// UI05 — concurrent setting writes must not clobber each other.
 /// DATA08 — the v1 → v2 migration is lossless.
@@ -63,48 +64,57 @@ void main() {
   });
 
   group('DATA08 数据库无损迁移', () {
-    test('v1 数据升级到 v2 后完整保留并新增同步列', () async {
+    test('v1 数据升级到当前版本后完整保留并新增同步列', () async {
       final Directory dir = Directory.systemTemp.createTempSync('mw_migrate');
       final String path = '${dir.path}/materialword.sqlite';
       final File file = File(path);
 
-      // 1. Create a v2 database the normal way, then downgrade its schema to
-      //    what phase 1 shipped. This gives us a realistic v1 file with real
-      //    user data in it.
-      final AppDatabase fresh = AppDatabase(NativeDatabase(file));
-      final WordRepository words = WordRepository(fresh);
-      final StudyRepository study = StudyRepository(fresh);
-      final SettingsRepository settings = SettingsRepository(fresh);
-      final DateTime now = DateTime(2026, 11, 24, 9);
-      final Word word = await words.ensureWord(
-        text: 'abandon',
-        translation: r'v. 放弃\nn. 放任',
-        note: '我的笔记',
-        now: now,
+      // Build the literal released v1 schema. Never derive a legacy fixture
+      // by dropping columns from whatever the current database happens to be.
+      final now = DateTime(2026, 11, 24, 9);
+      const wordId = 'legacy-word';
+      final raw = sql.sqlite3.open(path);
+      raw.execute(phase1Schema);
+      raw.execute(
+        'INSERT INTO words(id, word, normalized, translation, note, created_at, updated_at) VALUES(?,?,?,?,?,?,?)',
+        [
+          wordId,
+          'abandon',
+          'abandon',
+          r'v. 放弃\nn. 放任',
+          '我的笔记',
+          now.millisecondsSinceEpoch,
+          now.millisecondsSinceEpoch,
+        ],
       );
-      await study.recordAnswer(
-        wordId: word.id,
-        result: AnswerResult.known,
-        type: ReviewType.study,
-        eventId: 'old-event',
-        deviceId: 'old-device',
-        now: now,
+      raw.execute(
+        'INSERT INTO review_events(id,word_id,device_id,answered_at,local_day,result,type,interval_days_after) VALUES(?,?,?,?,?,?,?,?)',
+        [
+          'old-event',
+          wordId,
+          'old-device',
+          now.millisecondsSinceEpoch,
+          '2026-11-24',
+          2,
+          'study',
+          1,
+        ],
       );
-      await settings.save(dailyNewTarget: 17, accentColor: '#1565C0');
-      await fresh.close();
-
-      final sql.Database raw = sql.sqlite3.open(path);
-      raw.execute('DROP INDEX IF EXISTS idx_entries_book');
-      raw.execute('ALTER TABLE word_book_entries DROP COLUMN deleted_at');
-      raw.execute('ALTER TABLE word_book_entries DROP COLUMN version');
-      raw.execute('ALTER TABLE word_book_entries DROP COLUMN updated_at');
-      raw.execute('ALTER TABLE word_books DROP COLUMN revision');
-      raw.execute('ALTER TABLE review_events DROP COLUMN mode');
-      raw.execute('ALTER TABLE study_settings DROP COLUMN accent_color');
-      raw.execute('ALTER TABLE study_settings DROP COLUMN tts_voice');
-      raw.execute('ALTER TABLE study_settings DROP COLUMN tts_locale');
-      raw.execute('ALTER TABLE study_settings DROP COLUMN tts_rate');
-      raw.execute('ALTER TABLE study_settings DROP COLUMN tts_auto_speak');
+      raw.execute(
+        'INSERT INTO learning_states(word_id,stage,correct_count,interval_days,last_studied_at,next_review_at,updated_at) VALUES(?,?,?,?,?,?,?)',
+        [
+          wordId,
+          1,
+          1,
+          1,
+          now.millisecondsSinceEpoch,
+          DateTime(2026, 11, 25).millisecondsSinceEpoch,
+          now.millisecondsSinceEpoch,
+        ],
+      );
+      raw.execute(
+        'INSERT INTO study_settings(id,daily_new_target) VALUES(1,17)',
+      );
       raw.execute('PRAGMA user_version = 1');
       raw.dispose();
 
@@ -128,7 +138,7 @@ void main() {
       expect(row.dailyNewTarget, 17);
       expect(row.accentColor, '#1565C0', reason: '迁移默认值为经典蓝');
 
-      final Word? after = await WordRepository(migrated).byId(word.id);
+      final Word? after = await WordRepository(migrated).byId(wordId);
       expect(after, isNotNull);
       expect(after!.note, '我的笔记');
       expect(after.translation, 'v. 放弃\nn. 放任', reason: '升级同时修复旧转义');
@@ -140,7 +150,7 @@ void main() {
       expect(events.single.mode, 'normal');
 
       final LearningState? state = await StudyRepository(migrated)
-          .rebuildAndRead(word.id);
+          .rebuildAndRead(wordId);
       expect(state, isNotNull);
       expect(state!.stage, isNot(0));
 

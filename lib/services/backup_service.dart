@@ -68,7 +68,8 @@ class MergeReport {
       newBooks > 0 ||
       updatedBooks > 0 ||
       newEntries > 0 ||
-      removedEntries > 0;
+      removedEntries > 0 ||
+      rebuiltStates > 0;
 
   String get summary {
     final List<String> parts = <String>[
@@ -211,18 +212,12 @@ class BackupService {
     return decodeDatasetAsync(raw);
   }
 
-  Future<Map<String, Object?>> decodeDatasetAsync(String raw) async {
-    final Object? decoded;
-    try {
-      decoded = await decodeDatasetJson(raw);
-    } on FormatException {
-      throw const BackupException('不是合法的 JSON 文件');
-    }
-    if (decoded is! Map<String, dynamic>) {
-      throw const BackupException('备份文件根节点必须是对象');
-    }
-    return validateDataset(decoded);
-  }
+  Future<Map<String, Object?>> decodeDatasetAsync(String raw) =>
+      decodeValidatedDatasetJson(raw);
+
+  Future<Map<String, Object?>> validateDatasetAsync(
+    Map<String, Object?> dataset,
+  ) => validateDatasetInBackground(dataset);
 
   /// Validates structure and protocol version. Used by every entry point
   /// (file import, local file sync, GitHub, WebDAV) so a corrupt remote cannot
@@ -240,7 +235,12 @@ class BackupService {
     return validateDataset(decoded);
   }
 
-  Map<String, Object?> validateDataset(Map<String, Object?> dataset) {
+  Map<String, Object?> validateDataset(Map<String, Object?> dataset) =>
+      _validateDatasetCore(dataset);
+
+  static Map<String, Object?> _validateDatasetCore(
+    Map<String, Object?> dataset,
+  ) {
     final Object? version = dataset['schemaVersion'];
     if (version is! int) {
       throw const BackupException('缺少 schemaVersion');
@@ -291,7 +291,209 @@ class BackupService {
         throw const BackupException('学习记录类型不受支持，请升级应用');
       }
     }
+    _validateRecords(dataset, version);
     return dataset;
+  }
+
+  static void _validateRecords(Map<String, Object?> data, int protocol) {
+    Never invalid(String field) =>
+        throw BackupException('备份字段 $field 无效，未合并任何数据');
+    List<Map<String, dynamic>> records(String field) {
+      final value = data[field];
+      if (value == null && protocol < 3) return [];
+      if (value is! List) invalid(field);
+      return value
+          .map((row) {
+            if (row is! Map<String, dynamic>) invalid(field);
+            return row;
+          })
+          .toList(growable: false);
+    }
+
+    void text(Map<String, dynamic> row, String field, {bool required = false}) {
+      final value = row[field];
+      if (value == null && !required) return;
+      if (value is! String || (required && value.trim().isEmpty)) {
+        invalid(field);
+      }
+    }
+
+    void number(Map<String, dynamic> row, String field, {int min = 0}) {
+      final value = row[field];
+      if (value != null && (value is! int || value < min)) invalid(field);
+    }
+
+    void timestamp(
+      Map<String, dynamic> row,
+      String field, {
+      bool required = false,
+    }) {
+      final value = row[field];
+      if (value == null && !required) return;
+      if (value is! int && value is! String) invalid(field);
+      try {
+        if (_parseTime(value) == null) invalid(field);
+        if (value is String &&
+            !RegExp(r'(Z|[+-]\d{2}:?\d{2})$').hasMatch(value)) {
+          invalid(field);
+        }
+      } on RangeError {
+        invalid(field);
+      }
+    }
+
+    final words = records('words'),
+        books = records('wordBooks'),
+        entries = records('entries'),
+        events = records('reviewEvents');
+    final wordIds = <String>{},
+        normalized = <String>{},
+        bookIds = <String>{},
+        entryIds = <String>{};
+    for (final word in words) {
+      text(word, 'id', required: true);
+      text(word, 'word', required: true);
+      final key = normalizeWordKey(word['word'] as String);
+      if (word['normalized'] != null && word['normalized'] != key) {
+        invalid('normalized');
+      }
+      if (!wordIds.add(word['id'] as String) || !normalized.add(key)) {
+        invalid('words:重复身份');
+      }
+      for (final field in [
+        'phonetic',
+        'partOfSpeech',
+        'translation',
+        'definition',
+        'example',
+        'phrase',
+        'note',
+        'source',
+        'examTags',
+      ]) {
+        text(word, field);
+      }
+      for (final field in ['createdAt', 'updatedAt', 'deletedAt']) {
+        timestamp(word, field);
+      }
+      for (final field in ['revision', 'bncRank', 'frqRank']) {
+        number(word, field);
+      }
+      if (word['customized'] != null && word['customized'] is! bool) {
+        invalid('customized');
+      }
+    }
+    for (final book in books) {
+      text(book, 'id', required: true);
+      text(book, 'name', required: true);
+      if (!bookIds.add(book['id'] as String)) invalid('wordBooks:重复身份');
+      for (final field in ['description', 'sourceType', 'sourceUrl']) {
+        text(book, field);
+      }
+      for (final field in ['createdAt', 'updatedAt', 'deletedAt']) {
+        timestamp(book, field);
+      }
+      number(book, 'revision');
+    }
+    for (final entry in entries) {
+      text(entry, 'wordId', required: true);
+      text(entry, 'wordBookId', required: true);
+      if (!wordIds.contains(entry['wordId']) ||
+          !bookIds.contains(entry['wordBookId'])) {
+        invalid('entries:引用不存在');
+      }
+      if (!entryIds.add(jsonEncode([entry['wordId'], entry['wordBookId']]))) {
+        invalid('entries:重复身份');
+      }
+      number(entry, 'version');
+      for (final field in ['addedAt', 'updatedAt', 'deletedAt']) {
+        timestamp(entry, field);
+      }
+    }
+    final eventWords = <String, String>{};
+    final eventById = <String, Map<String, dynamic>>{};
+    for (final event in events) {
+      text(event, 'id', required: true);
+      text(event, 'wordId', required: true);
+      if (!wordIds.contains(event['wordId']) ||
+          eventWords.containsKey(event['id'])) {
+        invalid('reviewEvents:引用或身份');
+      }
+      eventWords[event['id'] as String] = event['wordId'] as String;
+      eventById[event['id'] as String] = event;
+      timestamp(event, 'answeredAt', required: true);
+      timestamp(event, 'dayStartUtc');
+      if (event['dayStartSource'] != null &&
+          ![
+            'authored',
+            'legacy-state',
+            'legacy-utc',
+          ].contains(event['dayStartSource'])) {
+        invalid('dayStartSource');
+      }
+      text(event, 'deviceId');
+      text(event, 'localDay');
+      if (event['localDay'] != null &&
+          !RegExp(r'^\d{4}-\d{2}-\d{2}$')
+              .hasMatch(event['localDay'] as String)) {
+        invalid('localDay');
+      }
+      if (event['result'] is! int || ![0, 1, 2].contains(event['result'])) {
+        invalid('result');
+      }
+      if (!['study', 'review'].contains(event['type'])) invalid('type');
+      number(event, 'stageBefore');
+      number(event, 'intervalDaysAfter');
+      number(event, 'algoVersion', min: 1);
+      final anchor = _parseTime(event['dayStartUtc']);
+      if (event['dayStartSource'] != null && anchor == null) {
+        invalid('dayStartSource:缺少锚点');
+      }
+      final at = _parseTime(event['answeredAt'])!;
+      if (anchor != null &&
+          (anchor.isAfter(at) ||
+              at.difference(anchor) > const Duration(hours: 26))) {
+        invalid('dayStartUtc');
+      }
+    }
+    for (final event in events) {
+      final mode = (event['mode'] as String?) ?? 'normal';
+      if (mode.startsWith('undo:')) {
+        final target = mode.substring(5);
+        if (target == event['id'] || eventWords[target] != event['wordId']) {
+          invalid('undo:引用不存在');
+        }
+        final targetEvent = eventById[target]!;
+        if (ReviewEventMode.isManagement(
+          (targetEvent['mode'] as String?) ?? 'normal',
+        )) {
+          invalid('undo:不是作答');
+        }
+      }
+    }
+    final shared = data['settings'];
+    if (shared != null) {
+      if (shared is! Map<String, dynamic>) invalid('settings');
+      number(shared, 'dailyNewTarget');
+      number(shared, 'dailyReviewLimit');
+      if (shared['studyMode'] != null &&
+          !StudyMode.values.any((mode) => mode.code == shared['studyMode'])) {
+        invalid('studyMode');
+      }
+      final version = shared['version'];
+      if (version != null) {
+        if (version is! Map<String, dynamic>) invalid('settings.version');
+        number(version, 'counter');
+        text(
+          version,
+          'deviceId',
+          required: (version['counter'] as int? ?? 0) > 0,
+        );
+        if (version['counter'] is! int || version['deviceId'] is! String) {
+          invalid('settings.version');
+        }
+      }
+    }
   }
 
   /// Stable hash of the *content* of a dataset. Volatile metadata (`exportedAt`,
@@ -357,6 +559,9 @@ class BackupService {
     return 'sha256:${sha256.convert(utf8.encode(jsonEncode(canonical)))}';
   }
 
+  static Future<String> contentHashOfAsync(Map<String, Object?> dataset) =>
+      Isolate.run(() => contentHashOf(dataset));
+
   Future<MergeReport> importFromFile(String path) async {
     final Map<String, Object?> dataset = await readDataset(path);
     return mergeDataset(dataset, now: DateTime.now());
@@ -370,7 +575,7 @@ class BackupService {
     Map<String, Object?> dataset, {
     required DateTime now,
   }) async {
-    final Map<String, Object?> valid = validateDataset(dataset);
+    final Map<String, Object?> valid = await validateDatasetAsync(dataset);
     final List<dynamic> rawWords =
         (valid['words'] as List<dynamic>?) ?? const <dynamic>[];
     final List<dynamic> rawBooks =
@@ -603,6 +808,43 @@ class BackupService {
           db.reviewEvents,
         )..where((t) => t.id.equals(incoming.id))).getSingleOrNull();
         if (local != null) {
+          if (local.wordId != incoming.wordId ||
+              local.deviceId != incoming.deviceId ||
+              local.answeredAt != incoming.answeredAt ||
+              local.result != incoming.result ||
+              local.type != incoming.type ||
+              local.mode != incoming.mode ||
+              local.algoVersion != incoming.algoVersion) {
+            throw const BackupException('同一学习记录 ID 的内容冲突，未合并数据');
+          }
+          int rank(String source) => switch (source) {
+            'authored' => 3,
+            'legacy-state' => 2,
+            _ => 1,
+          };
+          final localRank = rank(local.dayStartSource),
+              remoteRank = rank(incoming.dayStartSource);
+          if (localRank == 3 &&
+              remoteRank == 3 &&
+              local.dayStartUtc != incoming.dayStartUtc) {
+            throw const BackupException('同一学习记录的作者时间锚点冲突');
+          }
+          if (remoteRank > localRank ||
+              (remoteRank == localRank &&
+                  incoming.dayStartUtc != null &&
+                  (local.dayStartUtc == null ||
+                      incoming.dayStartUtc! < local.dayStartUtc!))) {
+            await (db.update(
+              db.reviewEvents,
+            )..where((t) => t.id.equals(local.id))).write(
+              ReviewEventsCompanion(
+                dayStartUtc: Value(incoming.dayStartUtc),
+                dayStartSource: Value(incoming.dayStartSource),
+                localDay: Value(incoming.localDay),
+              ),
+            );
+            touchedWords.add(wordId);
+          }
           duplicateEvents++;
           continue;
         }
@@ -822,7 +1064,7 @@ class BackupService {
 
   int _positiveInt(Object? value, int fallback) {
     final int? parsed = value is int ? value : int.tryParse('${value ?? ''}');
-    if (parsed == null || parsed <= 0) return fallback;
+    if (parsed == null || parsed < 0) return fallback;
     return parsed;
   }
 
@@ -872,12 +1114,8 @@ class BackupService {
       frqRank: _int(node['frqRank']),
       customized: node['customized'] == true,
       revision: _int(node['revision'], fallback: 1),
-      createdAt:
-          _parseTime(node['createdAt'])?.millisecondsSinceEpoch ??
-          DateTime.now().millisecondsSinceEpoch,
-      updatedAt:
-          _parseTime(node['updatedAt'])?.millisecondsSinceEpoch ??
-          DateTime.now().millisecondsSinceEpoch,
+      createdAt: _parseTime(node['createdAt'])?.millisecondsSinceEpoch ?? 0,
+      updatedAt: _parseTime(node['updatedAt'])?.millisecondsSinceEpoch ?? 0,
       deletedAt: _parseTime(node['deletedAt'])?.millisecondsSinceEpoch,
     );
   }
@@ -899,8 +1137,7 @@ class BackupService {
     final String? name = node['name'] as String?;
     if (id == null || name == null) return null;
     final int updatedAt =
-        _parseTime(node['updatedAt'])?.millisecondsSinceEpoch ??
-        DateTime.now().millisecondsSinceEpoch;
+        _parseTime(node['updatedAt'])?.millisecondsSinceEpoch ?? 0;
     return WordBook(
       id: id,
       name: name,
@@ -930,8 +1167,7 @@ class BackupService {
     String wordId,
   ) {
     final int addedAt =
-        _parseTime(node['addedAt'])?.millisecondsSinceEpoch ??
-        DateTime.now().millisecondsSinceEpoch;
+        _parseTime(node['addedAt'])?.millisecondsSinceEpoch ?? 0;
     final int updatedAt =
         _parseTime(node['updatedAt'])?.millisecondsSinceEpoch ??
         (_int(node['version']) > 0 ? addedAt : addedAt);
@@ -957,6 +1193,16 @@ class BackupService {
     'intervalDaysAfter': e.intervalDaysAfter,
     'algoVersion': e.algoVersion,
     'mode': e.mode,
+    'dayStartSource': e.dayStartSource,
+    'dayStartUtc': _iso(
+      e.dayStartUtc ??
+          DateTime.fromMillisecondsSinceEpoch(
+                e.answeredAt,
+                isUtc: true,
+              ).millisecondsSinceEpoch ~/
+              86400000 *
+              86400000,
+    ),
   };
 
   ReviewEvent? _eventFromJson(Map<String, dynamic> node, String wordId) {
@@ -971,7 +1217,7 @@ class BackupService {
     final String type = (node['type'] as String?) == 'review'
         ? 'review'
         : 'study';
-    final DateTime local = answeredAt.toLocal();
+    final DateTime local = answeredAt.toUtc();
     String two(int v) => v.toString().padLeft(2, '0');
     return ReviewEvent(
       id: id,
@@ -986,11 +1232,19 @@ class BackupService {
       type: type,
       stageBefore: _int(node['stageBefore']),
       intervalDaysAfter: _int(node['intervalDaysAfter']),
-      algoVersion: _int(
-        node['algoVersion'],
-        fallback: StudyScheduler.algorithmVersion,
-      ),
+      algoVersion: _int(node['algoVersion'], fallback: 1),
       mode: _str(node['mode'], fallback: 'normal'),
+      dayStartSource: _str(
+        node['dayStartSource'],
+        fallback: node['dayStartUtc'] == null ? 'legacy-utc' : 'authored',
+      ),
+      dayStartUtc:
+          _parseTime(node['dayStartUtc'])?.millisecondsSinceEpoch ??
+          DateTime.utc(
+            answeredAt.year,
+            answeredAt.month,
+            answeredAt.day,
+          ).millisecondsSinceEpoch,
     );
   }
 
@@ -999,7 +1253,7 @@ class BackupService {
     isUtc: true,
   ).toIso8601String();
 
-  DateTime? _parseTime(Object? value) {
+  static DateTime? _parseTime(Object? value) {
     if (value == null) return null;
     if (value is int) {
       return DateTime.fromMillisecondsSinceEpoch(value, isUtc: true);
@@ -1050,3 +1304,21 @@ Future<String> encodeDatasetJson(
 
 Future<Object?> decodeDatasetJson(String raw) =>
     Isolate.run(() => jsonDecode(raw));
+
+Future<Map<String, Object?>> validateDatasetInBackground(
+  Map<String, Object?> dataset,
+) => Isolate.run(() => BackupService._validateDatasetCore(dataset));
+
+Future<Map<String, Object?>> decodeValidatedDatasetJson(String raw) =>
+    Isolate.run(() {
+      final Object? decoded;
+      try {
+        decoded = jsonDecode(raw);
+      } on FormatException {
+        throw const BackupException('不是合法的 JSON 文件');
+      }
+      if (decoded is! Map<String, dynamic>) {
+        throw const BackupException('备份文件根节点必须是对象');
+      }
+      return BackupService._validateDatasetCore(decoded);
+    });

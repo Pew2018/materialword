@@ -1,4 +1,10 @@
+import 'dart:io';
+
+import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:materialword/core/database/app_database.dart';
+import 'package:materialword/core/repositories/study_repository.dart';
+import 'package:materialword/core/repositories/settings_repository.dart';
 import 'package:materialword/core/models/enums.dart';
 import 'package:materialword/services/study_session.dart';
 
@@ -107,4 +113,77 @@ void main() {
       expect(await env.db.readMeta(StudySession.persistenceKey), isNotNull);
     },
   );
+  test('STUDY undo snapshot failure rolls back event, state, queue and retry remains legal', () async {
+    final env = await TestEnv.create();
+    addTearDown(env.dispose);
+    await env.seedBook(words: ['alpha']);
+    final session = env.session();
+    addTearDown(session.dispose);
+    await session.load(newLimit: 1, reviewLimit: 10);
+    final id = session.current!.word.id;
+    session.reveal();
+    await session.submit(AnswerResult.unknown);
+    await env.db.customStatement(
+      "CREATE TRIGGER fail_session_update BEFORE UPDATE ON app_meta WHEN NEW.key='active_study_session_v1' BEGIN SELECT RAISE(ABORT, 'injected'); END",
+    );
+    expect(await session.undo(), isFalse);
+    expect(session.position, 1);
+    expect(session.totalCards, 2);
+    expect(session.canUndo, isTrue);
+    expect((await env.words.eventsForWord(id)), hasLength(1));
+    expect((await env.words.stateFor(id))!.wrongCount, 1);
+    await env.db.customStatement('DROP TRIGGER fail_session_update');
+    expect(await session.undo(), isTrue);
+    expect(session.position, 0);
+    expect(session.totalCards, 1);
+    expect(await env.words.stateFor(id), isNull);
+  });
+
+  test(
+    'STUDY a deleted active card is skipped without recording an answer',
+    () async {
+      final env = await TestEnv.create();
+      addTearDown(env.dispose);
+      await env.seedBook(words: ['alpha', 'beta']);
+      final session = env.session();
+      addTearDown(session.dispose);
+      await session.load(newLimit: 2, reviewLimit: 10);
+      final id = session.current!.word.id;
+      session.reveal();
+      await env.words.softDelete(id, now: env.clock.now());
+      expect(await session.submit(AnswerResult.known), isNull);
+      expect(session.current!.word.id, isNot(id));
+      expect(session.newAnswered, 0);
+      expect((await env.words.eventsForWord(id)), isEmpty);
+      expect(await session.skip(), isTrue);
+      expect(session.isEmpty, isTrue);
+      expect(await env.db.readMeta(StudySession.persistenceKey), isNull);
+    },
+  );
+  test('STUDY file database reopening restores an interrupted session and exactly one event', () async {
+    final env = await TestEnv.create(file: true);
+    addTearDown(() => File(env.filePath!).parent.delete(recursive: true));
+    await env.seedBook(words: ['alpha', 'beta']);
+    final first = env.session();
+    await first.load(newLimit: 2, reviewLimit: 10);
+    first.reveal();
+    await first.submit(AnswerResult.unknown);
+    final current = first.current!.word.id;
+    first.dispose();
+    await env.db.close();
+    final reopened = AppDatabase(NativeDatabase(File(env.filePath!)));
+    addTearDown(reopened.close);
+    final resumed = StudySession(
+      StudyRepository(reopened),
+      SettingsRepository(reopened),
+      env.clock,
+    );
+    addTearDown(resumed.dispose);
+    await resumed.load(newLimit: 1, reviewLimit: 10);
+    expect(resumed.current!.word.id, current);
+    expect(resumed.position, 1);
+    expect(resumed.repeatCards, 1);
+    expect(resumed.newAnswered, 1);
+    expect(await reopened.select(reopened.reviewEvents).get(), hasLength(1));
+  });
 }

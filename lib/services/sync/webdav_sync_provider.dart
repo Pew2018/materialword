@@ -3,6 +3,9 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 import 'package:xml/xml.dart';
+import 'package:uuid/uuid.dart';
+
+import '../backup_service.dart' show encodeDatasetJson, decodeDatasetJson;
 
 import 'credential_store.dart';
 import 'sync_provider.dart';
@@ -79,7 +82,13 @@ class WebDavSyncProvider implements SyncProvider {
   @override
   String get description => '通过 HTTPS + ETag 条件请求同步到自建 WebDAV 目录。';
 
-  http.Client get _http => _client ?? http.Client();
+  http.Client? _ownedClient;
+  http.Client get _http => _client ?? (_ownedClient ??= http.Client());
+
+  void close() {
+    _ownedClient?.close();
+    _ownedClient = null;
+  }
 
   bool get isConfigured {
     final Uri? uri = Uri.tryParse(baseUrl.trim());
@@ -179,7 +188,8 @@ class WebDavSyncProvider implements SyncProvider {
         if (e is SyncException) rethrow;
         throw SyncException('网络请求失败：$e', retryable: true);
       }
-      final http.Response response = await http.Response.fromStream(streamed);
+      final http.Response response = await http.Response.fromStream(streamed)
+          .timeout(const Duration(seconds: 45));
       if (response.statusCode >= 300 && response.statusCode < 400) {
         final String? location = response.headers['location'];
         if (location == null) return response;
@@ -316,6 +326,99 @@ class WebDavSyncProvider implements SyncProvider {
     }
   }
 
+  /// Exercise conditionals on an owned, unguessable temporary resource. Never
+  /// test a broken server's conditional support by touching the user's dataset.
+  Future<String?> _verifyConditionalWrites() async {
+    final nonce = const Uuid().v4();
+    final uri = _directoryUri.replace(
+      path: '${_directoryUri.path}.materialword-probe-$nonce.txt',
+    );
+    final initial = 'MaterialWord probe $nonce';
+    final changed = 'MaterialWord probe updated $nonce';
+    bool created = false;
+    String? issue;
+    String? cleanupTag;
+    // Resolve credentials once, but keep all redirects origin-checked in _send.
+    final headers = await _headers(
+      extra: {'Content-Type': 'text/plain; charset=utf-8'},
+    );
+    Future<http.Response> write(
+      String content,
+      Map<String, String> condition,
+    ) => _send(
+      'PUT',
+      uri,
+      headers: {...headers, ...condition},
+      body: utf8.encode(content),
+    );
+    Future<String?> check() async {
+      final first = await write(initial, {'If-None-Match': '*'});
+      if (first.statusCode == 401 || first.statusCode == 403) {
+        _raise(first, '条件写入测试');
+      }
+      if (![200, 201, 204].contains(first.statusCode)) {
+        return '无法创建临时测试文件（HTTP ${first.statusCode}）';
+      }
+      created = true;
+      cleanupTag = strongEtag(first.headers['etag']);
+      if (cleanupTag == null) {
+        final read = await _send('GET', uri, headers: headers);
+        cleanupTag = strongEtag(read.headers['etag']);
+      }
+      final tag = cleanupTag;
+      if (tag == null) return '服务器没有返回强 ETag';
+      final stale = await write('must not be accepted', {
+        'If-Match': '"materialword-stale-$nonce"',
+      });
+      if (stale.statusCode != 412) return '服务器未拒绝过期 If-Match';
+      final exists = await write('must not be accepted', {
+        'If-None-Match': '*',
+      });
+      if (exists.statusCode != 412) return '服务器未拒绝已存在文件的 If-None-Match';
+      final before = await _send('GET', uri, headers: headers);
+      if (before.statusCode != 200 ||
+          before.body != initial ||
+          strongEtag(before.headers['etag']) != tag) {
+        return '条件请求失败后测试文件仍被修改';
+      }
+      final update = await write(changed, {'If-Match': tag});
+      if (![200, 201, 204].contains(update.statusCode)) {
+        return '服务器拒绝有效的 If-Match 更新';
+      }
+      final after = await _send('GET', uri, headers: headers);
+      cleanupTag = strongEtag(after.headers['etag']);
+      if (after.statusCode != 200 ||
+          after.body != changed ||
+          cleanupTag == null ||
+          cleanupTag == tag) {
+        return '更新内容或强 ETag 校验失败';
+      }
+      return null;
+    }
+
+    try {
+      issue = await check();
+    } finally {
+      if (created) {
+        try {
+          final current = await _send('GET', uri, headers: headers);
+          final tag = strongEtag(current.headers['etag']);
+          final removed = await _send(
+            'DELETE',
+            uri,
+            headers: {...headers, 'If-Match': tag ?? '*'},
+          );
+          if (![200, 204, 404].contains(removed.statusCode)) {
+            issue ??= '服务器无法清理临时测试文件';
+          }
+        } catch (_) {
+          issue ??= '临时测试文件清理失败，请检查目录权限';
+        }
+      }
+    }
+    return issue;
+  }
+
   @override
   Future<SyncTestResult> testConnection() async {
     if (!isConfigured) {
@@ -331,7 +434,8 @@ class WebDavSyncProvider implements SyncProvider {
       final List<String> details = <String>[];
       final probe = await _propfind(_directoryUri, 'PROPFIND');
       if (probe.status == 404) {
-        details.add('目录 $remoteDir 尚不存在，首次同步会自动创建');
+        await _ensureDirectory(_directoryUri);
+        details.add('已建立同步目录');
       } else if (probe.status != 207 && probe.status != 200) {
         _raise(http.Response('', probe.status), '连接测试');
       } else {
@@ -343,14 +447,20 @@ class WebDavSyncProvider implements SyncProvider {
         if (fileProbe.etag == null) {
           details.add('NO_CONDITIONAL_WRITE:服务器未返回 ETag，无法检测并发修改');
         } else {
-          details.add('数据文件已存在，支持 ETag 条件写入');
+          details.add('数据文件已存在并返回强 ETag');
         }
       } else if (fileProbe.status == 404) {
         details.add('数据文件尚未创建，首次同步会写入并读取服务器返回的 ETag');
       }
+      final issue = await _verifyConditionalWrites();
+      if (issue != null) {
+        details.add('NO_CONDITIONAL_WRITE:$issue，请使用手动文件备份');
+      } else {
+        details.add('已验证 If-Match、If-None-Match、更新与读回 ETag');
+      }
       return SyncTestResult(
         ok: true,
-        message: '已连接 ${_base.host}',
+        message: issue == null ? '已连接 ${_base.host}' : '服务器不支持安全双向同步',
         details: details,
       );
     } on SyncException catch (e) {
@@ -395,7 +505,7 @@ class WebDavSyncProvider implements SyncProvider {
     }
     Object? decoded;
     try {
-      decoded = jsonDecode(utf8.decode(response.bodyBytes));
+      decoded = await decodeDatasetJson(utf8.decode(response.bodyBytes));
     } on FormatException {
       throw const SyncDataException('远程数据文件不是合法 JSON');
     }
@@ -421,7 +531,7 @@ class WebDavSyncProvider implements SyncProvider {
     if (ifRevision != null && strongEtag(ifRevision) == null) {
       throw const SyncException('服务器未提供强 ETag，请使用手动备份');
     }
-    final List<int> bytes = utf8.encode(jsonEncode(dataset));
+    final List<int> bytes = utf8.encode(await encodeDatasetJson(dataset));
     final Map<String, String> conditional =
         ifRevision != null && ifRevision.isNotEmpty
         ? <String, String>{'If-Match': ifRevision}

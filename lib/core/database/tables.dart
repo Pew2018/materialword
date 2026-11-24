@@ -122,6 +122,9 @@ class ReviewEvents extends Table {
   IntColumn get intervalDaysAfter => integer().withDefault(const Constant(0))();
   IntColumn get algoVersion => integer().withDefault(const Constant(1))();
   TextColumn get mode => text().withDefault(const Constant('normal'))();
+  IntColumn get dayStartUtc => integer().nullable()();
+  TextColumn get dayStartSource =>
+      text().withDefault(const Constant('legacy-utc'))();
 
   @override
   Set<Column<Object>> get primaryKey => {id};
@@ -163,4 +166,69 @@ class AppMeta extends Table {
 
   @override
   Set<Column<Object>> get primaryKey => {key};
+}
+
+/// Favorite removal is a versioned false value, not a missing row.
+@DataClassName('FavoriteRow')
+class WordFavorites extends Table {
+  TextColumn get wordId =>
+      text().references(Words, #id, onDelete: KeyAction.cascade)();
+  BoolColumn get value => boolean().withDefault(const Constant(true))();
+  IntColumn get version => integer().withDefault(const Constant(1))();
+  IntColumn get updatedAt => integer()();
+  TextColumn get deviceId => text()();
+  @override
+  Set<Column<Object>> get primaryKey => {wordId};
+}
+
+@TableIndex(name: 'idx_tags_name', columns: {#normalized})
+@DataClassName('UserTag')
+class UserTags extends Table {
+  TextColumn get id => text()();
+  TextColumn get name => text()();
+  TextColumn get normalized => text()();
+  IntColumn get version => integer().withDefault(const Constant(1))();
+  IntColumn get updatedAt => integer()();
+  TextColumn get deviceId => text()();
+  IntColumn get deletedAt => integer().nullable()();
+  @override
+  Set<Column<Object>> get primaryKey => {id};
+}
+
+@TableIndex(name: 'idx_word_tags_word', columns: {#wordId, #deletedAt})
+@DataClassName('WordTag')
+class WordTags extends Table {
+  TextColumn get wordId =>
+      text().references(Words, #id, onDelete: KeyAction.cascade)();
+  TextColumn get tagId =>
+      text().references(UserTags, #id, onDelete: KeyAction.cascade)();
+  IntColumn get version => integer().withDefault(const Constant(1))();
+  IntColumn get updatedAt => integer()();
+  TextColumn get deviceId => text()();
+  IntColumn get deletedAt => integer().nullable()();
+  @override
+  Set<Column<Object>> get primaryKey => {wordId, tagId};
+}
+
+/// Aliases retain cross-device identity after a user renames an entity.
+@DataClassName('SyncAliasRow')
+class SyncAliases extends Table {
+  TextColumn get kind => text()();
+  TextColumn get aliasId => text()();
+  TextColumn get localId => text()();
+  @override
+  Set<Column<Object>> get primaryKey => {kind, aliasId};
+}
+
+/// Only edited entities need per-field versions; values remain in their table.
+@DataClassName('ContentVersionRow')
+class ContentVersions extends Table {
+  TextColumn get kind => text()();
+  TextColumn get entityId => text()();
+  TextColumn get field => text()();
+  IntColumn get version => integer()();
+  IntColumn get updatedAt => integer()();
+  TextColumn get deviceId => text()();
+  @override
+  Set<Column<Object>> get primaryKey => {kind, entityId, field};
 }

@@ -186,19 +186,21 @@ void main() {
     );
 
     // A structurally valid but semantically broken dataset must not throw away data.
-    final MergeReport report = await env.backup.mergeDataset(<String, Object?>{
-      'schemaVersion': 1,
-      'words': <Object>[
-        <String, Object?>{'id': 'x'},
-      ],
-      'entries': <Object>[
-        <String, Object?>{'wordBookId': 'missing', 'wordId': 'missing'},
-      ],
-      'reviewEvents': <Object>[
-        <String, Object?>{'id': 'e', 'wordId': 'missing'},
-      ],
-    }, now: env.clock.now());
-    expect(report.skippedEntries, greaterThan(0));
+    await expectLater(
+      env.backup.mergeDataset(<String, Object?>{
+        'schemaVersion': 1,
+        'words': <Object>[
+          <String, Object?>{'id': 'x'},
+        ],
+        'entries': <Object>[
+          <String, Object?>{'wordBookId': 'missing', 'wordId': 'missing'},
+        ],
+        'reviewEvents': <Object>[
+          <String, Object?>{'id': 'e', 'wordId': 'missing'},
+        ],
+      }, now: env.clock.now()),
+      throwsA(isA<BackupException>()),
+    );
     expect(await env.words.countWords(), before);
 
     await env.dispose();

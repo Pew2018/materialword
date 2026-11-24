@@ -87,6 +87,7 @@ class StudyScheduler {
     required AnswerResult result,
     required DateTime now,
     required ReviewType type,
+    DateTime? dayStart,
   }) {
     final LearningSnapshot snapshot = current ?? const LearningSnapshot.empty();
     final int step = _stepIndex(snapshot.intervalDays);
@@ -112,7 +113,9 @@ class StudyScheduler {
           wrongCount: wrong,
           streak: snapshot.streak + 1,
           intervalDays: interval,
-          nextReviewAt: localDayStartPlus(now, interval),
+          nextReviewAt: (dayStart ?? startOfLocalDay(now)).add(
+            Duration(days: interval),
+          ),
           repeatInSession: false,
         );
 

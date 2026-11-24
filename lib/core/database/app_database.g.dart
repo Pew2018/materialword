@@ -2755,6 +2755,29 @@ class $ReviewEventsTable extends ReviewEvents
     requiredDuringInsert: false,
     defaultValue: const Constant('normal'),
   );
+  static const VerificationMeta _dayStartUtcMeta = const VerificationMeta(
+    'dayStartUtc',
+  );
+  @override
+  late final GeneratedColumn<int> dayStartUtc = GeneratedColumn<int>(
+    'day_start_utc',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _dayStartSourceMeta = const VerificationMeta(
+    'dayStartSource',
+  );
+  @override
+  late final GeneratedColumn<String> dayStartSource = GeneratedColumn<String>(
+    'day_start_source',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('legacy-utc'),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -2768,6 +2791,8 @@ class $ReviewEventsTable extends ReviewEvents
     intervalDaysAfter,
     algoVersion,
     mode,
+    dayStartUtc,
+    dayStartSource,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -2867,6 +2892,24 @@ class $ReviewEventsTable extends ReviewEvents
         mode.isAcceptableOrUnknown(data['mode']!, _modeMeta),
       );
     }
+    if (data.containsKey('day_start_utc')) {
+      context.handle(
+        _dayStartUtcMeta,
+        dayStartUtc.isAcceptableOrUnknown(
+          data['day_start_utc']!,
+          _dayStartUtcMeta,
+        ),
+      );
+    }
+    if (data.containsKey('day_start_source')) {
+      context.handle(
+        _dayStartSourceMeta,
+        dayStartSource.isAcceptableOrUnknown(
+          data['day_start_source']!,
+          _dayStartSourceMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -2920,6 +2963,14 @@ class $ReviewEventsTable extends ReviewEvents
         DriftSqlType.string,
         data['${effectivePrefix}mode'],
       )!,
+      dayStartUtc: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}day_start_utc'],
+      ),
+      dayStartSource: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}day_start_source'],
+      )!,
     );
   }
 
@@ -2941,6 +2992,8 @@ class ReviewEvent extends DataClass implements Insertable<ReviewEvent> {
   final int intervalDaysAfter;
   final int algoVersion;
   final String mode;
+  final int? dayStartUtc;
+  final String dayStartSource;
   const ReviewEvent({
     required this.id,
     required this.wordId,
@@ -2953,6 +3006,8 @@ class ReviewEvent extends DataClass implements Insertable<ReviewEvent> {
     required this.intervalDaysAfter,
     required this.algoVersion,
     required this.mode,
+    this.dayStartUtc,
+    required this.dayStartSource,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -2968,6 +3023,10 @@ class ReviewEvent extends DataClass implements Insertable<ReviewEvent> {
     map['interval_days_after'] = Variable<int>(intervalDaysAfter);
     map['algo_version'] = Variable<int>(algoVersion);
     map['mode'] = Variable<String>(mode);
+    if (!nullToAbsent || dayStartUtc != null) {
+      map['day_start_utc'] = Variable<int>(dayStartUtc);
+    }
+    map['day_start_source'] = Variable<String>(dayStartSource);
     return map;
   }
 
@@ -2984,6 +3043,10 @@ class ReviewEvent extends DataClass implements Insertable<ReviewEvent> {
       intervalDaysAfter: Value(intervalDaysAfter),
       algoVersion: Value(algoVersion),
       mode: Value(mode),
+      dayStartUtc: dayStartUtc == null && nullToAbsent
+          ? const Value.absent()
+          : Value(dayStartUtc),
+      dayStartSource: Value(dayStartSource),
     );
   }
 
@@ -3004,6 +3067,8 @@ class ReviewEvent extends DataClass implements Insertable<ReviewEvent> {
       intervalDaysAfter: serializer.fromJson<int>(json['intervalDaysAfter']),
       algoVersion: serializer.fromJson<int>(json['algoVersion']),
       mode: serializer.fromJson<String>(json['mode']),
+      dayStartUtc: serializer.fromJson<int?>(json['dayStartUtc']),
+      dayStartSource: serializer.fromJson<String>(json['dayStartSource']),
     );
   }
   @override
@@ -3021,6 +3086,8 @@ class ReviewEvent extends DataClass implements Insertable<ReviewEvent> {
       'intervalDaysAfter': serializer.toJson<int>(intervalDaysAfter),
       'algoVersion': serializer.toJson<int>(algoVersion),
       'mode': serializer.toJson<String>(mode),
+      'dayStartUtc': serializer.toJson<int?>(dayStartUtc),
+      'dayStartSource': serializer.toJson<String>(dayStartSource),
     };
   }
 
@@ -3036,6 +3103,8 @@ class ReviewEvent extends DataClass implements Insertable<ReviewEvent> {
     int? intervalDaysAfter,
     int? algoVersion,
     String? mode,
+    Value<int?> dayStartUtc = const Value.absent(),
+    String? dayStartSource,
   }) => ReviewEvent(
     id: id ?? this.id,
     wordId: wordId ?? this.wordId,
@@ -3048,6 +3117,8 @@ class ReviewEvent extends DataClass implements Insertable<ReviewEvent> {
     intervalDaysAfter: intervalDaysAfter ?? this.intervalDaysAfter,
     algoVersion: algoVersion ?? this.algoVersion,
     mode: mode ?? this.mode,
+    dayStartUtc: dayStartUtc.present ? dayStartUtc.value : this.dayStartUtc,
+    dayStartSource: dayStartSource ?? this.dayStartSource,
   );
   ReviewEvent copyWithCompanion(ReviewEventsCompanion data) {
     return ReviewEvent(
@@ -3070,6 +3141,12 @@ class ReviewEvent extends DataClass implements Insertable<ReviewEvent> {
           ? data.algoVersion.value
           : this.algoVersion,
       mode: data.mode.present ? data.mode.value : this.mode,
+      dayStartUtc: data.dayStartUtc.present
+          ? data.dayStartUtc.value
+          : this.dayStartUtc,
+      dayStartSource: data.dayStartSource.present
+          ? data.dayStartSource.value
+          : this.dayStartSource,
     );
   }
 
@@ -3086,7 +3163,9 @@ class ReviewEvent extends DataClass implements Insertable<ReviewEvent> {
           ..write('stageBefore: $stageBefore, ')
           ..write('intervalDaysAfter: $intervalDaysAfter, ')
           ..write('algoVersion: $algoVersion, ')
-          ..write('mode: $mode')
+          ..write('mode: $mode, ')
+          ..write('dayStartUtc: $dayStartUtc, ')
+          ..write('dayStartSource: $dayStartSource')
           ..write(')'))
         .toString();
   }
@@ -3104,6 +3183,8 @@ class ReviewEvent extends DataClass implements Insertable<ReviewEvent> {
     intervalDaysAfter,
     algoVersion,
     mode,
+    dayStartUtc,
+    dayStartSource,
   );
   @override
   bool operator ==(Object other) =>
@@ -3119,7 +3200,9 @@ class ReviewEvent extends DataClass implements Insertable<ReviewEvent> {
           other.stageBefore == this.stageBefore &&
           other.intervalDaysAfter == this.intervalDaysAfter &&
           other.algoVersion == this.algoVersion &&
-          other.mode == this.mode);
+          other.mode == this.mode &&
+          other.dayStartUtc == this.dayStartUtc &&
+          other.dayStartSource == this.dayStartSource);
 }
 
 class ReviewEventsCompanion extends UpdateCompanion<ReviewEvent> {
@@ -3134,6 +3217,8 @@ class ReviewEventsCompanion extends UpdateCompanion<ReviewEvent> {
   final Value<int> intervalDaysAfter;
   final Value<int> algoVersion;
   final Value<String> mode;
+  final Value<int?> dayStartUtc;
+  final Value<String> dayStartSource;
   final Value<int> rowid;
   const ReviewEventsCompanion({
     this.id = const Value.absent(),
@@ -3147,6 +3232,8 @@ class ReviewEventsCompanion extends UpdateCompanion<ReviewEvent> {
     this.intervalDaysAfter = const Value.absent(),
     this.algoVersion = const Value.absent(),
     this.mode = const Value.absent(),
+    this.dayStartUtc = const Value.absent(),
+    this.dayStartSource = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   ReviewEventsCompanion.insert({
@@ -3161,6 +3248,8 @@ class ReviewEventsCompanion extends UpdateCompanion<ReviewEvent> {
     this.intervalDaysAfter = const Value.absent(),
     this.algoVersion = const Value.absent(),
     this.mode = const Value.absent(),
+    this.dayStartUtc = const Value.absent(),
+    this.dayStartSource = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        wordId = Value(wordId),
@@ -3181,6 +3270,8 @@ class ReviewEventsCompanion extends UpdateCompanion<ReviewEvent> {
     Expression<int>? intervalDaysAfter,
     Expression<int>? algoVersion,
     Expression<String>? mode,
+    Expression<int>? dayStartUtc,
+    Expression<String>? dayStartSource,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -3195,6 +3286,8 @@ class ReviewEventsCompanion extends UpdateCompanion<ReviewEvent> {
       if (intervalDaysAfter != null) 'interval_days_after': intervalDaysAfter,
       if (algoVersion != null) 'algo_version': algoVersion,
       if (mode != null) 'mode': mode,
+      if (dayStartUtc != null) 'day_start_utc': dayStartUtc,
+      if (dayStartSource != null) 'day_start_source': dayStartSource,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -3211,6 +3304,8 @@ class ReviewEventsCompanion extends UpdateCompanion<ReviewEvent> {
     Value<int>? intervalDaysAfter,
     Value<int>? algoVersion,
     Value<String>? mode,
+    Value<int?>? dayStartUtc,
+    Value<String>? dayStartSource,
     Value<int>? rowid,
   }) {
     return ReviewEventsCompanion(
@@ -3225,6 +3320,8 @@ class ReviewEventsCompanion extends UpdateCompanion<ReviewEvent> {
       intervalDaysAfter: intervalDaysAfter ?? this.intervalDaysAfter,
       algoVersion: algoVersion ?? this.algoVersion,
       mode: mode ?? this.mode,
+      dayStartUtc: dayStartUtc ?? this.dayStartUtc,
+      dayStartSource: dayStartSource ?? this.dayStartSource,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -3265,6 +3362,12 @@ class ReviewEventsCompanion extends UpdateCompanion<ReviewEvent> {
     if (mode.present) {
       map['mode'] = Variable<String>(mode.value);
     }
+    if (dayStartUtc.present) {
+      map['day_start_utc'] = Variable<int>(dayStartUtc.value);
+    }
+    if (dayStartSource.present) {
+      map['day_start_source'] = Variable<String>(dayStartSource.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -3285,6 +3388,8 @@ class ReviewEventsCompanion extends UpdateCompanion<ReviewEvent> {
           ..write('intervalDaysAfter: $intervalDaysAfter, ')
           ..write('algoVersion: $algoVersion, ')
           ..write('mode: $mode, ')
+          ..write('dayStartUtc: $dayStartUtc, ')
+          ..write('dayStartSource: $dayStartSource, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -4159,6 +4264,1924 @@ class AppMetaCompanion extends UpdateCompanion<AppMetaRow> {
   }
 }
 
+class $WordFavoritesTable extends WordFavorites
+    with TableInfo<$WordFavoritesTable, FavoriteRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $WordFavoritesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _wordIdMeta = const VerificationMeta('wordId');
+  @override
+  late final GeneratedColumn<String> wordId = GeneratedColumn<String>(
+    'word_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES words (id) ON DELETE CASCADE',
+    ),
+  );
+  static const VerificationMeta _valueMeta = const VerificationMeta('value');
+  @override
+  late final GeneratedColumn<bool> value = GeneratedColumn<bool>(
+    'value',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("value" IN (0, 1))',
+    ),
+    defaultValue: const Constant(true),
+  );
+  static const VerificationMeta _versionMeta = const VerificationMeta(
+    'version',
+  );
+  @override
+  late final GeneratedColumn<int> version = GeneratedColumn<int>(
+    'version',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(1),
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _deviceIdMeta = const VerificationMeta(
+    'deviceId',
+  );
+  @override
+  late final GeneratedColumn<String> deviceId = GeneratedColumn<String>(
+    'device_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    wordId,
+    value,
+    version,
+    updatedAt,
+    deviceId,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'word_favorites';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<FavoriteRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('word_id')) {
+      context.handle(
+        _wordIdMeta,
+        wordId.isAcceptableOrUnknown(data['word_id']!, _wordIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_wordIdMeta);
+    }
+    if (data.containsKey('value')) {
+      context.handle(
+        _valueMeta,
+        value.isAcceptableOrUnknown(data['value']!, _valueMeta),
+      );
+    }
+    if (data.containsKey('version')) {
+      context.handle(
+        _versionMeta,
+        version.isAcceptableOrUnknown(data['version']!, _versionMeta),
+      );
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    if (data.containsKey('device_id')) {
+      context.handle(
+        _deviceIdMeta,
+        deviceId.isAcceptableOrUnknown(data['device_id']!, _deviceIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_deviceIdMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {wordId};
+  @override
+  FavoriteRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return FavoriteRow(
+      wordId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}word_id'],
+      )!,
+      value: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}value'],
+      )!,
+      version: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}version'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}updated_at'],
+      )!,
+      deviceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}device_id'],
+      )!,
+    );
+  }
+
+  @override
+  $WordFavoritesTable createAlias(String alias) {
+    return $WordFavoritesTable(attachedDatabase, alias);
+  }
+}
+
+class FavoriteRow extends DataClass implements Insertable<FavoriteRow> {
+  final String wordId;
+  final bool value;
+  final int version;
+  final int updatedAt;
+  final String deviceId;
+  const FavoriteRow({
+    required this.wordId,
+    required this.value,
+    required this.version,
+    required this.updatedAt,
+    required this.deviceId,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['word_id'] = Variable<String>(wordId);
+    map['value'] = Variable<bool>(value);
+    map['version'] = Variable<int>(version);
+    map['updated_at'] = Variable<int>(updatedAt);
+    map['device_id'] = Variable<String>(deviceId);
+    return map;
+  }
+
+  WordFavoritesCompanion toCompanion(bool nullToAbsent) {
+    return WordFavoritesCompanion(
+      wordId: Value(wordId),
+      value: Value(value),
+      version: Value(version),
+      updatedAt: Value(updatedAt),
+      deviceId: Value(deviceId),
+    );
+  }
+
+  factory FavoriteRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return FavoriteRow(
+      wordId: serializer.fromJson<String>(json['wordId']),
+      value: serializer.fromJson<bool>(json['value']),
+      version: serializer.fromJson<int>(json['version']),
+      updatedAt: serializer.fromJson<int>(json['updatedAt']),
+      deviceId: serializer.fromJson<String>(json['deviceId']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'wordId': serializer.toJson<String>(wordId),
+      'value': serializer.toJson<bool>(value),
+      'version': serializer.toJson<int>(version),
+      'updatedAt': serializer.toJson<int>(updatedAt),
+      'deviceId': serializer.toJson<String>(deviceId),
+    };
+  }
+
+  FavoriteRow copyWith({
+    String? wordId,
+    bool? value,
+    int? version,
+    int? updatedAt,
+    String? deviceId,
+  }) => FavoriteRow(
+    wordId: wordId ?? this.wordId,
+    value: value ?? this.value,
+    version: version ?? this.version,
+    updatedAt: updatedAt ?? this.updatedAt,
+    deviceId: deviceId ?? this.deviceId,
+  );
+  FavoriteRow copyWithCompanion(WordFavoritesCompanion data) {
+    return FavoriteRow(
+      wordId: data.wordId.present ? data.wordId.value : this.wordId,
+      value: data.value.present ? data.value.value : this.value,
+      version: data.version.present ? data.version.value : this.version,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      deviceId: data.deviceId.present ? data.deviceId.value : this.deviceId,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('FavoriteRow(')
+          ..write('wordId: $wordId, ')
+          ..write('value: $value, ')
+          ..write('version: $version, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deviceId: $deviceId')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(wordId, value, version, updatedAt, deviceId);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is FavoriteRow &&
+          other.wordId == this.wordId &&
+          other.value == this.value &&
+          other.version == this.version &&
+          other.updatedAt == this.updatedAt &&
+          other.deviceId == this.deviceId);
+}
+
+class WordFavoritesCompanion extends UpdateCompanion<FavoriteRow> {
+  final Value<String> wordId;
+  final Value<bool> value;
+  final Value<int> version;
+  final Value<int> updatedAt;
+  final Value<String> deviceId;
+  final Value<int> rowid;
+  const WordFavoritesCompanion({
+    this.wordId = const Value.absent(),
+    this.value = const Value.absent(),
+    this.version = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.deviceId = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  WordFavoritesCompanion.insert({
+    required String wordId,
+    this.value = const Value.absent(),
+    this.version = const Value.absent(),
+    required int updatedAt,
+    required String deviceId,
+    this.rowid = const Value.absent(),
+  }) : wordId = Value(wordId),
+       updatedAt = Value(updatedAt),
+       deviceId = Value(deviceId);
+  static Insertable<FavoriteRow> custom({
+    Expression<String>? wordId,
+    Expression<bool>? value,
+    Expression<int>? version,
+    Expression<int>? updatedAt,
+    Expression<String>? deviceId,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (wordId != null) 'word_id': wordId,
+      if (value != null) 'value': value,
+      if (version != null) 'version': version,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (deviceId != null) 'device_id': deviceId,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  WordFavoritesCompanion copyWith({
+    Value<String>? wordId,
+    Value<bool>? value,
+    Value<int>? version,
+    Value<int>? updatedAt,
+    Value<String>? deviceId,
+    Value<int>? rowid,
+  }) {
+    return WordFavoritesCompanion(
+      wordId: wordId ?? this.wordId,
+      value: value ?? this.value,
+      version: version ?? this.version,
+      updatedAt: updatedAt ?? this.updatedAt,
+      deviceId: deviceId ?? this.deviceId,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (wordId.present) {
+      map['word_id'] = Variable<String>(wordId.value);
+    }
+    if (value.present) {
+      map['value'] = Variable<bool>(value.value);
+    }
+    if (version.present) {
+      map['version'] = Variable<int>(version.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
+    if (deviceId.present) {
+      map['device_id'] = Variable<String>(deviceId.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('WordFavoritesCompanion(')
+          ..write('wordId: $wordId, ')
+          ..write('value: $value, ')
+          ..write('version: $version, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deviceId: $deviceId, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $UserTagsTable extends UserTags with TableInfo<$UserTagsTable, UserTag> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $UserTagsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  @override
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+    'name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _normalizedMeta = const VerificationMeta(
+    'normalized',
+  );
+  @override
+  late final GeneratedColumn<String> normalized = GeneratedColumn<String>(
+    'normalized',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _versionMeta = const VerificationMeta(
+    'version',
+  );
+  @override
+  late final GeneratedColumn<int> version = GeneratedColumn<int>(
+    'version',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(1),
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _deviceIdMeta = const VerificationMeta(
+    'deviceId',
+  );
+  @override
+  late final GeneratedColumn<String> deviceId = GeneratedColumn<String>(
+    'device_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _deletedAtMeta = const VerificationMeta(
+    'deletedAt',
+  );
+  @override
+  late final GeneratedColumn<int> deletedAt = GeneratedColumn<int>(
+    'deleted_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    name,
+    normalized,
+    version,
+    updatedAt,
+    deviceId,
+    deletedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'user_tags';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<UserTag> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('name')) {
+      context.handle(
+        _nameMeta,
+        name.isAcceptableOrUnknown(data['name']!, _nameMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_nameMeta);
+    }
+    if (data.containsKey('normalized')) {
+      context.handle(
+        _normalizedMeta,
+        normalized.isAcceptableOrUnknown(data['normalized']!, _normalizedMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_normalizedMeta);
+    }
+    if (data.containsKey('version')) {
+      context.handle(
+        _versionMeta,
+        version.isAcceptableOrUnknown(data['version']!, _versionMeta),
+      );
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    if (data.containsKey('device_id')) {
+      context.handle(
+        _deviceIdMeta,
+        deviceId.isAcceptableOrUnknown(data['device_id']!, _deviceIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_deviceIdMeta);
+    }
+    if (data.containsKey('deleted_at')) {
+      context.handle(
+        _deletedAtMeta,
+        deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  UserTag map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return UserTag(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      name: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}name'],
+      )!,
+      normalized: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}normalized'],
+      )!,
+      version: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}version'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}updated_at'],
+      )!,
+      deviceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}device_id'],
+      )!,
+      deletedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}deleted_at'],
+      ),
+    );
+  }
+
+  @override
+  $UserTagsTable createAlias(String alias) {
+    return $UserTagsTable(attachedDatabase, alias);
+  }
+}
+
+class UserTag extends DataClass implements Insertable<UserTag> {
+  final String id;
+  final String name;
+  final String normalized;
+  final int version;
+  final int updatedAt;
+  final String deviceId;
+  final int? deletedAt;
+  const UserTag({
+    required this.id,
+    required this.name,
+    required this.normalized,
+    required this.version,
+    required this.updatedAt,
+    required this.deviceId,
+    this.deletedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['name'] = Variable<String>(name);
+    map['normalized'] = Variable<String>(normalized);
+    map['version'] = Variable<int>(version);
+    map['updated_at'] = Variable<int>(updatedAt);
+    map['device_id'] = Variable<String>(deviceId);
+    if (!nullToAbsent || deletedAt != null) {
+      map['deleted_at'] = Variable<int>(deletedAt);
+    }
+    return map;
+  }
+
+  UserTagsCompanion toCompanion(bool nullToAbsent) {
+    return UserTagsCompanion(
+      id: Value(id),
+      name: Value(name),
+      normalized: Value(normalized),
+      version: Value(version),
+      updatedAt: Value(updatedAt),
+      deviceId: Value(deviceId),
+      deletedAt: deletedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deletedAt),
+    );
+  }
+
+  factory UserTag.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return UserTag(
+      id: serializer.fromJson<String>(json['id']),
+      name: serializer.fromJson<String>(json['name']),
+      normalized: serializer.fromJson<String>(json['normalized']),
+      version: serializer.fromJson<int>(json['version']),
+      updatedAt: serializer.fromJson<int>(json['updatedAt']),
+      deviceId: serializer.fromJson<String>(json['deviceId']),
+      deletedAt: serializer.fromJson<int?>(json['deletedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'name': serializer.toJson<String>(name),
+      'normalized': serializer.toJson<String>(normalized),
+      'version': serializer.toJson<int>(version),
+      'updatedAt': serializer.toJson<int>(updatedAt),
+      'deviceId': serializer.toJson<String>(deviceId),
+      'deletedAt': serializer.toJson<int?>(deletedAt),
+    };
+  }
+
+  UserTag copyWith({
+    String? id,
+    String? name,
+    String? normalized,
+    int? version,
+    int? updatedAt,
+    String? deviceId,
+    Value<int?> deletedAt = const Value.absent(),
+  }) => UserTag(
+    id: id ?? this.id,
+    name: name ?? this.name,
+    normalized: normalized ?? this.normalized,
+    version: version ?? this.version,
+    updatedAt: updatedAt ?? this.updatedAt,
+    deviceId: deviceId ?? this.deviceId,
+    deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
+  );
+  UserTag copyWithCompanion(UserTagsCompanion data) {
+    return UserTag(
+      id: data.id.present ? data.id.value : this.id,
+      name: data.name.present ? data.name.value : this.name,
+      normalized: data.normalized.present
+          ? data.normalized.value
+          : this.normalized,
+      version: data.version.present ? data.version.value : this.version,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      deviceId: data.deviceId.present ? data.deviceId.value : this.deviceId,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('UserTag(')
+          ..write('id: $id, ')
+          ..write('name: $name, ')
+          ..write('normalized: $normalized, ')
+          ..write('version: $version, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deviceId: $deviceId, ')
+          ..write('deletedAt: $deletedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    name,
+    normalized,
+    version,
+    updatedAt,
+    deviceId,
+    deletedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is UserTag &&
+          other.id == this.id &&
+          other.name == this.name &&
+          other.normalized == this.normalized &&
+          other.version == this.version &&
+          other.updatedAt == this.updatedAt &&
+          other.deviceId == this.deviceId &&
+          other.deletedAt == this.deletedAt);
+}
+
+class UserTagsCompanion extends UpdateCompanion<UserTag> {
+  final Value<String> id;
+  final Value<String> name;
+  final Value<String> normalized;
+  final Value<int> version;
+  final Value<int> updatedAt;
+  final Value<String> deviceId;
+  final Value<int?> deletedAt;
+  final Value<int> rowid;
+  const UserTagsCompanion({
+    this.id = const Value.absent(),
+    this.name = const Value.absent(),
+    this.normalized = const Value.absent(),
+    this.version = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.deviceId = const Value.absent(),
+    this.deletedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  UserTagsCompanion.insert({
+    required String id,
+    required String name,
+    required String normalized,
+    this.version = const Value.absent(),
+    required int updatedAt,
+    required String deviceId,
+    this.deletedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       name = Value(name),
+       normalized = Value(normalized),
+       updatedAt = Value(updatedAt),
+       deviceId = Value(deviceId);
+  static Insertable<UserTag> custom({
+    Expression<String>? id,
+    Expression<String>? name,
+    Expression<String>? normalized,
+    Expression<int>? version,
+    Expression<int>? updatedAt,
+    Expression<String>? deviceId,
+    Expression<int>? deletedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (name != null) 'name': name,
+      if (normalized != null) 'normalized': normalized,
+      if (version != null) 'version': version,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (deviceId != null) 'device_id': deviceId,
+      if (deletedAt != null) 'deleted_at': deletedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  UserTagsCompanion copyWith({
+    Value<String>? id,
+    Value<String>? name,
+    Value<String>? normalized,
+    Value<int>? version,
+    Value<int>? updatedAt,
+    Value<String>? deviceId,
+    Value<int?>? deletedAt,
+    Value<int>? rowid,
+  }) {
+    return UserTagsCompanion(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      normalized: normalized ?? this.normalized,
+      version: version ?? this.version,
+      updatedAt: updatedAt ?? this.updatedAt,
+      deviceId: deviceId ?? this.deviceId,
+      deletedAt: deletedAt ?? this.deletedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
+    }
+    if (normalized.present) {
+      map['normalized'] = Variable<String>(normalized.value);
+    }
+    if (version.present) {
+      map['version'] = Variable<int>(version.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
+    if (deviceId.present) {
+      map['device_id'] = Variable<String>(deviceId.value);
+    }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<int>(deletedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('UserTagsCompanion(')
+          ..write('id: $id, ')
+          ..write('name: $name, ')
+          ..write('normalized: $normalized, ')
+          ..write('version: $version, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deviceId: $deviceId, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $WordTagsTable extends WordTags with TableInfo<$WordTagsTable, WordTag> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $WordTagsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _wordIdMeta = const VerificationMeta('wordId');
+  @override
+  late final GeneratedColumn<String> wordId = GeneratedColumn<String>(
+    'word_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES words (id) ON DELETE CASCADE',
+    ),
+  );
+  static const VerificationMeta _tagIdMeta = const VerificationMeta('tagId');
+  @override
+  late final GeneratedColumn<String> tagId = GeneratedColumn<String>(
+    'tag_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES user_tags (id) ON DELETE CASCADE',
+    ),
+  );
+  static const VerificationMeta _versionMeta = const VerificationMeta(
+    'version',
+  );
+  @override
+  late final GeneratedColumn<int> version = GeneratedColumn<int>(
+    'version',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(1),
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _deviceIdMeta = const VerificationMeta(
+    'deviceId',
+  );
+  @override
+  late final GeneratedColumn<String> deviceId = GeneratedColumn<String>(
+    'device_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _deletedAtMeta = const VerificationMeta(
+    'deletedAt',
+  );
+  @override
+  late final GeneratedColumn<int> deletedAt = GeneratedColumn<int>(
+    'deleted_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    wordId,
+    tagId,
+    version,
+    updatedAt,
+    deviceId,
+    deletedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'word_tags';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<WordTag> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('word_id')) {
+      context.handle(
+        _wordIdMeta,
+        wordId.isAcceptableOrUnknown(data['word_id']!, _wordIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_wordIdMeta);
+    }
+    if (data.containsKey('tag_id')) {
+      context.handle(
+        _tagIdMeta,
+        tagId.isAcceptableOrUnknown(data['tag_id']!, _tagIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_tagIdMeta);
+    }
+    if (data.containsKey('version')) {
+      context.handle(
+        _versionMeta,
+        version.isAcceptableOrUnknown(data['version']!, _versionMeta),
+      );
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    if (data.containsKey('device_id')) {
+      context.handle(
+        _deviceIdMeta,
+        deviceId.isAcceptableOrUnknown(data['device_id']!, _deviceIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_deviceIdMeta);
+    }
+    if (data.containsKey('deleted_at')) {
+      context.handle(
+        _deletedAtMeta,
+        deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {wordId, tagId};
+  @override
+  WordTag map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return WordTag(
+      wordId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}word_id'],
+      )!,
+      tagId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}tag_id'],
+      )!,
+      version: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}version'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}updated_at'],
+      )!,
+      deviceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}device_id'],
+      )!,
+      deletedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}deleted_at'],
+      ),
+    );
+  }
+
+  @override
+  $WordTagsTable createAlias(String alias) {
+    return $WordTagsTable(attachedDatabase, alias);
+  }
+}
+
+class WordTag extends DataClass implements Insertable<WordTag> {
+  final String wordId;
+  final String tagId;
+  final int version;
+  final int updatedAt;
+  final String deviceId;
+  final int? deletedAt;
+  const WordTag({
+    required this.wordId,
+    required this.tagId,
+    required this.version,
+    required this.updatedAt,
+    required this.deviceId,
+    this.deletedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['word_id'] = Variable<String>(wordId);
+    map['tag_id'] = Variable<String>(tagId);
+    map['version'] = Variable<int>(version);
+    map['updated_at'] = Variable<int>(updatedAt);
+    map['device_id'] = Variable<String>(deviceId);
+    if (!nullToAbsent || deletedAt != null) {
+      map['deleted_at'] = Variable<int>(deletedAt);
+    }
+    return map;
+  }
+
+  WordTagsCompanion toCompanion(bool nullToAbsent) {
+    return WordTagsCompanion(
+      wordId: Value(wordId),
+      tagId: Value(tagId),
+      version: Value(version),
+      updatedAt: Value(updatedAt),
+      deviceId: Value(deviceId),
+      deletedAt: deletedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deletedAt),
+    );
+  }
+
+  factory WordTag.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return WordTag(
+      wordId: serializer.fromJson<String>(json['wordId']),
+      tagId: serializer.fromJson<String>(json['tagId']),
+      version: serializer.fromJson<int>(json['version']),
+      updatedAt: serializer.fromJson<int>(json['updatedAt']),
+      deviceId: serializer.fromJson<String>(json['deviceId']),
+      deletedAt: serializer.fromJson<int?>(json['deletedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'wordId': serializer.toJson<String>(wordId),
+      'tagId': serializer.toJson<String>(tagId),
+      'version': serializer.toJson<int>(version),
+      'updatedAt': serializer.toJson<int>(updatedAt),
+      'deviceId': serializer.toJson<String>(deviceId),
+      'deletedAt': serializer.toJson<int?>(deletedAt),
+    };
+  }
+
+  WordTag copyWith({
+    String? wordId,
+    String? tagId,
+    int? version,
+    int? updatedAt,
+    String? deviceId,
+    Value<int?> deletedAt = const Value.absent(),
+  }) => WordTag(
+    wordId: wordId ?? this.wordId,
+    tagId: tagId ?? this.tagId,
+    version: version ?? this.version,
+    updatedAt: updatedAt ?? this.updatedAt,
+    deviceId: deviceId ?? this.deviceId,
+    deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
+  );
+  WordTag copyWithCompanion(WordTagsCompanion data) {
+    return WordTag(
+      wordId: data.wordId.present ? data.wordId.value : this.wordId,
+      tagId: data.tagId.present ? data.tagId.value : this.tagId,
+      version: data.version.present ? data.version.value : this.version,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      deviceId: data.deviceId.present ? data.deviceId.value : this.deviceId,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('WordTag(')
+          ..write('wordId: $wordId, ')
+          ..write('tagId: $tagId, ')
+          ..write('version: $version, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deviceId: $deviceId, ')
+          ..write('deletedAt: $deletedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(wordId, tagId, version, updatedAt, deviceId, deletedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is WordTag &&
+          other.wordId == this.wordId &&
+          other.tagId == this.tagId &&
+          other.version == this.version &&
+          other.updatedAt == this.updatedAt &&
+          other.deviceId == this.deviceId &&
+          other.deletedAt == this.deletedAt);
+}
+
+class WordTagsCompanion extends UpdateCompanion<WordTag> {
+  final Value<String> wordId;
+  final Value<String> tagId;
+  final Value<int> version;
+  final Value<int> updatedAt;
+  final Value<String> deviceId;
+  final Value<int?> deletedAt;
+  final Value<int> rowid;
+  const WordTagsCompanion({
+    this.wordId = const Value.absent(),
+    this.tagId = const Value.absent(),
+    this.version = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.deviceId = const Value.absent(),
+    this.deletedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  WordTagsCompanion.insert({
+    required String wordId,
+    required String tagId,
+    this.version = const Value.absent(),
+    required int updatedAt,
+    required String deviceId,
+    this.deletedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : wordId = Value(wordId),
+       tagId = Value(tagId),
+       updatedAt = Value(updatedAt),
+       deviceId = Value(deviceId);
+  static Insertable<WordTag> custom({
+    Expression<String>? wordId,
+    Expression<String>? tagId,
+    Expression<int>? version,
+    Expression<int>? updatedAt,
+    Expression<String>? deviceId,
+    Expression<int>? deletedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (wordId != null) 'word_id': wordId,
+      if (tagId != null) 'tag_id': tagId,
+      if (version != null) 'version': version,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (deviceId != null) 'device_id': deviceId,
+      if (deletedAt != null) 'deleted_at': deletedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  WordTagsCompanion copyWith({
+    Value<String>? wordId,
+    Value<String>? tagId,
+    Value<int>? version,
+    Value<int>? updatedAt,
+    Value<String>? deviceId,
+    Value<int?>? deletedAt,
+    Value<int>? rowid,
+  }) {
+    return WordTagsCompanion(
+      wordId: wordId ?? this.wordId,
+      tagId: tagId ?? this.tagId,
+      version: version ?? this.version,
+      updatedAt: updatedAt ?? this.updatedAt,
+      deviceId: deviceId ?? this.deviceId,
+      deletedAt: deletedAt ?? this.deletedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (wordId.present) {
+      map['word_id'] = Variable<String>(wordId.value);
+    }
+    if (tagId.present) {
+      map['tag_id'] = Variable<String>(tagId.value);
+    }
+    if (version.present) {
+      map['version'] = Variable<int>(version.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
+    if (deviceId.present) {
+      map['device_id'] = Variable<String>(deviceId.value);
+    }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<int>(deletedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('WordTagsCompanion(')
+          ..write('wordId: $wordId, ')
+          ..write('tagId: $tagId, ')
+          ..write('version: $version, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deviceId: $deviceId, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $SyncAliasesTable extends SyncAliases
+    with TableInfo<$SyncAliasesTable, SyncAliasRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SyncAliasesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _kindMeta = const VerificationMeta('kind');
+  @override
+  late final GeneratedColumn<String> kind = GeneratedColumn<String>(
+    'kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _aliasIdMeta = const VerificationMeta(
+    'aliasId',
+  );
+  @override
+  late final GeneratedColumn<String> aliasId = GeneratedColumn<String>(
+    'alias_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _localIdMeta = const VerificationMeta(
+    'localId',
+  );
+  @override
+  late final GeneratedColumn<String> localId = GeneratedColumn<String>(
+    'local_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [kind, aliasId, localId];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'sync_aliases';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<SyncAliasRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('kind')) {
+      context.handle(
+        _kindMeta,
+        kind.isAcceptableOrUnknown(data['kind']!, _kindMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_kindMeta);
+    }
+    if (data.containsKey('alias_id')) {
+      context.handle(
+        _aliasIdMeta,
+        aliasId.isAcceptableOrUnknown(data['alias_id']!, _aliasIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_aliasIdMeta);
+    }
+    if (data.containsKey('local_id')) {
+      context.handle(
+        _localIdMeta,
+        localId.isAcceptableOrUnknown(data['local_id']!, _localIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_localIdMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {kind, aliasId};
+  @override
+  SyncAliasRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SyncAliasRow(
+      kind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}kind'],
+      )!,
+      aliasId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}alias_id'],
+      )!,
+      localId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}local_id'],
+      )!,
+    );
+  }
+
+  @override
+  $SyncAliasesTable createAlias(String alias) {
+    return $SyncAliasesTable(attachedDatabase, alias);
+  }
+}
+
+class SyncAliasRow extends DataClass implements Insertable<SyncAliasRow> {
+  final String kind;
+  final String aliasId;
+  final String localId;
+  const SyncAliasRow({
+    required this.kind,
+    required this.aliasId,
+    required this.localId,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['kind'] = Variable<String>(kind);
+    map['alias_id'] = Variable<String>(aliasId);
+    map['local_id'] = Variable<String>(localId);
+    return map;
+  }
+
+  SyncAliasesCompanion toCompanion(bool nullToAbsent) {
+    return SyncAliasesCompanion(
+      kind: Value(kind),
+      aliasId: Value(aliasId),
+      localId: Value(localId),
+    );
+  }
+
+  factory SyncAliasRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SyncAliasRow(
+      kind: serializer.fromJson<String>(json['kind']),
+      aliasId: serializer.fromJson<String>(json['aliasId']),
+      localId: serializer.fromJson<String>(json['localId']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'kind': serializer.toJson<String>(kind),
+      'aliasId': serializer.toJson<String>(aliasId),
+      'localId': serializer.toJson<String>(localId),
+    };
+  }
+
+  SyncAliasRow copyWith({String? kind, String? aliasId, String? localId}) =>
+      SyncAliasRow(
+        kind: kind ?? this.kind,
+        aliasId: aliasId ?? this.aliasId,
+        localId: localId ?? this.localId,
+      );
+  SyncAliasRow copyWithCompanion(SyncAliasesCompanion data) {
+    return SyncAliasRow(
+      kind: data.kind.present ? data.kind.value : this.kind,
+      aliasId: data.aliasId.present ? data.aliasId.value : this.aliasId,
+      localId: data.localId.present ? data.localId.value : this.localId,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SyncAliasRow(')
+          ..write('kind: $kind, ')
+          ..write('aliasId: $aliasId, ')
+          ..write('localId: $localId')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(kind, aliasId, localId);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SyncAliasRow &&
+          other.kind == this.kind &&
+          other.aliasId == this.aliasId &&
+          other.localId == this.localId);
+}
+
+class SyncAliasesCompanion extends UpdateCompanion<SyncAliasRow> {
+  final Value<String> kind;
+  final Value<String> aliasId;
+  final Value<String> localId;
+  final Value<int> rowid;
+  const SyncAliasesCompanion({
+    this.kind = const Value.absent(),
+    this.aliasId = const Value.absent(),
+    this.localId = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  SyncAliasesCompanion.insert({
+    required String kind,
+    required String aliasId,
+    required String localId,
+    this.rowid = const Value.absent(),
+  }) : kind = Value(kind),
+       aliasId = Value(aliasId),
+       localId = Value(localId);
+  static Insertable<SyncAliasRow> custom({
+    Expression<String>? kind,
+    Expression<String>? aliasId,
+    Expression<String>? localId,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (kind != null) 'kind': kind,
+      if (aliasId != null) 'alias_id': aliasId,
+      if (localId != null) 'local_id': localId,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  SyncAliasesCompanion copyWith({
+    Value<String>? kind,
+    Value<String>? aliasId,
+    Value<String>? localId,
+    Value<int>? rowid,
+  }) {
+    return SyncAliasesCompanion(
+      kind: kind ?? this.kind,
+      aliasId: aliasId ?? this.aliasId,
+      localId: localId ?? this.localId,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (kind.present) {
+      map['kind'] = Variable<String>(kind.value);
+    }
+    if (aliasId.present) {
+      map['alias_id'] = Variable<String>(aliasId.value);
+    }
+    if (localId.present) {
+      map['local_id'] = Variable<String>(localId.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SyncAliasesCompanion(')
+          ..write('kind: $kind, ')
+          ..write('aliasId: $aliasId, ')
+          ..write('localId: $localId, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $ContentVersionsTable extends ContentVersions
+    with TableInfo<$ContentVersionsTable, ContentVersionRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $ContentVersionsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _kindMeta = const VerificationMeta('kind');
+  @override
+  late final GeneratedColumn<String> kind = GeneratedColumn<String>(
+    'kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _entityIdMeta = const VerificationMeta(
+    'entityId',
+  );
+  @override
+  late final GeneratedColumn<String> entityId = GeneratedColumn<String>(
+    'entity_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _fieldMeta = const VerificationMeta('field');
+  @override
+  late final GeneratedColumn<String> field = GeneratedColumn<String>(
+    'field',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _versionMeta = const VerificationMeta(
+    'version',
+  );
+  @override
+  late final GeneratedColumn<int> version = GeneratedColumn<int>(
+    'version',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _deviceIdMeta = const VerificationMeta(
+    'deviceId',
+  );
+  @override
+  late final GeneratedColumn<String> deviceId = GeneratedColumn<String>(
+    'device_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    kind,
+    entityId,
+    field,
+    version,
+    updatedAt,
+    deviceId,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'content_versions';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<ContentVersionRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('kind')) {
+      context.handle(
+        _kindMeta,
+        kind.isAcceptableOrUnknown(data['kind']!, _kindMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_kindMeta);
+    }
+    if (data.containsKey('entity_id')) {
+      context.handle(
+        _entityIdMeta,
+        entityId.isAcceptableOrUnknown(data['entity_id']!, _entityIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_entityIdMeta);
+    }
+    if (data.containsKey('field')) {
+      context.handle(
+        _fieldMeta,
+        field.isAcceptableOrUnknown(data['field']!, _fieldMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_fieldMeta);
+    }
+    if (data.containsKey('version')) {
+      context.handle(
+        _versionMeta,
+        version.isAcceptableOrUnknown(data['version']!, _versionMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_versionMeta);
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    if (data.containsKey('device_id')) {
+      context.handle(
+        _deviceIdMeta,
+        deviceId.isAcceptableOrUnknown(data['device_id']!, _deviceIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_deviceIdMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {kind, entityId, field};
+  @override
+  ContentVersionRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return ContentVersionRow(
+      kind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}kind'],
+      )!,
+      entityId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}entity_id'],
+      )!,
+      field: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}field'],
+      )!,
+      version: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}version'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}updated_at'],
+      )!,
+      deviceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}device_id'],
+      )!,
+    );
+  }
+
+  @override
+  $ContentVersionsTable createAlias(String alias) {
+    return $ContentVersionsTable(attachedDatabase, alias);
+  }
+}
+
+class ContentVersionRow extends DataClass
+    implements Insertable<ContentVersionRow> {
+  final String kind;
+  final String entityId;
+  final String field;
+  final int version;
+  final int updatedAt;
+  final String deviceId;
+  const ContentVersionRow({
+    required this.kind,
+    required this.entityId,
+    required this.field,
+    required this.version,
+    required this.updatedAt,
+    required this.deviceId,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['kind'] = Variable<String>(kind);
+    map['entity_id'] = Variable<String>(entityId);
+    map['field'] = Variable<String>(field);
+    map['version'] = Variable<int>(version);
+    map['updated_at'] = Variable<int>(updatedAt);
+    map['device_id'] = Variable<String>(deviceId);
+    return map;
+  }
+
+  ContentVersionsCompanion toCompanion(bool nullToAbsent) {
+    return ContentVersionsCompanion(
+      kind: Value(kind),
+      entityId: Value(entityId),
+      field: Value(field),
+      version: Value(version),
+      updatedAt: Value(updatedAt),
+      deviceId: Value(deviceId),
+    );
+  }
+
+  factory ContentVersionRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return ContentVersionRow(
+      kind: serializer.fromJson<String>(json['kind']),
+      entityId: serializer.fromJson<String>(json['entityId']),
+      field: serializer.fromJson<String>(json['field']),
+      version: serializer.fromJson<int>(json['version']),
+      updatedAt: serializer.fromJson<int>(json['updatedAt']),
+      deviceId: serializer.fromJson<String>(json['deviceId']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'kind': serializer.toJson<String>(kind),
+      'entityId': serializer.toJson<String>(entityId),
+      'field': serializer.toJson<String>(field),
+      'version': serializer.toJson<int>(version),
+      'updatedAt': serializer.toJson<int>(updatedAt),
+      'deviceId': serializer.toJson<String>(deviceId),
+    };
+  }
+
+  ContentVersionRow copyWith({
+    String? kind,
+    String? entityId,
+    String? field,
+    int? version,
+    int? updatedAt,
+    String? deviceId,
+  }) => ContentVersionRow(
+    kind: kind ?? this.kind,
+    entityId: entityId ?? this.entityId,
+    field: field ?? this.field,
+    version: version ?? this.version,
+    updatedAt: updatedAt ?? this.updatedAt,
+    deviceId: deviceId ?? this.deviceId,
+  );
+  ContentVersionRow copyWithCompanion(ContentVersionsCompanion data) {
+    return ContentVersionRow(
+      kind: data.kind.present ? data.kind.value : this.kind,
+      entityId: data.entityId.present ? data.entityId.value : this.entityId,
+      field: data.field.present ? data.field.value : this.field,
+      version: data.version.present ? data.version.value : this.version,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      deviceId: data.deviceId.present ? data.deviceId.value : this.deviceId,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ContentVersionRow(')
+          ..write('kind: $kind, ')
+          ..write('entityId: $entityId, ')
+          ..write('field: $field, ')
+          ..write('version: $version, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deviceId: $deviceId')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(kind, entityId, field, version, updatedAt, deviceId);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ContentVersionRow &&
+          other.kind == this.kind &&
+          other.entityId == this.entityId &&
+          other.field == this.field &&
+          other.version == this.version &&
+          other.updatedAt == this.updatedAt &&
+          other.deviceId == this.deviceId);
+}
+
+class ContentVersionsCompanion extends UpdateCompanion<ContentVersionRow> {
+  final Value<String> kind;
+  final Value<String> entityId;
+  final Value<String> field;
+  final Value<int> version;
+  final Value<int> updatedAt;
+  final Value<String> deviceId;
+  final Value<int> rowid;
+  const ContentVersionsCompanion({
+    this.kind = const Value.absent(),
+    this.entityId = const Value.absent(),
+    this.field = const Value.absent(),
+    this.version = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.deviceId = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  ContentVersionsCompanion.insert({
+    required String kind,
+    required String entityId,
+    required String field,
+    required int version,
+    required int updatedAt,
+    required String deviceId,
+    this.rowid = const Value.absent(),
+  }) : kind = Value(kind),
+       entityId = Value(entityId),
+       field = Value(field),
+       version = Value(version),
+       updatedAt = Value(updatedAt),
+       deviceId = Value(deviceId);
+  static Insertable<ContentVersionRow> custom({
+    Expression<String>? kind,
+    Expression<String>? entityId,
+    Expression<String>? field,
+    Expression<int>? version,
+    Expression<int>? updatedAt,
+    Expression<String>? deviceId,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (kind != null) 'kind': kind,
+      if (entityId != null) 'entity_id': entityId,
+      if (field != null) 'field': field,
+      if (version != null) 'version': version,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (deviceId != null) 'device_id': deviceId,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  ContentVersionsCompanion copyWith({
+    Value<String>? kind,
+    Value<String>? entityId,
+    Value<String>? field,
+    Value<int>? version,
+    Value<int>? updatedAt,
+    Value<String>? deviceId,
+    Value<int>? rowid,
+  }) {
+    return ContentVersionsCompanion(
+      kind: kind ?? this.kind,
+      entityId: entityId ?? this.entityId,
+      field: field ?? this.field,
+      version: version ?? this.version,
+      updatedAt: updatedAt ?? this.updatedAt,
+      deviceId: deviceId ?? this.deviceId,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (kind.present) {
+      map['kind'] = Variable<String>(kind.value);
+    }
+    if (entityId.present) {
+      map['entity_id'] = Variable<String>(entityId.value);
+    }
+    if (field.present) {
+      map['field'] = Variable<String>(field.value);
+    }
+    if (version.present) {
+      map['version'] = Variable<int>(version.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
+    if (deviceId.present) {
+      map['device_id'] = Variable<String>(deviceId.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ContentVersionsCompanion(')
+          ..write('kind: $kind, ')
+          ..write('entityId: $entityId, ')
+          ..write('field: $field, ')
+          ..write('version: $version, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deviceId: $deviceId, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -4171,6 +6194,13 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $ReviewEventsTable reviewEvents = $ReviewEventsTable(this);
   late final $StudySettingsTable studySettings = $StudySettingsTable(this);
   late final $AppMetaTable appMeta = $AppMetaTable(this);
+  late final $WordFavoritesTable wordFavorites = $WordFavoritesTable(this);
+  late final $UserTagsTable userTags = $UserTagsTable(this);
+  late final $WordTagsTable wordTags = $WordTagsTable(this);
+  late final $SyncAliasesTable syncAliases = $SyncAliasesTable(this);
+  late final $ContentVersionsTable contentVersions = $ContentVersionsTable(
+    this,
+  );
   late final Index idxWordsNormalized = Index(
     'idx_words_normalized',
     'CREATE UNIQUE INDEX idx_words_normalized ON words (normalized)',
@@ -4207,6 +6237,14 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     'idx_settings_id',
     'CREATE INDEX idx_settings_id ON study_settings (id)',
   );
+  late final Index idxTagsName = Index(
+    'idx_tags_name',
+    'CREATE INDEX idx_tags_name ON user_tags (normalized)',
+  );
+  late final Index idxWordTagsWord = Index(
+    'idx_word_tags_word',
+    'CREATE INDEX idx_word_tags_word ON word_tags (word_id, deleted_at)',
+  );
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -4219,6 +6257,11 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     reviewEvents,
     studySettings,
     appMeta,
+    wordFavorites,
+    userTags,
+    wordTags,
+    syncAliases,
+    contentVersions,
     idxWordsNormalized,
     idxWordbooksDeleted,
     idxEntriesWord,
@@ -4228,6 +6271,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     idxEventsWordTime,
     idxEventsDay,
     idxSettingsId,
+    idxTagsName,
+    idxWordTagsWord,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -4258,6 +6303,27 @@ abstract class _$AppDatabase extends GeneratedDatabase {
         limitUpdateKind: UpdateKind.delete,
       ),
       result: [TableUpdate('review_events', kind: UpdateKind.delete)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'words',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('word_favorites', kind: UpdateKind.delete)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'words',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('word_tags', kind: UpdateKind.delete)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'user_tags',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('word_tags', kind: UpdateKind.delete)],
     ),
   ]);
 }
@@ -4362,6 +6428,43 @@ final class $$WordsTableReferences
     ).filter((f) => f.wordId.id.sqlEquals($_itemColumn<String>('id')!));
 
     final cache = $_typedResult.readTableOrNull(_reviewEventsRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+
+  static MultiTypedResultKey<$WordFavoritesTable, List<FavoriteRow>>
+  _wordFavoritesRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.wordFavorites,
+    aliasName: 'words__id__word_favorites__word_id',
+  );
+
+  $$WordFavoritesTableProcessedTableManager get wordFavoritesRefs {
+    final manager = $$WordFavoritesTableTableManager(
+      $_db,
+      $_db.wordFavorites,
+    ).filter((f) => f.wordId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_wordFavoritesRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+
+  static MultiTypedResultKey<$WordTagsTable, List<WordTag>> _wordTagsRefsTable(
+    _$AppDatabase db,
+  ) => MultiTypedResultKey.fromTable(
+    db.wordTags,
+    aliasName: 'words__id__word_tags__word_id',
+  );
+
+  $$WordTagsTableProcessedTableManager get wordTagsRefs {
+    final manager = $$WordTagsTableTableManager(
+      $_db,
+      $_db.wordTags,
+    ).filter((f) => f.wordId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_wordTagsRefsTable($_db));
     return ProcessedTableManager(
       manager.$state.copyWith(prefetchedData: cache),
     );
@@ -4537,6 +6640,56 @@ class $$WordsTableFilterComposer extends Composer<_$AppDatabase, $WordsTable> {
           }) => $$ReviewEventsTableFilterComposer(
             $db: $db,
             $table: $db.reviewEvents,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<bool> wordFavoritesRefs(
+    Expression<bool> Function($$WordFavoritesTableFilterComposer f) f,
+  ) {
+    final $$WordFavoritesTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.wordFavorites,
+      getReferencedColumn: (t) => t.wordId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$WordFavoritesTableFilterComposer(
+            $db: $db,
+            $table: $db.wordFavorites,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<bool> wordTagsRefs(
+    Expression<bool> Function($$WordTagsTableFilterComposer f) f,
+  ) {
+    final $$WordTagsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.wordTags,
+      getReferencedColumn: (t) => t.wordId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$WordTagsTableFilterComposer(
+            $db: $db,
+            $table: $db.wordTags,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -4802,6 +6955,56 @@ class $$WordsTableAnnotationComposer
     );
     return f(composer);
   }
+
+  Expression<T> wordFavoritesRefs<T extends Object>(
+    Expression<T> Function($$WordFavoritesTableAnnotationComposer a) f,
+  ) {
+    final $$WordFavoritesTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.wordFavorites,
+      getReferencedColumn: (t) => t.wordId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$WordFavoritesTableAnnotationComposer(
+            $db: $db,
+            $table: $db.wordFavorites,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<T> wordTagsRefs<T extends Object>(
+    Expression<T> Function($$WordTagsTableAnnotationComposer a) f,
+  ) {
+    final $$WordTagsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.wordTags,
+      getReferencedColumn: (t) => t.wordId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$WordTagsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.wordTags,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$WordsTableTableManager
@@ -4821,6 +7024,8 @@ class $$WordsTableTableManager
             bool wordBookEntriesRefs,
             bool learningStatesRefs,
             bool reviewEventsRefs,
+            bool wordFavoritesRefs,
+            bool wordTagsRefs,
           })
         > {
   $$WordsTableTableManager(_$AppDatabase db, $WordsTable table)
@@ -4935,6 +7140,8 @@ class $$WordsTableTableManager
                 wordBookEntriesRefs = false,
                 learningStatesRefs = false,
                 reviewEventsRefs = false,
+                wordFavoritesRefs = false,
+                wordTagsRefs = false,
               }) {
                 return PrefetchHooks(
                   db: db,
@@ -4942,6 +7149,8 @@ class $$WordsTableTableManager
                     if (wordBookEntriesRefs) db.wordBookEntries,
                     if (learningStatesRefs) db.learningStates,
                     if (reviewEventsRefs) db.reviewEvents,
+                    if (wordFavoritesRefs) db.wordFavorites,
+                    if (wordTagsRefs) db.wordTags,
                   ],
                   addJoins: null,
                   getPrefetchedDataCallback: (items) async {
@@ -5006,6 +7215,46 @@ class $$WordsTableTableManager
                           referencedColumn: 'word_id',
                           typedResults: items,
                         ),
+                      if (wordFavoritesRefs)
+                        await $_getPrefetchedDataByColumns<
+                          Word,
+                          $WordsTable,
+                          FavoriteRow,
+                          $WordFavoritesTable
+                        >(
+                          currentTable: table,
+                          referencedTable: $$WordsTableReferences
+                              ._wordFavoritesRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$WordsTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).wordFavoritesRefs,
+                          currentColumn: 'id',
+                          referencedColumn: 'word_id',
+                          typedResults: items,
+                        ),
+                      if (wordTagsRefs)
+                        await $_getPrefetchedDataByColumns<
+                          Word,
+                          $WordsTable,
+                          WordTag,
+                          $WordTagsTable
+                        >(
+                          currentTable: table,
+                          referencedTable: $$WordsTableReferences
+                              ._wordTagsRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$WordsTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).wordTagsRefs,
+                          currentColumn: 'id',
+                          referencedColumn: 'word_id',
+                          typedResults: items,
+                        ),
                     ];
                   },
                 );
@@ -5030,6 +7279,8 @@ typedef $$WordsTableProcessedTableManager =
         bool wordBookEntriesRefs,
         bool learningStatesRefs,
         bool reviewEventsRefs,
+        bool wordFavoritesRefs,
+        bool wordTagsRefs,
       })
     >;
 typedef $$WordBooksTableCreateCompanionBuilder = WordBooksCompanion Function({
@@ -6280,6 +8531,8 @@ typedef $$ReviewEventsTableCreateCompanionBuilder =
       Value<int> intervalDaysAfter,
       Value<int> algoVersion,
       Value<String> mode,
+      Value<int?> dayStartUtc,
+      Value<String> dayStartSource,
       Value<int> rowid,
     });
 typedef $$ReviewEventsTableUpdateCompanionBuilder =
@@ -6295,6 +8548,8 @@ typedef $$ReviewEventsTableUpdateCompanionBuilder =
       Value<int> intervalDaysAfter,
       Value<int> algoVersion,
       Value<String> mode,
+      Value<int?> dayStartUtc,
+      Value<String> dayStartSource,
       Value<int> rowid,
     });
 
@@ -6376,6 +8631,16 @@ class $$ReviewEventsTableFilterComposer
 
   ColumnFilters<String> get mode => $composableBuilder(
     column: $table.mode,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get dayStartUtc => $composableBuilder(
+    column: $table.dayStartUtc,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get dayStartSource => $composableBuilder(
+    column: $table.dayStartSource,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -6462,6 +8727,16 @@ class $$ReviewEventsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get dayStartUtc => $composableBuilder(
+    column: $table.dayStartUtc,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get dayStartSource => $composableBuilder(
+    column: $table.dayStartSource,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$WordsTableOrderingComposer get wordId {
     final $$WordsTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -6533,6 +8808,16 @@ class $$ReviewEventsTableAnnotationComposer
   GeneratedColumn<String> get mode =>
       $composableBuilder(column: $table.mode, builder: (column) => column);
 
+  GeneratedColumn<int> get dayStartUtc => $composableBuilder(
+    column: $table.dayStartUtc,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get dayStartSource => $composableBuilder(
+    column: $table.dayStartSource,
+    builder: (column) => column,
+  );
+
   $$WordsTableAnnotationComposer get wordId {
     final $$WordsTableAnnotationComposer composer = $composerBuilder(
       composer: this,
@@ -6596,6 +8881,8 @@ class $$ReviewEventsTableTableManager
                 Value<int> intervalDaysAfter = const Value.absent(),
                 Value<int> algoVersion = const Value.absent(),
                 Value<String> mode = const Value.absent(),
+                Value<int?> dayStartUtc = const Value.absent(),
+                Value<String> dayStartSource = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ReviewEventsCompanion(
                 id: id,
@@ -6609,6 +8896,8 @@ class $$ReviewEventsTableTableManager
                 intervalDaysAfter: intervalDaysAfter,
                 algoVersion: algoVersion,
                 mode: mode,
+                dayStartUtc: dayStartUtc,
+                dayStartSource: dayStartSource,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -6624,6 +8913,8 @@ class $$ReviewEventsTableTableManager
                 Value<int> intervalDaysAfter = const Value.absent(),
                 Value<int> algoVersion = const Value.absent(),
                 Value<String> mode = const Value.absent(),
+                Value<int?> dayStartUtc = const Value.absent(),
+                Value<String> dayStartSource = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ReviewEventsCompanion.insert(
                 id: id,
@@ -6637,6 +8928,8 @@ class $$ReviewEventsTableTableManager
                 intervalDaysAfter: intervalDaysAfter,
                 algoVersion: algoVersion,
                 mode: mode,
+                dayStartUtc: dayStartUtc,
+                dayStartSource: dayStartSource,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -7172,6 +9465,1485 @@ typedef $$AppMetaTableProcessedTableManager =
       AppMetaRow,
       PrefetchHooks Function()
     >;
+typedef $$WordFavoritesTableCreateCompanionBuilder =
+    WordFavoritesCompanion Function({
+      required String wordId,
+      Value<bool> value,
+      Value<int> version,
+      required int updatedAt,
+      required String deviceId,
+      Value<int> rowid,
+    });
+typedef $$WordFavoritesTableUpdateCompanionBuilder =
+    WordFavoritesCompanion Function({
+      Value<String> wordId,
+      Value<bool> value,
+      Value<int> version,
+      Value<int> updatedAt,
+      Value<String> deviceId,
+      Value<int> rowid,
+    });
+
+final class $$WordFavoritesTableReferences
+    extends BaseReferences<_$AppDatabase, $WordFavoritesTable, FavoriteRow> {
+  $$WordFavoritesTableReferences(
+    super.$_db,
+    super.$_table,
+    super.$_typedResult,
+  );
+
+  static $WordsTable _wordIdTable(_$AppDatabase db) =>
+      db.words.createAlias('word_favorites__word_id__words__id');
+
+  $$WordsTableProcessedTableManager get wordId {
+    final $_column = $_itemColumn<String>('word_id')!;
+
+    final manager = $$WordsTableTableManager(
+      $_db,
+      $_db.words,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_wordIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
+
+class $$WordFavoritesTableFilterComposer
+    extends Composer<_$AppDatabase, $WordFavoritesTable> {
+  $$WordFavoritesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<bool> get value => $composableBuilder(
+    column: $table.value,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get version => $composableBuilder(
+    column: $table.version,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get deviceId => $composableBuilder(
+    column: $table.deviceId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$WordsTableFilterComposer get wordId {
+    final $$WordsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.wordId,
+      referencedTable: $db.words,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$WordsTableFilterComposer(
+            $db: $db,
+            $table: $db.words,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$WordFavoritesTableOrderingComposer
+    extends Composer<_$AppDatabase, $WordFavoritesTable> {
+  $$WordFavoritesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<bool> get value => $composableBuilder(
+    column: $table.value,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get version => $composableBuilder(
+    column: $table.version,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get deviceId => $composableBuilder(
+    column: $table.deviceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$WordsTableOrderingComposer get wordId {
+    final $$WordsTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.wordId,
+      referencedTable: $db.words,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$WordsTableOrderingComposer(
+            $db: $db,
+            $table: $db.words,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$WordFavoritesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $WordFavoritesTable> {
+  $$WordFavoritesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<bool> get value =>
+      $composableBuilder(column: $table.value, builder: (column) => column);
+
+  GeneratedColumn<int> get version =>
+      $composableBuilder(column: $table.version, builder: (column) => column);
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<String> get deviceId =>
+      $composableBuilder(column: $table.deviceId, builder: (column) => column);
+
+  $$WordsTableAnnotationComposer get wordId {
+    final $$WordsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.wordId,
+      referencedTable: $db.words,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$WordsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.words,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$WordFavoritesTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $WordFavoritesTable,
+          FavoriteRow,
+          $$WordFavoritesTableFilterComposer,
+          $$WordFavoritesTableOrderingComposer,
+          $$WordFavoritesTableAnnotationComposer,
+          $$WordFavoritesTableCreateCompanionBuilder,
+          $$WordFavoritesTableUpdateCompanionBuilder,
+          (FavoriteRow, $$WordFavoritesTableReferences),
+          FavoriteRow,
+          PrefetchHooks Function({bool wordId})
+        > {
+  $$WordFavoritesTableTableManager(_$AppDatabase db, $WordFavoritesTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$WordFavoritesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$WordFavoritesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$WordFavoritesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> wordId = const Value.absent(),
+                Value<bool> value = const Value.absent(),
+                Value<int> version = const Value.absent(),
+                Value<int> updatedAt = const Value.absent(),
+                Value<String> deviceId = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => WordFavoritesCompanion(
+                wordId: wordId,
+                value: value,
+                version: version,
+                updatedAt: updatedAt,
+                deviceId: deviceId,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String wordId,
+                Value<bool> value = const Value.absent(),
+                Value<int> version = const Value.absent(),
+                required int updatedAt,
+                required String deviceId,
+                Value<int> rowid = const Value.absent(),
+              }) => WordFavoritesCompanion.insert(
+                wordId: wordId,
+                value: value,
+                version: version,
+                updatedAt: updatedAt,
+                deviceId: deviceId,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$WordFavoritesTable, FavoriteRow>(table),
+                  $$WordFavoritesTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: ({wordId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (wordId) {
+                      state = state.withJoin(
+                        currentTable: table,
+                        currentColumn: table.wordId,
+                        referencedTable: $$WordFavoritesTableReferences
+                            ._wordIdTable(db),
+                        referencedColumn: $$WordFavoritesTableReferences
+                            ._wordIdTable(db)
+                            .id,
+                      ) as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ),
+      );
+}
+
+typedef $$WordFavoritesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $WordFavoritesTable,
+      FavoriteRow,
+      $$WordFavoritesTableFilterComposer,
+      $$WordFavoritesTableOrderingComposer,
+      $$WordFavoritesTableAnnotationComposer,
+      $$WordFavoritesTableCreateCompanionBuilder,
+      $$WordFavoritesTableUpdateCompanionBuilder,
+      (FavoriteRow, $$WordFavoritesTableReferences),
+      FavoriteRow,
+      PrefetchHooks Function({bool wordId})
+    >;
+typedef $$UserTagsTableCreateCompanionBuilder = UserTagsCompanion Function({
+  required String id,
+  required String name,
+  required String normalized,
+  Value<int> version,
+  required int updatedAt,
+  required String deviceId,
+  Value<int?> deletedAt,
+  Value<int> rowid,
+});
+typedef $$UserTagsTableUpdateCompanionBuilder = UserTagsCompanion Function({
+  Value<String> id,
+  Value<String> name,
+  Value<String> normalized,
+  Value<int> version,
+  Value<int> updatedAt,
+  Value<String> deviceId,
+  Value<int?> deletedAt,
+  Value<int> rowid,
+});
+
+final class $$UserTagsTableReferences
+    extends BaseReferences<_$AppDatabase, $UserTagsTable, UserTag> {
+  $$UserTagsTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static MultiTypedResultKey<$WordTagsTable, List<WordTag>> _wordTagsRefsTable(
+    _$AppDatabase db,
+  ) => MultiTypedResultKey.fromTable(
+    db.wordTags,
+    aliasName: 'user_tags__id__word_tags__tag_id',
+  );
+
+  $$WordTagsTableProcessedTableManager get wordTagsRefs {
+    final manager = $$WordTagsTableTableManager(
+      $_db,
+      $_db.wordTags,
+    ).filter((f) => f.tagId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_wordTagsRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+}
+
+class $$UserTagsTableFilterComposer
+    extends Composer<_$AppDatabase, $UserTagsTable> {
+  $$UserTagsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get normalized => $composableBuilder(
+    column: $table.normalized,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get version => $composableBuilder(
+    column: $table.version,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get deviceId => $composableBuilder(
+    column: $table.deviceId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  Expression<bool> wordTagsRefs(
+    Expression<bool> Function($$WordTagsTableFilterComposer f) f,
+  ) {
+    final $$WordTagsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.wordTags,
+      getReferencedColumn: (t) => t.tagId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$WordTagsTableFilterComposer(
+            $db: $db,
+            $table: $db.wordTags,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+}
+
+class $$UserTagsTableOrderingComposer
+    extends Composer<_$AppDatabase, $UserTagsTable> {
+  $$UserTagsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get normalized => $composableBuilder(
+    column: $table.normalized,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get version => $composableBuilder(
+    column: $table.version,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get deviceId => $composableBuilder(
+    column: $table.deviceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$UserTagsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $UserTagsTable> {
+  $$UserTagsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<String> get normalized => $composableBuilder(
+    column: $table.normalized,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get version =>
+      $composableBuilder(column: $table.version, builder: (column) => column);
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<String> get deviceId =>
+      $composableBuilder(column: $table.deviceId, builder: (column) => column);
+
+  GeneratedColumn<int> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+
+  Expression<T> wordTagsRefs<T extends Object>(
+    Expression<T> Function($$WordTagsTableAnnotationComposer a) f,
+  ) {
+    final $$WordTagsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.wordTags,
+      getReferencedColumn: (t) => t.tagId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$WordTagsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.wordTags,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+}
+
+class $$UserTagsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $UserTagsTable,
+          UserTag,
+          $$UserTagsTableFilterComposer,
+          $$UserTagsTableOrderingComposer,
+          $$UserTagsTableAnnotationComposer,
+          $$UserTagsTableCreateCompanionBuilder,
+          $$UserTagsTableUpdateCompanionBuilder,
+          (UserTag, $$UserTagsTableReferences),
+          UserTag,
+          PrefetchHooks Function({bool wordTagsRefs})
+        > {
+  $$UserTagsTableTableManager(_$AppDatabase db, $UserTagsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$UserTagsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$UserTagsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$UserTagsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> name = const Value.absent(),
+                Value<String> normalized = const Value.absent(),
+                Value<int> version = const Value.absent(),
+                Value<int> updatedAt = const Value.absent(),
+                Value<String> deviceId = const Value.absent(),
+                Value<int?> deletedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => UserTagsCompanion(
+                id: id,
+                name: name,
+                normalized: normalized,
+                version: version,
+                updatedAt: updatedAt,
+                deviceId: deviceId,
+                deletedAt: deletedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String name,
+                required String normalized,
+                Value<int> version = const Value.absent(),
+                required int updatedAt,
+                required String deviceId,
+                Value<int?> deletedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => UserTagsCompanion.insert(
+                id: id,
+                name: name,
+                normalized: normalized,
+                version: version,
+                updatedAt: updatedAt,
+                deviceId: deviceId,
+                deletedAt: deletedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$UserTagsTable, UserTag>(table),
+                  $$UserTagsTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: ({wordTagsRefs = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [if (wordTagsRefs) db.wordTags],
+              addJoins: null,
+              getPrefetchedDataCallback: (items) async {
+                return [
+                  if (wordTagsRefs)
+                    await $_getPrefetchedDataByColumns<
+                      UserTag,
+                      $UserTagsTable,
+                      WordTag,
+                      $WordTagsTable
+                    >(
+                      currentTable: table,
+                      referencedTable: $$UserTagsTableReferences
+                          ._wordTagsRefsTable(db),
+                      managerFromTypedResult: (p0) =>
+                          $$UserTagsTableReferences(db, table, p0).wordTagsRefs,
+                      currentColumn: 'id',
+                      referencedColumn: 'tag_id',
+                      typedResults: items,
+                    ),
+                ];
+              },
+            );
+          },
+        ),
+      );
+}
+
+typedef $$UserTagsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $UserTagsTable,
+      UserTag,
+      $$UserTagsTableFilterComposer,
+      $$UserTagsTableOrderingComposer,
+      $$UserTagsTableAnnotationComposer,
+      $$UserTagsTableCreateCompanionBuilder,
+      $$UserTagsTableUpdateCompanionBuilder,
+      (UserTag, $$UserTagsTableReferences),
+      UserTag,
+      PrefetchHooks Function({bool wordTagsRefs})
+    >;
+typedef $$WordTagsTableCreateCompanionBuilder = WordTagsCompanion Function({
+  required String wordId,
+  required String tagId,
+  Value<int> version,
+  required int updatedAt,
+  required String deviceId,
+  Value<int?> deletedAt,
+  Value<int> rowid,
+});
+typedef $$WordTagsTableUpdateCompanionBuilder = WordTagsCompanion Function({
+  Value<String> wordId,
+  Value<String> tagId,
+  Value<int> version,
+  Value<int> updatedAt,
+  Value<String> deviceId,
+  Value<int?> deletedAt,
+  Value<int> rowid,
+});
+
+final class $$WordTagsTableReferences
+    extends BaseReferences<_$AppDatabase, $WordTagsTable, WordTag> {
+  $$WordTagsTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static $WordsTable _wordIdTable(_$AppDatabase db) =>
+      db.words.createAlias('word_tags__word_id__words__id');
+
+  $$WordsTableProcessedTableManager get wordId {
+    final $_column = $_itemColumn<String>('word_id')!;
+
+    final manager = $$WordsTableTableManager(
+      $_db,
+      $_db.words,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_wordIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+
+  static $UserTagsTable _tagIdTable(_$AppDatabase db) =>
+      db.userTags.createAlias('word_tags__tag_id__user_tags__id');
+
+  $$UserTagsTableProcessedTableManager get tagId {
+    final $_column = $_itemColumn<String>('tag_id')!;
+
+    final manager = $$UserTagsTableTableManager(
+      $_db,
+      $_db.userTags,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_tagIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
+
+class $$WordTagsTableFilterComposer
+    extends Composer<_$AppDatabase, $WordTagsTable> {
+  $$WordTagsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get version => $composableBuilder(
+    column: $table.version,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get deviceId => $composableBuilder(
+    column: $table.deviceId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$WordsTableFilterComposer get wordId {
+    final $$WordsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.wordId,
+      referencedTable: $db.words,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$WordsTableFilterComposer(
+            $db: $db,
+            $table: $db.words,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  $$UserTagsTableFilterComposer get tagId {
+    final $$UserTagsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.tagId,
+      referencedTable: $db.userTags,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$UserTagsTableFilterComposer(
+            $db: $db,
+            $table: $db.userTags,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$WordTagsTableOrderingComposer
+    extends Composer<_$AppDatabase, $WordTagsTable> {
+  $$WordTagsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get version => $composableBuilder(
+    column: $table.version,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get deviceId => $composableBuilder(
+    column: $table.deviceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$WordsTableOrderingComposer get wordId {
+    final $$WordsTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.wordId,
+      referencedTable: $db.words,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$WordsTableOrderingComposer(
+            $db: $db,
+            $table: $db.words,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  $$UserTagsTableOrderingComposer get tagId {
+    final $$UserTagsTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.tagId,
+      referencedTable: $db.userTags,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$UserTagsTableOrderingComposer(
+            $db: $db,
+            $table: $db.userTags,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$WordTagsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $WordTagsTable> {
+  $$WordTagsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get version =>
+      $composableBuilder(column: $table.version, builder: (column) => column);
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<String> get deviceId =>
+      $composableBuilder(column: $table.deviceId, builder: (column) => column);
+
+  GeneratedColumn<int> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+
+  $$WordsTableAnnotationComposer get wordId {
+    final $$WordsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.wordId,
+      referencedTable: $db.words,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$WordsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.words,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  $$UserTagsTableAnnotationComposer get tagId {
+    final $$UserTagsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.tagId,
+      referencedTable: $db.userTags,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$UserTagsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.userTags,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$WordTagsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $WordTagsTable,
+          WordTag,
+          $$WordTagsTableFilterComposer,
+          $$WordTagsTableOrderingComposer,
+          $$WordTagsTableAnnotationComposer,
+          $$WordTagsTableCreateCompanionBuilder,
+          $$WordTagsTableUpdateCompanionBuilder,
+          (WordTag, $$WordTagsTableReferences),
+          WordTag,
+          PrefetchHooks Function({bool wordId, bool tagId})
+        > {
+  $$WordTagsTableTableManager(_$AppDatabase db, $WordTagsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$WordTagsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$WordTagsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$WordTagsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> wordId = const Value.absent(),
+                Value<String> tagId = const Value.absent(),
+                Value<int> version = const Value.absent(),
+                Value<int> updatedAt = const Value.absent(),
+                Value<String> deviceId = const Value.absent(),
+                Value<int?> deletedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => WordTagsCompanion(
+                wordId: wordId,
+                tagId: tagId,
+                version: version,
+                updatedAt: updatedAt,
+                deviceId: deviceId,
+                deletedAt: deletedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String wordId,
+                required String tagId,
+                Value<int> version = const Value.absent(),
+                required int updatedAt,
+                required String deviceId,
+                Value<int?> deletedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => WordTagsCompanion.insert(
+                wordId: wordId,
+                tagId: tagId,
+                version: version,
+                updatedAt: updatedAt,
+                deviceId: deviceId,
+                deletedAt: deletedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$WordTagsTable, WordTag>(table),
+                  $$WordTagsTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: ({wordId = false, tagId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (wordId) {
+                      state = state.withJoin(
+                        currentTable: table,
+                        currentColumn: table.wordId,
+                        referencedTable: $$WordTagsTableReferences._wordIdTable(
+                          db,
+                        ),
+                        referencedColumn: $$WordTagsTableReferences
+                            ._wordIdTable(db)
+                            .id,
+                      ) as T;
+                    }
+                    if (tagId) {
+                      state = state.withJoin(
+                        currentTable: table,
+                        currentColumn: table.tagId,
+                        referencedTable: $$WordTagsTableReferences._tagIdTable(
+                          db,
+                        ),
+                        referencedColumn: $$WordTagsTableReferences
+                            ._tagIdTable(db)
+                            .id,
+                      ) as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ),
+      );
+}
+
+typedef $$WordTagsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $WordTagsTable,
+      WordTag,
+      $$WordTagsTableFilterComposer,
+      $$WordTagsTableOrderingComposer,
+      $$WordTagsTableAnnotationComposer,
+      $$WordTagsTableCreateCompanionBuilder,
+      $$WordTagsTableUpdateCompanionBuilder,
+      (WordTag, $$WordTagsTableReferences),
+      WordTag,
+      PrefetchHooks Function({bool wordId, bool tagId})
+    >;
+typedef $$SyncAliasesTableCreateCompanionBuilder =
+    SyncAliasesCompanion Function({
+      required String kind,
+      required String aliasId,
+      required String localId,
+      Value<int> rowid,
+    });
+typedef $$SyncAliasesTableUpdateCompanionBuilder =
+    SyncAliasesCompanion Function({
+      Value<String> kind,
+      Value<String> aliasId,
+      Value<String> localId,
+      Value<int> rowid,
+    });
+
+class $$SyncAliasesTableFilterComposer
+    extends Composer<_$AppDatabase, $SyncAliasesTable> {
+  $$SyncAliasesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get kind => $composableBuilder(
+    column: $table.kind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get aliasId => $composableBuilder(
+    column: $table.aliasId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get localId => $composableBuilder(
+    column: $table.localId,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$SyncAliasesTableOrderingComposer
+    extends Composer<_$AppDatabase, $SyncAliasesTable> {
+  $$SyncAliasesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get kind => $composableBuilder(
+    column: $table.kind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get aliasId => $composableBuilder(
+    column: $table.aliasId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get localId => $composableBuilder(
+    column: $table.localId,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$SyncAliasesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $SyncAliasesTable> {
+  $$SyncAliasesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get kind =>
+      $composableBuilder(column: $table.kind, builder: (column) => column);
+
+  GeneratedColumn<String> get aliasId =>
+      $composableBuilder(column: $table.aliasId, builder: (column) => column);
+
+  GeneratedColumn<String> get localId =>
+      $composableBuilder(column: $table.localId, builder: (column) => column);
+}
+
+class $$SyncAliasesTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $SyncAliasesTable,
+          SyncAliasRow,
+          $$SyncAliasesTableFilterComposer,
+          $$SyncAliasesTableOrderingComposer,
+          $$SyncAliasesTableAnnotationComposer,
+          $$SyncAliasesTableCreateCompanionBuilder,
+          $$SyncAliasesTableUpdateCompanionBuilder,
+          (
+            SyncAliasRow,
+            BaseReferences<_$AppDatabase, $SyncAliasesTable, SyncAliasRow>,
+          ),
+          SyncAliasRow,
+          PrefetchHooks Function()
+        > {
+  $$SyncAliasesTableTableManager(_$AppDatabase db, $SyncAliasesTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SyncAliasesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SyncAliasesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$SyncAliasesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> kind = const Value.absent(),
+                Value<String> aliasId = const Value.absent(),
+                Value<String> localId = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => SyncAliasesCompanion(
+                kind: kind,
+                aliasId: aliasId,
+                localId: localId,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String kind,
+                required String aliasId,
+                required String localId,
+                Value<int> rowid = const Value.absent(),
+              }) => SyncAliasesCompanion.insert(
+                kind: kind,
+                aliasId: aliasId,
+                localId: localId,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$SyncAliasesTable, SyncAliasRow>(table),
+                  BaseReferences<
+                    _$AppDatabase,
+                    $SyncAliasesTable,
+                    SyncAliasRow
+                  >(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$SyncAliasesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $SyncAliasesTable,
+      SyncAliasRow,
+      $$SyncAliasesTableFilterComposer,
+      $$SyncAliasesTableOrderingComposer,
+      $$SyncAliasesTableAnnotationComposer,
+      $$SyncAliasesTableCreateCompanionBuilder,
+      $$SyncAliasesTableUpdateCompanionBuilder,
+      (
+        SyncAliasRow,
+        BaseReferences<_$AppDatabase, $SyncAliasesTable, SyncAliasRow>,
+      ),
+      SyncAliasRow,
+      PrefetchHooks Function()
+    >;
+typedef $$ContentVersionsTableCreateCompanionBuilder =
+    ContentVersionsCompanion Function({
+      required String kind,
+      required String entityId,
+      required String field,
+      required int version,
+      required int updatedAt,
+      required String deviceId,
+      Value<int> rowid,
+    });
+typedef $$ContentVersionsTableUpdateCompanionBuilder =
+    ContentVersionsCompanion Function({
+      Value<String> kind,
+      Value<String> entityId,
+      Value<String> field,
+      Value<int> version,
+      Value<int> updatedAt,
+      Value<String> deviceId,
+      Value<int> rowid,
+    });
+
+class $$ContentVersionsTableFilterComposer
+    extends Composer<_$AppDatabase, $ContentVersionsTable> {
+  $$ContentVersionsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get kind => $composableBuilder(
+    column: $table.kind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get entityId => $composableBuilder(
+    column: $table.entityId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get field => $composableBuilder(
+    column: $table.field,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get version => $composableBuilder(
+    column: $table.version,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get deviceId => $composableBuilder(
+    column: $table.deviceId,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$ContentVersionsTableOrderingComposer
+    extends Composer<_$AppDatabase, $ContentVersionsTable> {
+  $$ContentVersionsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get kind => $composableBuilder(
+    column: $table.kind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get entityId => $composableBuilder(
+    column: $table.entityId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get field => $composableBuilder(
+    column: $table.field,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get version => $composableBuilder(
+    column: $table.version,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get deviceId => $composableBuilder(
+    column: $table.deviceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$ContentVersionsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $ContentVersionsTable> {
+  $$ContentVersionsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get kind =>
+      $composableBuilder(column: $table.kind, builder: (column) => column);
+
+  GeneratedColumn<String> get entityId =>
+      $composableBuilder(column: $table.entityId, builder: (column) => column);
+
+  GeneratedColumn<String> get field =>
+      $composableBuilder(column: $table.field, builder: (column) => column);
+
+  GeneratedColumn<int> get version =>
+      $composableBuilder(column: $table.version, builder: (column) => column);
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<String> get deviceId =>
+      $composableBuilder(column: $table.deviceId, builder: (column) => column);
+}
+
+class $$ContentVersionsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $ContentVersionsTable,
+          ContentVersionRow,
+          $$ContentVersionsTableFilterComposer,
+          $$ContentVersionsTableOrderingComposer,
+          $$ContentVersionsTableAnnotationComposer,
+          $$ContentVersionsTableCreateCompanionBuilder,
+          $$ContentVersionsTableUpdateCompanionBuilder,
+          (
+            ContentVersionRow,
+            BaseReferences<
+              _$AppDatabase,
+              $ContentVersionsTable,
+              ContentVersionRow
+            >,
+          ),
+          ContentVersionRow,
+          PrefetchHooks Function()
+        > {
+  $$ContentVersionsTableTableManager(
+    _$AppDatabase db,
+    $ContentVersionsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$ContentVersionsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$ContentVersionsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$ContentVersionsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> kind = const Value.absent(),
+                Value<String> entityId = const Value.absent(),
+                Value<String> field = const Value.absent(),
+                Value<int> version = const Value.absent(),
+                Value<int> updatedAt = const Value.absent(),
+                Value<String> deviceId = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => ContentVersionsCompanion(
+                kind: kind,
+                entityId: entityId,
+                field: field,
+                version: version,
+                updatedAt: updatedAt,
+                deviceId: deviceId,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String kind,
+                required String entityId,
+                required String field,
+                required int version,
+                required int updatedAt,
+                required String deviceId,
+                Value<int> rowid = const Value.absent(),
+              }) => ContentVersionsCompanion.insert(
+                kind: kind,
+                entityId: entityId,
+                field: field,
+                version: version,
+                updatedAt: updatedAt,
+                deviceId: deviceId,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$ContentVersionsTable, ContentVersionRow>(table),
+                  BaseReferences<
+                    _$AppDatabase,
+                    $ContentVersionsTable,
+                    ContentVersionRow
+                  >(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$ContentVersionsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $ContentVersionsTable,
+      ContentVersionRow,
+      $$ContentVersionsTableFilterComposer,
+      $$ContentVersionsTableOrderingComposer,
+      $$ContentVersionsTableAnnotationComposer,
+      $$ContentVersionsTableCreateCompanionBuilder,
+      $$ContentVersionsTableUpdateCompanionBuilder,
+      (
+        ContentVersionRow,
+        BaseReferences<_$AppDatabase, $ContentVersionsTable, ContentVersionRow>,
+      ),
+      ContentVersionRow,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -7190,4 +10962,14 @@ class $AppDatabaseManager {
       $$StudySettingsTableTableManager(_db, _db.studySettings);
   $$AppMetaTableTableManager get appMeta =>
       $$AppMetaTableTableManager(_db, _db.appMeta);
+  $$WordFavoritesTableTableManager get wordFavorites =>
+      $$WordFavoritesTableTableManager(_db, _db.wordFavorites);
+  $$UserTagsTableTableManager get userTags =>
+      $$UserTagsTableTableManager(_db, _db.userTags);
+  $$WordTagsTableTableManager get wordTags =>
+      $$WordTagsTableTableManager(_db, _db.wordTags);
+  $$SyncAliasesTableTableManager get syncAliases =>
+      $$SyncAliasesTableTableManager(_db, _db.syncAliases);
+  $$ContentVersionsTableTableManager get contentVersions =>
+      $$ContentVersionsTableTableManager(_db, _db.contentVersions);
 }

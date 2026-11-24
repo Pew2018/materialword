@@ -51,6 +51,9 @@ jobs:
       - name: Test
         run: flutter test --reporter expanded
 
+      - name: Cross-timezone event replay
+        run: tool/verify_timezone_replay.sh
+
   android:
     name: Android ARM64 APK
     runs-on: ubuntu-latest

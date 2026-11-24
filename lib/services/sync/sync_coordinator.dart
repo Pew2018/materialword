@@ -140,7 +140,7 @@ class SyncCoordinator {
     final List<String> notes = <String>[];
     try {
       onProgress?.call(SyncStage.validating, '检查配置');
-      if (!skipConnectionTest) {
+      if (!skipConnectionTest || provider is WebDavSyncProvider) {
         final SyncTestResult test = await provider.testConnection();
         if (!test.ok) {
           throw SyncException('连接测试未通过：${test.message}');
@@ -151,6 +151,9 @@ class SyncCoordinator {
           ),
         );
         if (!test.supportsConditionalWrites) {
+          if (provider is WebDavSyncProvider) {
+            throw const SyncException('服务器未通过条件写入验证，请使用手动文件备份');
+          }
           notes.add('该目标仅适合手动备份，不保证自动双向同步');
         }
       }
@@ -173,17 +176,19 @@ class SyncCoordinator {
           final Map<String, Object?> localBefore = await backup.buildDataset(
             now: clock.now(),
           );
-          final String localHash = BackupService.contentHashOf(localBefore);
+          final String localHash = await BackupService.contentHashOfAsync(
+            localBefore,
+          );
 
           String? remoteHash;
           if (remote != null) {
             onProgress?.call(SyncStage.merging, '合并远程数据');
             try {
-              backup.validateDataset(remote.dataset);
+              await backup.validateDatasetAsync(remote.dataset);
             } on BackupException catch (e) {
               throw SyncDataException('远程数据不可用：${e.message}');
             }
-            remoteHash = BackupService.contentHashOf(remote.dataset);
+            remoteHash = await BackupService.contentHashOfAsync(remote.dataset);
             if (remoteHash == localHash) {
               // Same content on both sides: nothing to merge, nothing to push.
               await _persistState(
@@ -210,7 +215,9 @@ class SyncCoordinator {
           final Map<String, Object?> merged = await backup.buildDataset(
             now: clock.now(),
           );
-          final String mergedHash = BackupService.contentHashOf(merged);
+          final String mergedHash = await BackupService.contentHashOfAsync(
+            merged,
+          );
 
           if (remote != null &&
               remoteHash != null &&
@@ -281,6 +288,7 @@ class SyncCoordinator {
       await _recordFailure(clock.now());
       throw SyncException('同步失败：$e');
     } finally {
+      if (provider is WebDavSyncProvider) provider.close();
       _running = false;
       _lastAutoAttempt = startedAt;
     }
@@ -315,8 +323,8 @@ class SyncCoordinator {
   Future<void> _verifyUpload(SyncProvider provider, String expectedHash) async {
     final after = await provider.download();
     if (after == null) throw const SyncException('上传后无法读回远程数据');
-    backup.validateDataset(after.dataset);
-    final actual = BackupService.contentHashOf(after.dataset);
+    await backup.validateDatasetAsync(after.dataset);
+    final actual = await BackupService.contentHashOfAsync(after.dataset);
     if (actual != expectedHash) {
       throw const SyncConflictException('上传后远程内容再次变化，重新读取并合并');
     }
@@ -427,7 +435,7 @@ class SyncCoordinator {
     final Map<String, Object?> dataset = await backup.buildDataset(
       now: clock.now(),
     );
-    return BackupService.contentHashOf(dataset) != last;
+    return await BackupService.contentHashOfAsync(dataset) != last;
   }
 
   String _formatCount(Map<String, Object?> dataset) {

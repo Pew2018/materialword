@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 
 import 'sync_provider.dart';
+import '../backup_service.dart' show decodeDatasetJson, encodeDatasetJson;
 
 /// "Sync through a file" provider: it reads and writes the same versioned JSON
 /// document as backup/restore.
@@ -106,7 +107,7 @@ class LocalFileSyncProvider implements SyncProvider {
     }
     Object? decoded;
     try {
-      decoded = jsonDecode(utf8.decode(bytes, allowMalformed: true));
+      decoded = await decodeDatasetJson(utf8.decode(bytes));
     } on FormatException {
       throw const SyncDataException('同步文件不是合法 JSON');
     }
@@ -142,7 +143,7 @@ class LocalFileSyncProvider implements SyncProvider {
       }
     }
 
-    final String json = const JsonEncoder.withIndent('  ').convert(dataset);
+    final String json = await encodeDatasetJson(dataset, pretty: true);
     final Directory parent = file.parent;
     if (!parent.existsSync()) {
       await parent.create(recursive: true);

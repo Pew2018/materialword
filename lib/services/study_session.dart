@@ -15,6 +15,20 @@ import 'study_scheduler.dart';
 
 const Uuid _uuid = Uuid();
 
+class PausedStudySession {
+  const PausedStudySession({
+    required this.bookId,
+    required this.mode,
+    required this.special,
+    required this.position,
+    required this.total,
+  });
+  final String? bookId;
+  final StudyMode mode;
+  final SpecialReview special;
+  final int position, total;
+}
+
 /// Drives one study or review session.
 ///
 /// Deliberately a plain [ChangeNotifier] (no widgets, no Riverpod) so the whole
@@ -175,6 +189,33 @@ class StudySession extends ChangeNotifier {
       final previousUndo = _lastSubmission;
       try {
         return await _study.db.transaction(() async {
+          final word = await _study.managedWord(card.word.id);
+          final link = _bookId == null
+              ? true
+              : await (_study.db.select(_study.db.wordBookEntries)..where(
+                          (t) =>
+                              t.wordId.equals(card.word.id) &
+                              t.wordBookId.equals(_bookId!) &
+                              t.deletedAt.isNull(),
+                        ))
+                        .getSingleOrNull() !=
+                    null;
+          final book = _bookId == null
+              ? null
+              : await (_study.db.select(
+                  _study.db.wordBooks,
+                )..where((t) => t.id.equals(_bookId!))).getSingleOrNull();
+          if (word == null ||
+              !link ||
+              (_bookId != null && (book == null || book.deletedAt != null))) {
+            _answeredCardIds.remove(cardId);
+            _queue.removeAt(_cursor);
+            _lastSubmission = null;
+            _revealed = false;
+            await _persist();
+            _error = '当前单词已移除，已跳过';
+            return null;
+          }
           final AnswerRecord record = await _study.recordAnswer(
             wordId: card.word.id,
             result: result,
@@ -385,27 +426,74 @@ class StudySession extends ChangeNotifier {
   Future<bool> undo() async {
     final previous = _lastSubmission;
     if (previous == null || _busy) return false;
+    final queue = List<StudyCard>.of(_queue);
+    final cursor = _cursor,
+        newAnswered = _newAnswered,
+        reviewAnswered = _reviewAnswered,
+        repeats = _repeatCards;
+    final answered = Set<String>.of(_answeredCardIds);
+    final revealed = _revealed;
     _busy = true;
     notifyListeners();
     try {
-      await _study.undoAnswer(
-        eventId: previous['eventId'] as String,
-        undoId: _uuid.v4(),
-        deviceId: _deviceId!,
-        now: _clock.now(),
-      );
-      _cursor = previous['cursor'] as int;
-      _queue.length = previous['queueLength'] as int;
-      _newAnswered = previous['newAnswered'] as int;
-      _reviewAnswered = previous['reviewAnswered'] as int;
-      _repeatCards = previous['repeatCards'] as int;
-      _answeredCardIds.remove(previous['cardId']);
+      await _study.db.transaction(() async {
+        await _study.undoAnswer(
+          eventId: previous['eventId'] as String,
+          undoId: _uuid.v4(),
+          deviceId: _deviceId!,
+          now: _clock.now(),
+        );
+        _cursor = previous['cursor'] as int;
+        _queue.length = previous['queueLength'] as int;
+        _newAnswered = previous['newAnswered'] as int;
+        _reviewAnswered = previous['reviewAnswered'] as int;
+        _repeatCards = previous['repeatCards'] as int;
+        _answeredCardIds.remove(previous['cardId']);
+        _lastSubmission = null;
+        _revealed = false;
+        await _persist();
+      });
+      return true;
+    } catch (_) {
+      _queue
+        ..clear()
+        ..addAll(queue);
+      _cursor = cursor;
+      _newAnswered = newAnswered;
+      _reviewAnswered = reviewAnswered;
+      _repeatCards = repeats;
+      _answeredCardIds
+        ..clear()
+        ..addAll(answered);
+      _lastSubmission = previous;
+      _revealed = revealed;
+      _error = '撤销失败，请重试';
+      return false;
+    } finally {
+      _busy = false;
+      notifyListeners();
+    }
+  }
+
+  /// A skip creates no answer and consumes no daily allowance.
+  Future<bool> skip() async {
+    if (_busy || current == null) return false;
+    final card = current!;
+    final previous = _lastSubmission;
+    final revealed = _revealed;
+    _busy = true;
+    notifyListeners();
+    try {
+      _queue.removeAt(_cursor);
       _lastSubmission = null;
       _revealed = false;
       await _persist();
       return true;
     } catch (_) {
-      _error = '撤销失败，请重试';
+      _queue.insert(_cursor, card);
+      _lastSubmission = previous;
+      _revealed = revealed;
+      _error = '跳过失败，请重试';
       return false;
     } finally {
       _busy = false;

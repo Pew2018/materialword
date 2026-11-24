@@ -16,6 +16,8 @@ part 'app_database.g.dart';
 ///    `version`, `updated_at`, `word_books.revision`), theme accent colour, TTS
 ///    options and the review `mode` column. The upgrade is additive: no column
 ///    is dropped and no row is deleted, so user data survives untouched.
+///  * v3 — event day anchors/provenance, metadata and identity/version tables.
+///    Creation/upgrades are explicitly transactional, including DDL and backfill.
 @DriftDatabase(
   tables: [
     Words,
@@ -25,6 +27,11 @@ part 'app_database.g.dart';
     ReviewEvents,
     StudySettings,
     AppMeta,
+    WordFavorites,
+    UserTags,
+    WordTags,
+    SyncAliases,
+    ContentVersions,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -34,7 +41,7 @@ class AppDatabase extends _$AppDatabase {
   /// directory (never inside the project, never synced as a raw file).
   AppDatabase.open() : super(driftDatabase(name: 'materialword'));
 
-  static const int currentSchemaVersion = 2;
+  static const int currentSchemaVersion = 3;
 
   /// Meta key guarding the one-off repair of dictionary text that was stored
   /// with literal `\n` escapes before the normaliser existed.
@@ -45,10 +52,13 @@ class AppDatabase extends _$AppDatabase {
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
-    onCreate: (Migrator m) async {
+    onCreate: (Migrator m) => transaction(() async {
       await m.createAll();
-    },
-    onUpgrade: (Migrator m, int from, int to) async {
+      await customStatement(
+        'CREATE INDEX IF NOT EXISTS idx_events_mode_word ON review_events(mode, word_id)',
+      );
+    }),
+    onUpgrade: (Migrator m, int from, int to) => transaction(() async {
       if (from < 2) {
         // --- sync metadata -------------------------------------------------
         await m.addColumn(wordBooks, wordBooks.revision);
@@ -72,7 +82,39 @@ class AppDatabase extends _$AppDatabase {
         // --- review mode ---------------------------------------------------
         await m.addColumn(reviewEvents, reviewEvents.mode);
       }
-    },
+      if (from < 3) {
+        await m.addColumn(reviewEvents, reviewEvents.dayStartUtc);
+        await m.addColumn(reviewEvents, reviewEvents.dayStartSource);
+        await m.createTable(wordFavorites);
+        await m.createTable(userTags);
+        await m.createTable(wordTags);
+        await m.createTable(syncAliases);
+        await m.createTable(contentVersions);
+        await customStatement(
+          "CREATE INDEX IF NOT EXISTS idx_events_mode_word ON review_events(mode, word_id)",
+        );
+        // Preserve the latest authoritative due time when the old file has it.
+        // Older exported events lack an author's offset: use their UTC day,
+        // a deterministic fallback on every importing device.
+        await customStatement("""
+UPDATE review_events SET day_start_source = CASE WHEN EXISTS(
+  SELECT 1 FROM learning_states ls WHERE ls.word_id = review_events.word_id
+    AND review_events.result = 2 AND review_events.mode NOT IN ('manual-mastered', 'reset')
+    AND ls.last_studied_at = review_events.answered_at
+    AND ls.interval_days = review_events.interval_days_after
+    AND ls.next_review_at IS NOT NULL) THEN 'legacy-state' ELSE 'legacy-utc' END,
+  day_start_utc = COALESCE(
+  (SELECT ls.next_review_at - review_events.interval_days_after * 86400000
+   FROM learning_states ls WHERE ls.word_id = review_events.word_id
+     AND review_events.result = 2 AND review_events.mode NOT IN ('manual-mastered', 'reset')
+     AND ls.last_studied_at = review_events.answered_at
+     AND ls.interval_days = review_events.interval_days_after
+     AND ls.next_review_at IS NOT NULL),
+  answered_at - ((answered_at % 86400000 + 86400000) % 86400000))
+WHERE day_start_utc IS NULL
+""");
+      }
+    }),
     beforeOpen: (OpeningDetails details) async {
       await customStatement('PRAGMA foreign_keys = ON');
       if (details.wasCreated || details.hadUpgrade) {

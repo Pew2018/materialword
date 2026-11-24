@@ -8,6 +8,7 @@ import '../models/enums.dart';
 import '../models/study_models.dart';
 import '../repositories/word_repository.dart';
 import '../text/dictionary_text.dart';
+import '../time_utils.dart';
 import '../../services/study_scheduler.dart';
 
 /// All read/write access to learning data. Scheduling decisions are delegated
@@ -365,6 +366,12 @@ SELECT COUNT(*) AS c
         );
       }
 
+      final word =
+          await (db.select(db.words)
+                ..where((t) => t.id.equals(wordId) & t.deletedAt.isNull()))
+              .getSingleOrNull();
+      if (word == null) throw StateError('词条已删除，请返回列表刷新');
+
       final LearningState? state = await (db.select(
         db.learningStates,
       )..where((t) => t.wordId.equals(wordId))).getSingleOrNull();
@@ -378,6 +385,7 @@ SELECT COUNT(*) AS c
         type: type,
         mode: mode,
         algorithmVersion: StudyScheduler.algorithmVersion,
+        dayStart: startOfLocalDay(now),
         previousNext: state?.nextReviewAt == null
             ? null
             : DateTime.fromMillisecondsSinceEpoch(
@@ -401,6 +409,8 @@ SELECT COUNT(*) AS c
               intervalDaysAfter: Value<int>(outcome.intervalDays),
               algoVersion: Value<int>(StudyScheduler.algorithmVersion),
               mode: Value<String>(mode),
+              dayStartUtc: Value(startOfLocalDay(now).millisecondsSinceEpoch),
+              dayStartSource: const Value('authored'),
             ),
           );
 
@@ -578,6 +588,15 @@ SELECT COUNT(*) AS c
         type: ReviewType.fromCode(event.type),
         mode: event.mode,
         algorithmVersion: event.algoVersion,
+        dayStart: event.dayStartUtc == null
+            ? DateTime.fromMillisecondsSinceEpoch(
+                event.answeredAt ~/ 86400000 * 86400000,
+                isUtc: true,
+              )
+            : DateTime.fromMillisecondsSinceEpoch(
+                event.dayStartUtc!,
+                isUtc: true,
+              ),
         previousNext: nextReviewAt,
       );
       snapshot = _snapshotOfOutcome(outcome);
@@ -613,6 +632,7 @@ SELECT COUNT(*) AS c
     required String mode,
     required int algorithmVersion,
     DateTime? previousNext,
+    DateTime? dayStart,
   }) {
     if (mode == ReviewEventMode.manualMastered) {
       return ScheduleOutcome(
@@ -631,6 +651,7 @@ SELECT COUNT(*) AS c
       result: result,
       now: now,
       type: type,
+      dayStart: dayStart,
     );
     final practice =
         mode == ReviewEventMode.repeat ||

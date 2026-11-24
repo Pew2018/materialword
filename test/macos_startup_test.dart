@@ -21,6 +21,7 @@ import 'package:materialword/services/sync/sync_provider.dart';
 import 'package:sqlite3/sqlite3.dart' as sql;
 
 import 'helpers/test_env.dart';
+import 'helpers/legacy_schema.dart';
 
 /// Phase 2.1 regressions: a macOS build that stands up, and an app that keeps
 /// working when the Keychain or the network does not.
@@ -32,7 +33,7 @@ import 'helpers/test_env.dart';
 ///  * MAC08 — no network / dead sync server still reaches the home screen.
 void main() {
   group('MAC04 全新数据库正常启动', () {
-    test('空目录首次打开即建立 schema 2，并可正常读写', () async {
+    test('空目录首次打开即建立当前 schema，并可正常读写', () async {
       final Directory dir = Directory.systemTemp.createTempSync('mw_mac04');
       final File file = File('${dir.path}/materialword.sqlite');
       final AppDatabase db = AppDatabase(NativeDatabase(file));
@@ -59,8 +60,8 @@ void main() {
       addTearDown(raw.dispose);
       expect(
         raw.select('PRAGMA user_version').first['user_version'],
-        2,
-        reason: '新库必须直接建在 schema 2（含同步列）',
+        AppDatabase.currentSchemaVersion,
+        reason: '新库必须直接建立当前 schema（含同步列）',
       );
       final List<String> tables = raw
           .select("SELECT name FROM sqlite_master WHERE type = 'table'")
@@ -82,14 +83,14 @@ void main() {
   });
 
   group('MAC05 phase 1 数据库无损迁移并启动', () {
-    test('真实 schema 1 文件升级到 v2：数据、笔记、转义文本全部保留', () async {
+    test('真实 schema 1 文件升级到当前版本：数据、笔记、转义文本全部保留', () async {
       final Directory dir = Directory.systemTemp.createTempSync('mw_mac05');
       final File file = File('${dir.path}/materialword.sqlite');
       addTearDown(() => dir.deleteSync(recursive: true));
 
       const int t0 = 1763900000000; // 2026-11-23T… fixed timestamp
       final sql.Database raw = sql.sqlite3.open(file.path);
-      raw.execute(_phase1Schema);
+      raw.execute(phase1Schema);
       raw.execute('''
 INSERT INTO word_books (id, name, description, source_type, source_url,
   created_at, updated_at, deleted_at)
@@ -177,7 +178,7 @@ VALUES (1, 17, 100, 'book-1', 'mixed', 'dark');
         (await db.customSelect('PRAGMA user_version').getSingle()).read<int>(
           'user_version',
         ),
-        2,
+        AppDatabase.currentSchemaVersion,
       );
     });
 
@@ -187,7 +188,7 @@ VALUES (1, 17, 100, 'book-1', 'mixed', 'dark');
       addTearDown(() => dir.deleteSync(recursive: true));
 
       final sql.Database raw = sql.sqlite3.open(file.path);
-      raw.execute(_phase1Schema);
+      raw.execute(phase1Schema);
       raw.execute('PRAGMA user_version = 1');
       raw.dispose();
 
@@ -198,8 +199,8 @@ VALUES (1, 17, 100, 'book-1', 'mixed', 'dark');
           (await db.customSelect('PRAGMA user_version').getSingle()).read<int>(
             'user_version',
           ),
-          2,
-          reason: '第 ${i + 1} 次打开应保持 v2',
+          AppDatabase.currentSchemaVersion,
+          reason: '第 ${i + 1} 次打开应保持当前版本',
         );
         await db.close();
       }
@@ -346,72 +347,3 @@ Future<int> _count(AppDatabase db, String table) async {
       (await db.customSelect('SELECT COUNT(*) AS c FROM $table').get()).single;
   return row.read<int>('c');
 }
-
-/// The exact schema phase 1 shipped, dumped from a real user database
-/// (`PRAGMA user_version = 1`). Kept literal on purpose: if a future migration
-/// assumes a column that phase 1 never created, this test fails.
-const String _phase1Schema = '''
-CREATE TABLE "words" (
-  "id" TEXT NOT NULL, "word" TEXT NOT NULL, "normalized" TEXT NOT NULL,
-  "phonetic" TEXT NOT NULL DEFAULT '', "part_of_speech" TEXT NOT NULL DEFAULT '',
-  "translation" TEXT NOT NULL DEFAULT '', "definition" TEXT NOT NULL DEFAULT '',
-  "example" TEXT NOT NULL DEFAULT '', "phrase" TEXT NOT NULL DEFAULT '',
-  "note" TEXT NOT NULL DEFAULT '', "source" TEXT NOT NULL DEFAULT 'manual',
-  "exam_tags" TEXT NOT NULL DEFAULT '', "bnc_rank" INTEGER NOT NULL DEFAULT 0,
-  "frq_rank" INTEGER NOT NULL DEFAULT 0,
-  "customized" INTEGER NOT NULL DEFAULT 0 CHECK ("customized" IN (0, 1)),
-  "revision" INTEGER NOT NULL DEFAULT 1,
-  "created_at" INTEGER NOT NULL, "updated_at" INTEGER NOT NULL,
-  "deleted_at" INTEGER NULL, PRIMARY KEY ("id"));
-
-CREATE TABLE "word_books" (
-  "id" TEXT NOT NULL, "name" TEXT NOT NULL,
-  "description" TEXT NOT NULL DEFAULT '',
-  "source_type" TEXT NOT NULL DEFAULT 'manual',
-  "source_url" TEXT NOT NULL DEFAULT '',
-  "created_at" INTEGER NOT NULL, "updated_at" INTEGER NOT NULL,
-  "deleted_at" INTEGER NULL, PRIMARY KEY ("id"));
-
-CREATE TABLE "word_book_entries" (
-  "word_book_id" TEXT NOT NULL REFERENCES word_books (id) ON DELETE CASCADE,
-  "word_id" TEXT NOT NULL REFERENCES words (id) ON DELETE CASCADE,
-  "added_at" INTEGER NOT NULL, PRIMARY KEY ("word_book_id", "word_id"));
-
-CREATE TABLE "learning_states" (
-  "word_id" TEXT NOT NULL REFERENCES words (id) ON DELETE CASCADE,
-  "stage" INTEGER NOT NULL DEFAULT 0, "correct_count" INTEGER NOT NULL DEFAULT 0,
-  "hazy_count" INTEGER NOT NULL DEFAULT 0,
-  "wrong_count" INTEGER NOT NULL DEFAULT 0,
-  "streak" INTEGER NOT NULL DEFAULT 0,
-  "interval_days" INTEGER NOT NULL DEFAULT 0,
-  "last_studied_at" INTEGER NULL, "next_review_at" INTEGER NULL,
-  "updated_at" INTEGER NOT NULL, PRIMARY KEY ("word_id"));
-
-CREATE TABLE "review_events" (
-  "id" TEXT NOT NULL,
-  "word_id" TEXT NOT NULL REFERENCES words (id) ON DELETE CASCADE,
-  "device_id" TEXT NOT NULL, "answered_at" INTEGER NOT NULL,
-  "local_day" TEXT NOT NULL, "result" INTEGER NOT NULL, "type" TEXT NOT NULL,
-  "stage_before" INTEGER NOT NULL DEFAULT 0,
-  "interval_days_after" INTEGER NOT NULL DEFAULT 0,
-  "algo_version" INTEGER NOT NULL DEFAULT 1, PRIMARY KEY ("id"));
-
-CREATE TABLE "study_settings" (
-  "id" INTEGER NOT NULL DEFAULT 1,
-  "daily_new_target" INTEGER NOT NULL DEFAULT 30,
-  "daily_review_limit" INTEGER NOT NULL DEFAULT 100,
-  "current_word_book_id" TEXT NULL,
-  "study_mode" TEXT NOT NULL DEFAULT 'mixed',
-  "theme_mode" TEXT NOT NULL DEFAULT 'system', PRIMARY KEY ("id"));
-
-CREATE TABLE "app_meta" (
-  "key" TEXT NOT NULL, "value" TEXT NOT NULL, PRIMARY KEY ("key"));
-
-CREATE UNIQUE INDEX idx_words_normalized ON words (normalized);
-CREATE INDEX idx_wordbooks_deleted ON word_books (deleted_at);
-CREATE INDEX idx_entries_word ON word_book_entries (word_id);
-CREATE INDEX idx_learning_due ON learning_states (next_review_at);
-CREATE INDEX idx_learning_stage ON learning_states (stage);
-CREATE INDEX idx_events_word_time ON review_events (word_id, answered_at);
-CREATE INDEX idx_events_day ON review_events (local_day, type);
-''';

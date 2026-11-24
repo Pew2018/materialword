@@ -245,6 +245,7 @@ void main() {
       int? forcedStatus,
       String? redirectTo,
     }) {
+      final probeFiles = <String, (String, int)>{};
       return MockClient((http.Request request) async {
         if (forcedStatus == 401) {
           return http.Response('unauthorized', 401);
@@ -255,6 +256,42 @@ void main() {
             302,
             headers: <String, String>{'location': redirectTo},
           );
+        }
+        // Probe resources are separate from the actual data file.
+        if (request.url.path.contains('.materialword-probe-')) {
+          final key = request.url.path;
+          final current = probeFiles[key];
+          final ifMatch = request.headers['if-match'];
+          if (ifMatch != null &&
+              (current == null ||
+                  (ifMatch != '*' && ifMatch != '"${current.$2}"'))) {
+            return http.Response('', 412);
+          }
+          if (request.method == 'PUT') {
+            if (request.headers['if-none-match'] == '*' && current != null) {
+              return http.Response('', 412);
+            }
+            final next = (request.body, (current?.$2 ?? 0) + 1);
+            probeFiles[key] = next;
+            return http.Response(
+              '',
+              201,
+              headers: {if (!noEtag) 'etag': '"${next.$2}"'},
+            );
+          }
+          if (request.method == 'GET') {
+            return current == null
+                ? http.Response('', 404)
+                : http.Response(
+                    current.$1,
+                    200,
+                    headers: {if (!noEtag) 'etag': '"${current.$2}"'},
+                  );
+          }
+          if (request.method == 'DELETE') {
+            probeFiles.remove(key);
+            return http.Response('', 204);
+          }
         }
         final String method = request.method;
         if (method == 'PROPFIND') {
