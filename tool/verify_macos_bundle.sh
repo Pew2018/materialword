@@ -64,6 +64,22 @@ if [ -z "$APP" ] && [ -z "$ZIP" ]; then
   exit 2
 fi
 
+# LaunchServices and pgrep both work with absolute paths: the process argv[0] a
+# launched app reports is absolute even when the caller passed a relative path.
+# Normalise here so --app works the same from CI and from a shell.
+abspath() {
+  local p="$1"
+  if [ -d "$p" ]; then
+    (cd "$p" && pwd)
+  elif [ -f "$p" ]; then
+    echo "$(cd "$(dirname "$p")" && pwd)/$(basename "$p")"
+  else
+    echo "$p"
+  fi
+}
+[ -n "$APP" ] && APP="$(abspath "$APP")"
+[ -n "$ZIP" ] && ZIP="$(abspath "$ZIP")"
+
 pass() { printf 'PASS  %s\n' "$1"; PASS_COUNT=$((PASS_COUNT + 1)); }
 fail() {
   printf 'FAIL  %s\n' "$1"
