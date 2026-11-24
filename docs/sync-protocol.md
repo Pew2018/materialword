@@ -1,14 +1,14 @@
-# 数据交换协议 v3（数据库 Schema 独立保持 2）
+# 数据交换协议 v3（数据库 Schema 独立为 3）
 
 ## 格式与兼容
 
-JSON 包含 `kind=materialword-backup`、`schemaVersion=3`、datasetId、作者 deviceId、exportedAt、words、wordBooks、entries、reviewEvents、settings。仍可导入备份 v1/v2；旧客户端会明确拒绝 v3，不能把撤销或管理事件误当普通作答。未来协议、未来算法与未知事件模式拒绝导入。
+JSON 包含 `kind=materialword-backup`、`schemaVersion=3`、datasetId、作者 deviceId、exportedAt、words、wordBooks、entries、reviewEvents、settings。仍可导入备份 v1/v2；旧客户端会明确拒绝 v3，不能把撤销或管理事件误当普通作答。未来协议、未来算法与未知事件模式拒绝导入。所有已知记录字段、ID 唯一性、引用、撤销目标和时间锚点先完整校验；损坏整包拒绝，不再部分跳过。
 
 凭据不进入 JSON。导出的设备标识用于事件归因，导入不覆盖本机 deviceId、语音、主题、窗口或文件授权。
 
 ## 一致性与合并
 
-- 所有表和共享设置版本在同一 Drift 事务读取，避免导出跨写入边界的引用。
+- 所有表和共享设置版本在同一 Drift 事务读取，避免导出跨写入边界的引用；大文档解析、结构/引用校验及内容哈希在后台 isolate 执行。
 - 合并及派生状态重放在同一事务，失败回滚。
 - 用户词按 normalized 映射设备各自 UUID；关联与事件改指本机规范 ID。原始作答按事件 ID 幂等。
 - 词条按 revision、updatedAt 比较，同时间冲突以内容的稳定字符串顺序决胜；删除相同版本优先。关联保留版本化删除标记。
@@ -29,7 +29,8 @@ JSON 包含 `kind=materialword-backup`、`schemaVersion=3`、datasetId、作者 
 - XML 使用 namespace-aware parser，仅接受成功 propstat 的 DAV:getetag，正确解码实体。
 - GET 缺强 ETag 时，PROPFIND 之后再用该 ETag 发 If-Match GET，保证文档与令牌对应。
 - 更新用 If-Match，首次创建用 If-None-Match:*；412 重新读取合并，最多三次。
-- **待完成**：对服务器实际遵守条件写入的临时文件探测、真实 HTTP 服务测试、真实服务验收。仅返回 ETag 不能证明服务器遵守条件写入，目前不得宣称已完成安全自动双向同步验收。
+- 每次 WebDAV 同步（包括自动同步）在 UUID 临时资源上实测过期 If-Match/重复 If-None-Match 必须返回 412，失败请求不能改内容，有效更新必须读回新内容与强 ETag；最后条件删除临时文件。探测失败不写正式数据。
+- 7 项本机真实 HTTPS 测试覆盖忽略条件、弱/无 ETag、412 重试、上传期间作答及 TLS 不受信任证书拒绝。测试信任运行时生成的根，不关闭证书校验。用户真实 WebDAV 服务及真机联网仍未验收。
 
 ## GitHub
 
@@ -39,4 +40,11 @@ JSON 包含 `kind=materialword-backup`、`schemaVersion=3`、datasetId、作者 
 
 ## 未完成的安全矩阵
 
-字段级独立编辑合并、不同名字/删除书身份边界、跨时区旧事件到期重放、同步期间写入与 dirty 状态、自动变更防抖与退避持久化、标签关系、真实 HTTP 条件写入和平台文件授权验证仍属待办。最终交付前需逐项通过。
+字段级独立编辑合并、重命名/删除身份边界、共享设置上传并发、自动变更防抖与退避持久化、标签关系和平台文件授权仍属待办。已验证上传期间新答题保持 pending，并在下次实际上传；作者日界/来源通过香港与纽约两进程验证。最终交付前需逐项通过。
+
+
+## 时间来源与旧格式
+
+新作答保存 `dayStartUtc` 与 `dayStartSource=authored`。重放用事件作者锚点加复习间隔，不使用导入设备的午夜。Schema 1/2 迁移优先从最新原学习状态的准确 due 推导 `legacy-state`，其余缺失信息为 `legacy-utc`（作答 UTC 日期午夜）。纯旧备份没有原时区和原 due，不能还原未知信息；不虚构精确作者午夜。
+
+同一事件可从 UTC 回退升级到旧状态来源，再升级到真实作者来源，答题本体不可改变。相同作者来源却出现不同锚点时整包拒绝；同级旧来源冲突确定性取较早锚点。该升级参与重放和哈希，避免双端持续不同。原数据库迁移不改已有学习状态；后续合并/撤销按来源规则重放。
