@@ -29,11 +29,13 @@ class StudySession extends ChangeNotifier {
   bool _loading = false;
   String? _deviceId;
   String? _error;
+  SpecialReview _special = SpecialReview.none;
 
   int _newAnswered = 0;
   int _reviewAnswered = 0;
   int _repeatCards = 0;
   int _newAvailable = 0;
+  int _newQueued = 0;
   int _reviewAvailable = 0;
   int _backlog = 0;
 
@@ -43,6 +45,7 @@ class StudySession extends ChangeNotifier {
       !_loading && _queue.isNotEmpty && _cursor >= _queue.length;
   bool get isEmpty => !_loading && _queue.isEmpty;
   String? get error => _error;
+  SpecialReview get special => _special;
 
   StudyCard? get current => _cursor < _queue.length ? _queue[_cursor] : null;
 
@@ -52,6 +55,7 @@ class StudySession extends ChangeNotifier {
   int get reviewAnswered => _reviewAnswered;
   int get repeatCards => _repeatCards;
   int get newAvailable => _newAvailable;
+  int get newQueued => _newQueued;
   int get reviewAvailable => _reviewAvailable;
   int get backlog => _backlog;
 
@@ -61,14 +65,21 @@ class StudySession extends ChangeNotifier {
   /// Builds the queue from the database. Safe to call again after a hot restart:
   /// everything the user already answered is persisted, so the new queue simply
   /// contains what is left.
+  ///
+  /// [newLimit] / [reviewLimit] are the *remaining* daily allowance. For a
+  /// special review the queue is built from its own filter but still counted
+  /// against the review allowance, so it cannot permanently starve the normal
+  /// due queue.
   Future<void> load({
     required int newLimit,
     required int reviewLimit,
     String? bookId,
     StudyMode mode = StudyMode.mixed,
+    SpecialReview special = SpecialReview.none,
   }) async {
     _loading = true;
     _error = null;
+    _special = special;
     notifyListeners();
     try {
       _deviceId ??= await _settings.deviceId();
@@ -77,7 +88,8 @@ class StudySession extends ChangeNotifier {
         newLimit: newLimit,
         reviewLimit: reviewLimit,
         bookId: bookId,
-        mode: mode,
+        mode: special == SpecialReview.none ? mode : StudyMode.special,
+        special: special,
       );
       _queue
         ..clear()
@@ -89,6 +101,7 @@ class StudySession extends ChangeNotifier {
       _repeatCards = 0;
       _answeredCardIds.clear();
       _newAvailable = queue.newAvailable;
+      _newQueued = queue.newQueued;
       _reviewAvailable = queue.reviewAvailable;
       _backlog = queue.backlog;
     } catch (e) {
@@ -130,6 +143,7 @@ class StudySession extends ChangeNotifier {
         eventId: _uuid.v4(),
         deviceId: _deviceId ?? 'unknown-device',
         now: now,
+        mode: ReviewEventMode.forSpecial(_special),
       );
 
       if (card.type == ReviewType.study) {
@@ -138,7 +152,11 @@ class StudySession extends ChangeNotifier {
         _reviewAnswered++;
       }
 
+      // Special queues do not re-queue a failed card inside the session: the
+      // user explicitly asked for a focused pass, and repeating it endlessly
+      // would make the "N words" counter meaningless.
       if (record.repeatInSession &&
+          _special == SpecialReview.none &&
           card.repeatCount < StudyScheduler.maxSessionRepeats) {
         _queue.add(card.copyWith(repeatCount: card.repeatCount + 1));
         _repeatCards++;

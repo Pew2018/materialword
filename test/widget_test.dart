@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:materialword/app/app.dart';
+import 'package:materialword/app/navigation.dart';
 import 'package:materialword/app/providers.dart';
 import 'package:materialword/core/database/app_database.dart';
 
@@ -85,32 +86,20 @@ void main() {
         expect(tester.takeException(), isNull);
 
         // Visit every tab to make sure none of them overflows.
-        if (size.width < 900) {
-          expect(find.byType(BottomNavigationBar), findsOneWidget);
-          for (final String label in <String>['词书', '词典', '统计', '设置', '今日']) {
-            await tester.tap(
-              find.descendant(
-                of: find.byType(BottomNavigationBar),
-                matching: find.text(label),
-              ),
-            );
-            await settle(tester);
-            expect(tester.takeException(), isNull);
-          }
-        } else {
-          expect(find.byType(ListTile), findsWidgets);
-          for (final String label in <String>['词书', '词典', '统计', '设置', '今日']) {
-            await tester.tap(
-              find
-                  .descendant(
-                    of: find.byType(ListTile),
-                    matching: find.text(label),
-                  )
-                  .first,
-            );
-            await settle(tester);
-            expect(tester.takeException(), isNull);
-          }
+        //
+        // Phase 2 replaced the official `BottomNavigationBar` with the custom
+        // `ClassicBottomNavigationBar` (fixed item widths, item-scoped ripple,
+        // separate hover/focus/pressed feedback). The assertion follows the new
+        // widget but keeps exactly the same intent.
+        final bool narrow = size.width < 900;
+        expect(
+          find.byType(ClassicBottomNavigationBar),
+          narrow ? findsOneWidget : findsNothing,
+        );
+        for (final String label in <String>['词书', '词典', '统计', '设置', '今日']) {
+          await tester.tap(find.byKey(ValueKey<String>('nav-$label')));
+          await settle(tester);
+          expect(tester.takeException(), isNull);
         }
         await env.dispose();
       });

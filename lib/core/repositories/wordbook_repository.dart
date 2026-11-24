@@ -33,16 +33,21 @@ class WordBookRepository {
         .customSelect(
           '''
 SELECT b.id, b.name, b.description, b.source_type, b.source_url,
-       b.created_at, b.updated_at, b.deleted_at,
+       b.revision, b.created_at, b.updated_at, b.deleted_at,
        (SELECT COUNT(*) FROM word_book_entries e
           JOIN words w ON w.id = e.word_id
-         WHERE e.word_book_id = b.id AND w.deleted_at IS NULL) AS word_count,
+         WHERE e.word_book_id = b.id AND e.deleted_at IS NULL
+           AND w.deleted_at IS NULL) AS word_count,
        (SELECT COUNT(*) FROM word_book_entries e
+          JOIN words w ON w.id = e.word_id
           JOIN learning_states ls ON ls.word_id = e.word_id
-         WHERE e.word_book_id = b.id AND ls.stage != 0) AS learned_count,
+         WHERE e.word_book_id = b.id AND e.deleted_at IS NULL
+           AND w.deleted_at IS NULL AND ls.stage != 0) AS learned_count,
        (SELECT COUNT(*) FROM word_book_entries e
+          JOIN words w ON w.id = e.word_id
           JOIN learning_states ls ON ls.word_id = e.word_id
-         WHERE e.word_book_id = b.id AND ls.stage != 0
+         WHERE e.word_book_id = b.id AND e.deleted_at IS NULL
+           AND w.deleted_at IS NULL AND ls.stage != 0
            AND ls.next_review_at IS NOT NULL AND ls.next_review_at <= ?) AS due_count
   FROM word_books b
  WHERE b.deleted_at IS NULL
@@ -66,6 +71,7 @@ SELECT b.id, b.name, b.description, b.source_type, b.source_url,
                     description: row.read<String>('description'),
                     sourceType: row.read<String>('source_type'),
                     sourceUrl: row.read<String>('source_url'),
+                    revision: row.read<int>('revision'),
                     createdAt: row.read<int>('created_at'),
                     updatedAt: row.read<int>('updated_at'),
                     deletedAt: row.readNullable<int>('deleted_at'),
@@ -105,6 +111,7 @@ SELECT b.id, b.name, b.description, b.source_type, b.source_url,
       description: description,
       sourceType: sourceType,
       sourceUrl: sourceUrl,
+      revision: 1,
       createdAt: now.millisecondsSinceEpoch,
       updatedAt: now.millisecondsSinceEpoch,
       deletedAt: null,
@@ -122,6 +129,7 @@ SELECT b.id, b.name, b.description, b.source_type, b.source_url,
           book.copyWith(
             name: name.trim(),
             updatedAt: now.millisecondsSinceEpoch,
+            revision: book.revision + 1,
           ),
         );
   }
@@ -139,6 +147,7 @@ SELECT b.id, b.name, b.description, b.source_type, b.source_url,
           book.copyWith(
             description: description,
             updatedAt: now.millisecondsSinceEpoch,
+            revision: book.revision + 1,
           ),
         );
   }
@@ -153,56 +162,125 @@ SELECT b.id, b.name, b.description, b.source_type, b.source_url,
           book.copyWith(
             deletedAt: Value<int?>(now.millisecondsSinceEpoch),
             updatedAt: now.millisecondsSinceEpoch,
+            revision: book.revision + 1,
           ),
         );
   }
 
-  /// Adds words to a book, ignoring duplicates. Returns how many links were
-  /// created (0 means everything was already in the book).
+  /// Adds words to a book. A previously removed word is *revived* (version + 1)
+  /// rather than inserted twice, so "remove then add again" is a well-defined
+  /// state instead of a tombstone/insert conflict.
+  ///
+  /// Returns how many links became live (0 means everything was already there).
   Future<int> addWords(
     String bookId,
     Iterable<String> wordIds, {
     required DateTime now,
   }) async {
-    int added = 0;
-    await db.batch((Batch batch) {
-      for (final String wordId in wordIds) {
-        batch.insert(
-          db.wordBookEntries,
-          WordBookEntriesCompanion.insert(
-            wordBookId: bookId,
-            wordId: wordId,
-            addedAt: now.millisecondsSinceEpoch,
-          ),
-          mode: InsertMode.insertOrIgnore,
-        );
-        added++;
+    int linked = 0;
+    final int millis = now.millisecondsSinceEpoch;
+    await db.transaction(() async {
+      for (final String wordId in wordIds.toList(growable: false)) {
+        final WordBookEntry? existing =
+            await (db.select(db.wordBookEntries)..where(
+                  (t) => t.wordBookId.equals(bookId) & t.wordId.equals(wordId),
+                ))
+                .getSingleOrNull();
+        if (existing == null) {
+          await db
+              .into(db.wordBookEntries)
+              .insert(
+                WordBookEntriesCompanion.insert(
+                  wordBookId: bookId,
+                  wordId: wordId,
+                  addedAt: millis,
+                  version: const Value<int>(1),
+                  updatedAt: Value<int>(millis),
+                ),
+                mode: InsertMode.insertOrIgnore,
+              );
+          linked++;
+          continue;
+        }
+        if (existing.deletedAt == null) continue;
+        await db
+            .update(db.wordBookEntries)
+            .replace(
+              existing.copyWith(
+                deletedAt: const Value<int?>(null),
+                version: existing.version + 1,
+                updatedAt: millis,
+              ),
+            );
+        linked++;
       }
     });
-    return added;
+    return linked;
   }
 
-  Future<void> removeWord(String bookId, String wordId) async {
-    await (db.delete(db.wordBookEntries)
-          ..where((t) => t.wordBookId.equals(bookId) & t.wordId.equals(wordId)))
-        .go();
-    await _cleanupUnusedWord(wordId);
+  /// Removes one word from one book without touching any other book.
+  Future<void> removeWord(
+    String bookId,
+    String wordId, {
+    required DateTime now,
+  }) async {
+    await removeWords(bookId, <String>[wordId], now: now);
+  }
+
+  /// Batch version of [removeWord]: writes tombstones so the removal survives a
+  /// merge with an older dataset.
+  Future<int> removeWords(
+    String bookId,
+    Iterable<String> wordIds, {
+    required DateTime now,
+  }) async {
+    int removed = 0;
+    final int millis = now.millisecondsSinceEpoch;
+    await db.transaction(() async {
+      for (final String wordId in wordIds.toList(growable: false)) {
+        final WordBookEntry? existing =
+            await (db.select(db.wordBookEntries)..where(
+                  (t) => t.wordBookId.equals(bookId) & t.wordId.equals(wordId),
+                ))
+                .getSingleOrNull();
+        if (existing == null || existing.deletedAt != null) continue;
+        await db
+            .update(db.wordBookEntries)
+            .replace(
+              existing.copyWith(
+                deletedAt: Value<int?>(millis),
+                version: existing.version + 1,
+                updatedAt: millis,
+              ),
+            );
+        removed++;
+      }
+    });
+    return removed;
   }
 
   Future<int> wordCount(String bookId) async {
-    final Expression<int> count = db.wordBookEntries.wordId.count();
-    final TypedResult row =
-        await (db.selectOnly(db.wordBookEntries)
-              ..addColumns(<Expression<Object>>[count])
-              ..where(db.wordBookEntries.wordBookId.equals(bookId)))
-            .getSingle();
-    return row.read(count) ?? 0;
+    final QueryRow row = await db
+        .customSelect(
+          '''
+SELECT COUNT(*) AS c
+  FROM word_book_entries e
+  JOIN words w ON w.id = e.word_id
+ WHERE e.word_book_id = ? AND e.deleted_at IS NULL AND w.deleted_at IS NULL''',
+          variables: <Variable<Object>>[Variable<String>(bookId)],
+          readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
+            db.wordBookEntries,
+            db.words,
+          },
+        )
+        .getSingle();
+    return row.read<int>('c');
   }
 
   Future<void> _cleanupUnusedWord(String wordId) async {
     final List<WordBookEntry> links = await (db.select(
       db.wordBookEntries,
-    )..where((t) => t.wordId.equals(wordId))).get();
+    )..where((t) => t.wordId.equals(wordId) & t.deletedAt.isNull())).get();
     if (links.isNotEmpty) return;
     final List<ReviewEvent> events = await (db.select(
       db.reviewEvents,
@@ -216,7 +294,41 @@ SELECT b.id, b.name, b.description, b.source_type, b.source_url,
     }
   }
 
+  /// Drops words that are no longer referenced by any book *and* have no
+  /// history. Only used by tests/cleanup, never for user-visible deletion.
+  Future<int> pruneOrphans() async {
+    final List<Word> words = await (db.select(
+      db.words,
+    )..where((t) => t.deletedAt.isNull())).get();
+    int pruned = 0;
+    for (final Word word in words) {
+      final int before = await liveLinkCount(word.id);
+      if (before == 0) {
+        await _cleanupUnusedWord(word.id);
+        pruned++;
+      }
+    }
+    return pruned;
+  }
+
+  Future<int> liveLinkCount(String wordId) async {
+    final QueryRow row = await db
+        .customSelect(
+          'SELECT COUNT(*) AS c FROM word_book_entries '
+          'WHERE word_id = ? AND deleted_at IS NULL',
+          variables: <Variable<Object>>[Variable<String>(wordId)],
+          readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
+            db.wordBookEntries,
+          },
+        )
+        .getSingle();
+    return row.read<int>('c');
+  }
+
   /// Creates the book (if needed) and links every word id.
+  ///
+  /// Matching is by name so that two devices creating "CET-6" independently
+  /// converge instead of showing a duplicate entry after the first sync.
   Future<WordBook> ensureBook({
     required String name,
     String description = '',
@@ -224,9 +336,10 @@ SELECT b.id, b.name, b.description, b.source_type, b.source_url,
     String sourceUrl = '',
     required DateTime now,
   }) async {
+    final String trimmed = name.trim();
     final List<WordBook> books = await listBooks();
     for (final WordBook book in books) {
-      if (book.name == name.trim()) return book;
+      if (book.name == trimmed) return book;
     }
     return create(
       name: name,
@@ -235,5 +348,27 @@ SELECT b.id, b.name, b.description, b.source_type, b.source_url,
       sourceUrl: sourceUrl,
       now: now,
     );
+  }
+
+  /// Refreshes an online-imported book: adds the new words, never deletes local
+  /// ones and never touches notes or review history.
+  Future<int> refreshFromSource({
+    required String bookId,
+    required Iterable<String> wordIds,
+    required DateTime now,
+  }) async {
+    final int linked = await addWords(bookId, wordIds, now: now);
+    final WordBook? book = await byId(bookId);
+    if (book != null) {
+      await db
+          .update(db.wordBooks)
+          .replace(
+            book.copyWith(
+              updatedAt: now.millisecondsSinceEpoch,
+              revision: book.revision + 1,
+            ),
+          );
+    }
+    return linked;
   }
 }

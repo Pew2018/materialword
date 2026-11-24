@@ -10,5 +10,10 @@
 	<!-- HTTPS URL import of word lists. -->
 	<key>com.apple.security.network.client</key>
 	<true/>
+	<!-- flutter_secure_storage stores sync tokens in the user Keychain. -->
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)com.pew2018.materialword</string>
+	</array>
 </dict>
 </plist>

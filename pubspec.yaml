@@ -3,7 +3,7 @@ description: "MaterialWord — offline English vocabulary learning (Flutter, Mat
 publish_to: 'none'
 
 # Version is also stored in backups and shown in Settings.
-version: 1.0.0+1
+version: 1.1.0+2
 
 environment:
   sdk: ^3.14.0
@@ -27,6 +27,9 @@ dependencies:
   path_provider: ^2.1.6
   file_picker: ^13.4.1
   http: ^1.6.0
+  flutter_tts: ^4.2.5
+  flutter_secure_storage: ^11.2.0
+  crypto: ^3.0.8
 
 dev_dependencies:
   flutter_test:
@@ -42,5 +45,6 @@ flutter:
   assets:
     # Offline dictionary, generated from ECDICT (MIT) by tool/build_dictionary.py.
     - assets/dictionary/ecdict_core.db
+    - assets/dictionary/ecdict_core.db.meta.json
     # Tiny demo wordbook used by "载入示例词书".
     - assets/wordbooks/sample_cet6.json

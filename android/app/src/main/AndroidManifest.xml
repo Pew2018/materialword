@@ -1,4 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- GitHub / WebDAV / HTTPS word-list import. TLS verification stays on. -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <application
         android:label="MaterialWord"
         android:name="${applicationName}"

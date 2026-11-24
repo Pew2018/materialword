@@ -10,6 +10,7 @@ import '../../shared/widgets/common.dart';
 import '../word_management/import_page.dart';
 import '../word_management/quick_add_page.dart';
 import '../word_management/word_detail_page.dart';
+import '../study/study_page.dart';
 
 /// Words inside one book, with search, state badges and quick management.
 class WordBookDetailPage extends ConsumerStatefulWidget {
@@ -67,6 +68,22 @@ class _WordBookDetailPageState extends ConsumerState<WordBookDetailPage> {
       appBar: AppBar(
         title: Text(_book?.name ?? '词书'),
         actions: <Widget>[
+          IconButton(
+            tooltip: '词书内专项复习',
+            icon: const Icon(Icons.replay_outlined),
+            onPressed: () async {
+              await Navigator.of(context).push<void>(
+                MaterialPageRoute<void>(
+                  builder: (BuildContext context) => StudyPage(
+                    special: SpecialReview.inBook,
+                    bookIdOverride: widget.bookId,
+                  ),
+                ),
+              );
+              ref.invalidate(bookSummariesProvider);
+              ref.invalidate(todayProgressProvider);
+            },
+          ),
           IconButton(
             tooltip: '添加单词',
             icon: const Icon(Icons.add),

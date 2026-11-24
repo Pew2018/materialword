@@ -98,7 +98,8 @@ enum ThemePreference {
 enum StudyMode {
   mixed('mixed', '新词 + 复习'),
   newOnly('new', '仅新词'),
-  reviewOnly('review', '仅复习');
+  reviewOnly('review', '仅复习'),
+  special('special', '专项复习');
 
   const StudyMode(this.code, this.label);
 
@@ -109,4 +110,97 @@ enum StudyMode {
     (StudyMode v) => v.code == code,
     orElse: () => StudyMode.mixed,
   );
+}
+
+/// A special review queue that does not permanently occupy the normal review
+/// queue. Answers in these modes are still recorded as ordinary `review`
+/// events (so they count towards today's review allowance and move the
+/// next-review date), but the queue itself is built from a different filter.
+enum SpecialReview {
+  none('none', '普通学习'),
+  hard('hard', '困难词专项'),
+  recentMistakes('mistakes', '近期错误专项'),
+  inBook('book', '词书内专项');
+
+  const SpecialReview(this.code, this.label);
+
+  final String code;
+  final String label;
+
+  static SpecialReview fromCode(String? code) =>
+      SpecialReview.values.firstWhere(
+        (SpecialReview v) => v.code == code,
+        orElse: () => SpecialReview.none,
+      );
+}
+
+/// Explicit event semantics.
+///
+/// Everything that changes learning state goes through [ReviewEvents] so that
+/// a merge cannot silently revert a manual action: "mark as mastered" and
+/// "reset progress" are recorded as events (and replayed deterministically)
+/// instead of poking the derived `learning_states` row.
+class ReviewEventMode {
+  const ReviewEventMode._();
+
+  static const String normal = 'normal';
+  static const String specialHard = 'special-hard';
+  static const String specialMistakes = 'special-mistakes';
+  static const String specialBook = 'special-book';
+
+  /// Recorded when the user marks a word as mastered by hand.
+  static const String manualMastered = 'manual-mastered';
+
+  /// Recorded when the user resets the word's progress. Replay treats it as
+  /// "forget everything before this point".
+  static const String reset = 'reset';
+
+  static bool isReset(String? value) => value == reset;
+
+  static String forSpecial(SpecialReview review) => switch (review) {
+    SpecialReview.hard => specialHard,
+    SpecialReview.recentMistakes => specialMistakes,
+    SpecialReview.inBook => specialBook,
+    SpecialReview.none => normal,
+  };
+}
+
+/// Sort order of the word-management list.
+enum ManagedSort {
+  addedDesc('added', '添加时间（新→旧）'),
+  alpha('alpha', '字母顺序'),
+  wrongDesc('wrong', '错误次数（多→少）'),
+  lastStudiedDesc('last', '最近学习时间');
+
+  const ManagedSort(this.code, this.label);
+
+  final String code;
+  final String label;
+
+  static ManagedSort fromCode(String? code) => ManagedSort.values.firstWhere(
+    (ManagedSort v) => v.code == code,
+    orElse: () => ManagedSort.addedDesc,
+  );
+}
+
+/// Learning-state filter of the word-management list.
+enum ManagedStageFilter {
+  all('all', '全部'),
+  unlearned('unlearned', '未学习'),
+  learning('learning', '学习中'),
+  review('review', '复习中'),
+  relearning('relearning', '重学中'),
+  hard('hard', '困难词'),
+  mastered('mastered', '已掌握');
+
+  const ManagedStageFilter(this.code, this.label);
+
+  final String code;
+  final String label;
+
+  static ManagedStageFilter fromCode(String? code) =>
+      ManagedStageFilter.values.firstWhere(
+        (ManagedStageFilter v) => v.code == code,
+        orElse: () => ManagedStageFilter.all,
+      );
 }

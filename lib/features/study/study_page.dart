@@ -8,14 +8,33 @@ import '../../core/database/app_database.dart';
 import '../../core/models/enums.dart';
 import '../../core/models/study_models.dart';
 import '../../services/study_session.dart';
+import '../../services/tts_service.dart';
 import '../../shared/widgets/common.dart';
 
-/// Learning / review screen. One word at a time, three answer levels, keyboard
-/// driven on desktop.
+/// Learning / review screen.
+///
+/// Layout contract:
+///  * the word is the visual hero, the Chinese meaning is primary and the
+///    English definition is secondary (collapsible);
+///  * content scrolls, the answer bar is pinned to the bottom — a long
+///    definition can never push the buttons off screen;
+///  * answers are only accepted after the meaning is revealed;
+///  * desktop shortcuts (Space / 1 / 2 / 3) are disabled while text is being
+///    edited or a dialog is open, and are never advertised on phones.
 class StudyPage extends ConsumerStatefulWidget {
-  const StudyPage({super.key, this.reviewOnly = false});
+  const StudyPage({
+    super.key,
+    this.reviewOnly = false,
+    this.special = SpecialReview.none,
+    this.bookIdOverride,
+  });
 
   final bool reviewOnly;
+  final SpecialReview special;
+
+  /// Forces the queue to a specific book (used by the "词书内专项复习" entry);
+  /// normal study always follows the book selected in settings.
+  final String? bookIdOverride;
 
   @override
   ConsumerState<StudyPage> createState() => _StudyPageState();
@@ -23,17 +42,61 @@ class StudyPage extends ConsumerStatefulWidget {
 
 class _StudyPageState extends ConsumerState<StudyPage> {
   late final StudySession _session;
+  final ScrollController _scroll = ScrollController();
   bool _started = false;
+  String? _lastCardId;
+  StudySettingsRow? _settings;
+  late final TtsService _tts;
 
   @override
   void initState() {
     super.initState();
+    // Resolved eagerly: `ref` must not be touched in dispose().
+    _tts = ref.read(ttsServiceProvider);
     _session = StudySession(
       ref.read(studyRepositoryProvider),
       ref.read(settingsRepositoryProvider),
       ref.read(clockProvider),
-    );
+    )..addListener(_onSessionChanged);
     _start();
+  }
+
+  @override
+  void dispose() {
+    _session.removeListener(_onSessionChanged);
+    _session.dispose();
+    _scroll.dispose();
+    // Captured in initState: `ref` must not be used while disposing.
+    _tts.stop();
+    super.dispose();
+  }
+
+  void _onSessionChanged() {
+    final StudyCard? card = _session.current;
+    final String? id = card?.word.id;
+    if (id == _lastCardId) return;
+    _lastCardId = id;
+    // Keep the header at the same place for every card: no jumpy layout.
+    if (_scroll.hasClients) _scroll.jumpTo(0);
+    if (card != null && (_settings?.ttsAutoSpeak ?? false)) {
+      _speak(card.word.word);
+    }
+  }
+
+  Future<void> _speak(String text) async {
+    final StudySettingsRow? settings = _settings;
+    final bool ok = await _tts.speak(
+      text,
+      voiceName: (settings?.ttsVoice.isEmpty ?? true)
+          ? null
+          : settings!.ttsVoice,
+      locale: settings?.ttsLocale ?? 'en-US',
+      rate: settings?.ttsRate ?? 50,
+    );
+    if (!ok && mounted) {
+      final String message = _tts.lastError ?? '系统语音不可用';
+      showMessage(context, message, error: true);
+    }
   }
 
   Future<void> _start() async {
@@ -42,6 +105,7 @@ class _StudyPageState extends ConsumerState<StudyPage> {
     final StudySettingsRow settings = await ref
         .read(settingsRepositoryProvider)
         .load();
+    _settings = settings;
     final DateTime now = ref.read(clockProvider).now();
     final int newDone = await ref
         .read(studyRepositoryProvider)
@@ -49,58 +113,80 @@ class _StudyPageState extends ConsumerState<StudyPage> {
     final int reviewDone = await ref
         .read(studyRepositoryProvider)
         .todayCount(now: now, type: ReviewType.review);
+    final int newAllowance = (settings.dailyNewTarget - newDone).clamp(
+      0,
+      settings.dailyNewTarget,
+    );
+    final int reviewAllowance = (settings.dailyReviewLimit - reviewDone).clamp(
+      0,
+      settings.dailyReviewLimit,
+    );
+    final bool isSpecial = widget.special != SpecialReview.none;
     await _session.load(
-      newLimit: (settings.dailyNewTarget - newDone).clamp(
-        0,
-        settings.dailyNewTarget,
-      ),
-      reviewLimit: (settings.dailyReviewLimit - reviewDone).clamp(
-        0,
-        settings.dailyReviewLimit,
-      ),
-      bookId: settings.currentWordBookId,
+      newLimit: isSpecial ? 0 : newAllowance,
+      // A special pass still consumes the review allowance, but we always allow
+      // at least a short focused run so the entry point is never a dead end.
+      reviewLimit: isSpecial
+          ? (reviewAllowance > 0 ? reviewAllowance : 20)
+          : reviewAllowance,
+      bookId: widget.bookIdOverride ?? settings.currentWordBookId,
       mode: widget.reviewOnly
           ? StudyMode.reviewOnly
           : StudyMode.fromCode(settings.studyMode),
+      special: widget.special,
     );
-    if (mounted) setState(() {});
-  }
-
-  @override
-  void dispose() {
-    _session.dispose();
-    super.dispose();
+    if (!mounted) return;
+    setState(() {});
+    _onSessionChanged();
   }
 
   Future<void> _answer(AnswerResult result) async {
     await _session.submit(result);
   }
 
+  bool get _shortcutsBlocked {
+    if (ModalRoute.of(context)?.isCurrent == false) return true;
+    if (Navigator.of(context).canPop() && _hasOpenDialog) return true;
+    final BuildContext? focus = FocusManager.instance.primaryFocus?.context;
+    return focus?.widget is EditableText;
+  }
+
+  bool get _hasOpenDialog {
+    // A route pushed on top of the study page means a dialog/page is open.
+    return !(ModalRoute.of(context)?.isCurrent ?? true);
+  }
+
   @override
   Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final bool desktop = isDesktopPlatform(context);
     return AnimatedBuilder(
       animation: _session,
       builder: (BuildContext context, Widget? _) {
         return Scaffold(
           appBar: AppBar(
-            title: Text(widget.reviewOnly ? '复习' : '学习'),
+            title: Text(_title),
             bottom: PreferredSize(
-              preferredSize: const Size.fromHeight(4),
+              preferredSize: const Size.fromHeight(3),
               child: LinearProgressIndicator(
                 value: _session.progress,
-                minHeight: 4,
-                backgroundColor: Colors.white24,
-                valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+                minHeight: 3,
+                backgroundColor: Colors.black26,
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  theme.colorScheme.onPrimary,
+                ),
               ),
             ),
             actions: <Widget>[
               if (!_session.isLoading && !_session.isEmpty)
                 Padding(
-                  padding: const EdgeInsets.only(right: 12),
+                  padding: const EdgeInsets.only(right: 16),
                   child: Center(
                     child: Text(
                       '${_session.position}/${_session.totalCards}',
-                      style: const TextStyle(fontSize: 14),
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onPrimary,
+                      ),
                     ),
                   ),
                 ),
@@ -108,25 +194,56 @@ class _StudyPageState extends ConsumerState<StudyPage> {
           ),
           body: CallbackShortcuts(
             bindings: <ShortcutActivator, VoidCallback>{
-              const SingleActivator(LogicalKeyboardKey.space): _session.reveal,
-              const SingleActivator(LogicalKeyboardKey.digit1): () =>
-                  _answer(AnswerResult.unknown),
-              const SingleActivator(LogicalKeyboardKey.digit2): () =>
-                  _answer(AnswerResult.hazy),
-              const SingleActivator(LogicalKeyboardKey.digit3): () =>
-                  _answer(AnswerResult.known),
+              const SingleActivator(LogicalKeyboardKey.space): () {
+                if (_shortcutsBlocked) return;
+                _session.reveal();
+              },
               const SingleActivator(LogicalKeyboardKey.enter): () {
+                if (_shortcutsBlocked) return;
                 if (!_session.isRevealed) _session.reveal();
               },
+              const SingleActivator(LogicalKeyboardKey.digit1): () {
+                if (_shortcutsBlocked || !_session.isRevealed) return;
+                _answer(AnswerResult.unknown);
+              },
+              const SingleActivator(LogicalKeyboardKey.digit2): () {
+                if (_shortcutsBlocked || !_session.isRevealed) return;
+                _answer(AnswerResult.hazy);
+              },
+              const SingleActivator(LogicalKeyboardKey.digit3): () {
+                if (_shortcutsBlocked || !_session.isRevealed) return;
+                _answer(AnswerResult.known);
+              },
             },
-            child: Focus(autofocus: true, child: _buildBody(context)),
+            child: Focus(
+              autofocus: true,
+              child: Column(
+                children: <Widget>[
+                  Expanded(child: _buildContent(context, desktop)),
+                  if (_session.current != null && !_session.isFinished)
+                    _AnswerBar(
+                      revealed: _session.isRevealed,
+                      busy: _session.isBusy,
+                      desktop: desktop,
+                      onReveal: _session.reveal,
+                      onAnswer: _answer,
+                    ),
+                ],
+              ),
+            ),
           ),
         );
       },
     );
   }
 
-  Widget _buildBody(BuildContext context) {
+  String get _title {
+    if (widget.special != SpecialReview.none) return widget.special.label;
+    if (widget.reviewOnly) return '复习';
+    return '学习';
+  }
+
+  Widget _buildContent(BuildContext context, bool desktop) {
     if (_session.isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -139,10 +256,10 @@ class _StudyPageState extends ConsumerState<StudyPage> {
             children: <Widget>[
               const Icon(
                 Icons.error_outline,
-                size: 48,
+                size: 40,
                 color: AppColors.unknown,
               ),
-              AppSpacing.h16,
+              AppSpacing.h12,
               Text(_session.error!, textAlign: TextAlign.center),
               AppSpacing.h16,
               ElevatedButton(
@@ -155,13 +272,14 @@ class _StudyPageState extends ConsumerState<StudyPage> {
       );
     }
     if (_session.isEmpty) {
-      final int remaining = _session.newAvailable + _session.reviewAvailable;
       return EmptyState(
         icon: Icons.done_all,
-        title: '今天没有需要学习的单词',
-        message: remaining == 0
-            ? '今日目标已完成。可以调整每日目标、导入新词书，或稍后回来复习。'
-            : '本次队列为空，请检查每日新词目标与复习上限设置。',
+        title: widget.special != SpecialReview.none
+            ? '该专项暂时没有需要复习的单词'
+            : '今天没有需要学习的单词',
+        message: widget.special != SpecialReview.none
+            ? '专项复习只包含符合当前条件的单词，普通复习队列不受影响。'
+            : '今日可学的新词和到期复习都已处理完。可以调整每日目标、导入新词，或稍后回来。',
         action: ElevatedButton(
           onPressed: () => Navigator.of(context).maybePop(),
           child: const Text('返回'),
@@ -184,39 +302,18 @@ class _StudyPageState extends ConsumerState<StudyPage> {
 
     final StudyCard card = _session.current!;
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(AppDimens.gutter),
+      controller: _scroll,
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
       child: ContentWidth(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            _WordCard(card: card, revealed: _session.isRevealed),
-            AppSpacing.h24,
-            if (!_session.isRevealed)
-              SizedBox(
-                height: 48,
-                child: ElevatedButton(
-                  onPressed: _session.reveal,
-                  child: const Text('显示释义（Space）'),
-                ),
-              )
-            else
-              _AnswerButtons(onAnswer: _answer, busy: _session.isBusy),
-            AppSpacing.h16,
-            Center(
-              child: Text(
-                '快捷键：Space 显示释义 · 1 不认识 · 2 模糊 · 3 认识',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ),
-          ],
-        ),
+        maxWidth: 720,
+        child: _WordBody(card: card, revealed: _session.isRevealed),
       ),
     );
   }
 }
 
-class _WordCard extends StatelessWidget {
-  const _WordCard({required this.card, required this.revealed});
+class _WordBody extends StatelessWidget {
+  const _WordBody({required this.card, required this.revealed});
 
   final StudyCard card;
   final bool revealed;
@@ -227,192 +324,379 @@ class _WordCard extends StatelessWidget {
     final Word word = card.word;
     final LearningState? state = card.withState.state;
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 28, 20, 20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        const SizedBox(height: 8),
+        SelectableText(
+          word.word,
+          textAlign: TextAlign.center,
+          style: theme.textTheme.headlineMedium?.copyWith(
+            fontSize: 38,
+            fontWeight: FontWeight.w500,
+            letterSpacing: 0.2,
+            height: 1.15,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
-            Text(
-              word.word,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.headlineMedium?.copyWith(
-                fontSize: 36,
-                fontWeight: FontWeight.w500,
-                letterSpacing: 0.2,
+            if (word.phonetic.isNotEmpty)
+              Flexible(
+                child: Text(
+                  '/${word.phonetic}/',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    color: theme.textTheme.bodySmall?.color,
+                  ),
+                ),
+              ),
+            IconButton(
+              tooltip: '朗读',
+              icon: const Icon(Icons.volume_up_outlined),
+              iconSize: AppDimens.iconSizeSmall,
+              visualDensity: VisualDensity.compact,
+              onPressed: () async {
+                final container = ProviderScope.containerOf(context);
+                final tts = container.read(ttsServiceProvider);
+                final settings = container.read(settingsProvider).value;
+                final bool ok = await tts.speak(
+                  word.word,
+                  voiceName: (settings?.ttsVoice.isEmpty ?? true)
+                      ? null
+                      : settings!.ttsVoice,
+                  locale: settings?.ttsLocale ?? 'en-US',
+                  rate: settings?.ttsRate ?? 50,
+                );
+                if (!ok && context.mounted) {
+                  showMessage(
+                    context,
+                    tts.lastError ?? '系统语音不可用，可继续用默读方式学习',
+                    error: true,
+                  );
+                }
+              },
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Wrap(
+          alignment: WrapAlignment.center,
+          spacing: 6,
+          runSpacing: 4,
+          children: <Widget>[
+            if (card.repeatCount > 0)
+              const TagChip(label: '本次重复', color: AppColors.hazy, dense: true),
+            if (card.type == ReviewType.study)
+              const TagChip(label: '新词', dense: true)
+            else
+              TagChip(
+                label: '复习 · ${StudyStage.fromCode(state?.stage ?? 0).label}',
+                color: AppColors.hazy,
+                dense: true,
+              ),
+            if (word.examTags.isNotEmpty)
+              TagChip(
+                label: word.examTags.split(' ').take(2).join(' ').toUpperCase(),
+                dense: true,
+              ),
+            if ((state?.wrongCount ?? 0) > 0)
+              TagChip(
+                label: '错 ${state!.wrongCount} 次',
+                color: AppColors.unknown,
+                dense: true,
+              ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        if (!revealed)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            child: Column(
+              children: <Widget>[
+                Icon(
+                  Icons.visibility_outlined,
+                  size: 28,
+                  color: theme.disabledColor,
+                ),
+                AppSpacing.h8,
+                Text('先回想，再显示释义', style: theme.textTheme.bodySmall),
+              ],
+            ),
+          )
+        else ...<Widget>[
+          const Divider(height: 24),
+          if (word.partOfSpeech.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(
+                word.partOfSpeech,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontStyle: FontStyle.italic,
+                ),
               ),
             ),
-            if (word.phonetic.isNotEmpty) ...<Widget>[
-              const SizedBox(height: 6),
-              Text(
-                '/${word.phonetic}/',
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodyLarge?.copyWith(
+          SelectableText(
+            word.translation.isEmpty ? '（暂无中文释义，可在词条中补充）' : word.translation,
+            style: theme.textTheme.bodyLarge?.copyWith(
+              fontSize: 17,
+              height: 1.6,
+            ),
+          ),
+          if (word.definition.isNotEmpty) ...<Widget>[
+            AppSpacing.h12,
+            _DisclosureSection(
+              title: '英文释义',
+              expanded: false,
+              child: Text(
+                word.definition,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  height: 1.55,
                   color: theme.textTheme.bodySmall?.color,
                 ),
               ),
-            ],
-            const SizedBox(height: 10),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+            ),
+          ],
+          if (word.example.isNotEmpty) ...<Widget>[
+            AppSpacing.h12,
+            _LabeledBlock(label: '例句', child: word.example, italic: true),
+          ],
+          if (word.phrase.isNotEmpty) ...<Widget>[
+            AppSpacing.h12,
+            _LabeledBlock(label: '短语', child: word.phrase),
+          ],
+          if (word.note.isNotEmpty) ...<Widget>[
+            AppSpacing.h12,
+            _LabeledBlock(label: '笔记', child: word.note),
+          ],
+          if (state != null) ...<Widget>[
+            AppSpacing.h16,
+            Text(
+              '正确 ${state.correctCount} · 模糊 ${state.hazyCount} · 错误 ${state.wrongCount}'
+              ' · 间隔 ${state.intervalDays} 天',
+              style: theme.textTheme.bodySmall,
+            ),
+          ],
+        ],
+        const SizedBox(height: 8),
+      ],
+    );
+  }
+}
+
+/// Collapsible secondary content (the English definition).
+class _DisclosureSection extends StatefulWidget {
+  const _DisclosureSection({
+    required this.title,
+    required this.child,
+    this.expanded = false,
+  });
+
+  final String title;
+  final Widget child;
+  final bool expanded;
+
+  @override
+  State<_DisclosureSection> createState() => _DisclosureSectionState();
+}
+
+class _DisclosureSectionState extends State<_DisclosureSection> {
+  late bool _open = widget.expanded;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        InkWell(
+          onTap: () => setState(() => _open = !_open),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Row(
               children: <Widget>[
-                if (card.repeatCount > 0) ...<Widget>[
-                  const TagChip(label: '本次重复', color: AppColors.hazy),
-                  AppSpacing.w8,
-                ],
-                if (card.type == ReviewType.study)
-                  const TagChip(label: '新词')
-                else
-                  TagChip(
-                    label:
-                        '复习 · ${StudyStage.fromCode(state?.stage ?? 0).label}',
-                    color: AppColors.hazy,
+                Icon(
+                  _open ? Icons.expand_less : Icons.expand_more,
+                  size: AppDimens.iconSizeSmall,
+                  color: theme.colorScheme.primary,
+                ),
+                AppSpacing.w4,
+                Text(
+                  widget.title,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.primary,
+                    fontWeight: FontWeight.w500,
                   ),
-                if (word.examTags.isNotEmpty) ...<Widget>[
-                  AppSpacing.w8,
-                  TagChip(
-                    label: word.examTags
-                        .split(' ')
-                        .take(2)
-                        .join(' ')
-                        .toUpperCase(),
-                    dense: true,
-                  ),
-                ],
+                ),
               ],
             ),
-            if (revealed) ...<Widget>[
-              const Divider(height: 32),
-              if (word.partOfSpeech.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
-                  child: Text(
-                    word.partOfSpeech,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                ),
-              SelectableText(
-                word.translation.isEmpty
-                    ? '（暂无中文释义，可在词条中补充）'
-                    : word.translation,
-                style: theme.textTheme.bodyLarge?.copyWith(
-                  fontSize: 17,
-                  height: 1.5,
-                ),
-              ),
-              if (word.definition.isNotEmpty) ...<Widget>[
-                AppSpacing.h12,
-                SelectableText(
-                  word.definition,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.textTheme.bodySmall?.color,
-                    height: 1.4,
-                  ),
-                ),
-              ],
-              if (word.example.isNotEmpty) ...<Widget>[
-                AppSpacing.h16,
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: theme.scaffoldBackgroundColor,
-                    borderRadius: BorderRadius.circular(AppDimens.radius),
-                    border: Border.all(color: theme.dividerColor),
-                  ),
-                  child: SelectableText(
-                    word.example,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      fontStyle: FontStyle.italic,
-                      height: 1.4,
-                    ),
-                  ),
-                ),
-              ],
-              if (word.note.isNotEmpty) ...<Widget>[
-                AppSpacing.h12,
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+          ),
+        ),
+        if (_open)
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 4),
+            child: widget.child,
+          ),
+      ],
+    );
+  }
+}
+
+class _LabeledBlock extends StatelessWidget {
+  const _LabeledBlock({
+    required this.label,
+    required this.child,
+    this.italic = false,
+  });
+
+  final String label;
+  final String child;
+  final bool italic;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Padding(
+          padding: const EdgeInsets.only(top: 2),
+          child: TagChip(label: label, dense: true),
+        ),
+        AppSpacing.w8,
+        Expanded(
+          child: SelectableText(
+            child,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              height: 1.5,
+              fontStyle: italic ? FontStyle.italic : FontStyle.normal,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Pinned bottom action area.
+class _AnswerBar extends StatelessWidget {
+  const _AnswerBar({
+    required this.revealed,
+    required this.busy,
+    required this.desktop,
+    required this.onReveal,
+    required this.onAnswer,
+  });
+
+  final bool revealed;
+  final bool busy;
+  final bool desktop;
+  final VoidCallback onReveal;
+  final Future<void> Function(AnswerResult result) onAnswer;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Material(
+      color: theme.cardColor,
+      elevation: 8,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+          child: revealed
+              ? Row(
                   children: <Widget>[
-                    const TagChip(label: '笔记', color: AppColors.primary),
+                    _AnswerButton(
+                      label: AnswerResult.unknown.label,
+                      color: AppColors.unknown,
+                      shortcut: desktop ? '1' : null,
+                      onPressed: busy
+                          ? null
+                          : () => onAnswer(AnswerResult.unknown),
+                    ),
                     AppSpacing.w8,
-                    Expanded(
-                      child: SelectableText(
-                        word.note,
-                        style: theme.textTheme.bodyMedium,
-                      ),
+                    _AnswerButton(
+                      label: AnswerResult.hazy.label,
+                      color: AppColors.hazy,
+                      shortcut: desktop ? '2' : null,
+                      onPressed: busy
+                          ? null
+                          : () => onAnswer(AnswerResult.hazy),
+                    ),
+                    AppSpacing.w8,
+                    _AnswerButton(
+                      label: AnswerResult.known.label,
+                      color: AppColors.known,
+                      shortcut: desktop ? '3' : null,
+                      onPressed: busy
+                          ? null
+                          : () => onAnswer(AnswerResult.known),
                     ),
                   ],
+                )
+              : SizedBox(
+                  height: 48,
+                  child: ElevatedButton(
+                    onPressed: onReveal,
+                    child: Text(desktop ? '显示释义（Space）' : '显示释义'),
+                  ),
                 ),
-              ],
-              if (state != null) ...<Widget>[
-                AppSpacing.h16,
-                Text(
-                  '正确 ${state.correctCount} · 模糊 ${state.hazyCount} · 错误 ${state.wrongCount}'
-                  ' · 连续正确 ${state.streak} · 间隔 ${state.intervalDays} 天',
-                  style: theme.textTheme.bodySmall,
-                ),
-              ],
-            ],
-          ],
         ),
       ),
     );
   }
 }
 
-class _AnswerButtons extends StatelessWidget {
-  const _AnswerButtons({required this.onAnswer, required this.busy});
+class _AnswerButton extends StatelessWidget {
+  const _AnswerButton({
+    required this.label,
+    required this.color,
+    required this.onPressed,
+    this.shortcut,
+  });
 
-  final Future<void> Function(AnswerResult result) onAnswer;
-  final bool busy;
+  final String label;
+  final Color color;
+  final String? shortcut;
+  final VoidCallback? onPressed;
 
   @override
   Widget build(BuildContext context) {
-    Widget button(AnswerResult result, Color color, String shortcut) {
-      return Expanded(
-        child: SizedBox(
-          height: 52,
-          child: ElevatedButton(
-            onPressed: busy ? null : () => onAnswer(result),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: color,
-              foregroundColor: Colors.white,
-              elevation: 2,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(AppDimens.radius),
-              ),
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: <Widget>[
-                Text(
-                  result.label,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                Text(
-                  shortcut,
-                  style: const TextStyle(fontSize: 11, color: Colors.white70),
-                ),
-              ],
+    return Expanded(
+      child: SizedBox(
+        height: 52,
+        child: ElevatedButton(
+          onPressed: onPressed,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: color,
+            foregroundColor: Colors.white,
+            elevation: 2,
+            padding: EdgeInsets.zero,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppDimens.radius),
             ),
           ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              if (shortcut != null)
+                Text(
+                  shortcut!,
+                  style: const TextStyle(fontSize: 11, color: Colors.white70),
+                ),
+            ],
+          ),
         ),
-      );
-    }
-
-    return Row(
-      children: <Widget>[
-        button(AnswerResult.unknown, AppColors.unknown, '1'),
-        AppSpacing.w12,
-        button(AnswerResult.hazy, AppColors.hazy, '2'),
-        AppSpacing.w12,
-        button(AnswerResult.known, AppColors.known, '3'),
-      ],
+      ),
     );
   }
 }
@@ -442,65 +726,60 @@ class _SummaryView extends StatelessWidget {
         padding: const EdgeInsets.all(24),
         child: ContentWidth(
           maxWidth: 520,
-          child: Card(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Icon(
+                Icons.check_circle_outline,
+                size: 40,
+                color: theme.colorScheme.primary,
+              ),
+              AppSpacing.h12,
+              Text(
+                '本组完成',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.titleLarge,
+              ),
+              AppSpacing.h24,
+              Row(
                 children: <Widget>[
-                  Icon(
-                    Icons.check_circle_outline,
-                    size: 48,
-                    color: theme.colorScheme.primary,
+                  Expanded(
+                    child: StatBlock(value: '$newAnswered', label: '新词'),
                   ),
-                  AppSpacing.h16,
-                  Text(
-                    '本组完成',
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.headlineSmall,
+                  Expanded(
+                    child: StatBlock(value: '$reviewAnswered', label: '复习'),
                   ),
-                  AppSpacing.h24,
-                  Row(
-                    children: <Widget>[
-                      Expanded(
-                        child: StatBlock(value: '$newAnswered', label: '新词'),
-                      ),
-                      Expanded(
-                        child: StatBlock(value: '$reviewAnswered', label: '复习'),
-                      ),
-                      Expanded(
-                        child: StatBlock(value: '$repeats', label: '重复练习'),
-                      ),
-                    ],
-                  ),
-                  if (backlog > 0) ...<Widget>[
-                    AppSpacing.h16,
-                    Text(
-                      '还有 $backlog 个到期单词顺延到明天。',
-                      style: theme.textTheme.bodySmall,
-                    ),
-                  ],
-                  AppSpacing.h24,
-                  Row(
-                    children: <Widget>[
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: onAgain,
-                          child: const Text('再来一组'),
-                        ),
-                      ),
-                      AppSpacing.w12,
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: onDone,
-                          child: const Text('返回首页'),
-                        ),
-                      ),
-                    ],
+                  Expanded(
+                    child: StatBlock(value: '$repeats', label: '重复练习'),
                   ),
                 ],
               ),
-            ),
+              if (backlog > 0) ...<Widget>[
+                AppSpacing.h16,
+                Text(
+                  '还有 $backlog 个到期单词顺延到明天。',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ],
+              AppSpacing.h24,
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: onAgain,
+                      child: const Text('再来一组'),
+                    ),
+                  ),
+                  AppSpacing.w8,
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: onDone,
+                      child: const Text('返回'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
       ),

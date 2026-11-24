@@ -2,25 +2,33 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/database/app_database.dart';
 import '../core/models/enums.dart';
 import 'navigation.dart';
 import 'providers.dart';
 import 'theme.dart';
 
-/// Root widget. Theme follows the stored preference (system / light / dark).
+/// Root widget.
+///
+/// Both themes are rebuilt from the stored accent colour, so changing it takes
+/// effect immediately without restarting the app or recreating any widget
+/// state (the learning session keeps running while the colours change).
 class MaterialWordApp extends ConsumerWidget {
   const MaterialWordApp({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final String? themeCode = ref.watch(settingsProvider).value?.themeMode;
-    final ThemePreference preference = ThemePreference.fromCode(themeCode);
+    final StudySettingsRow? settings = ref.watch(settingsProvider).value;
+    final ThemePreference preference = ThemePreference.fromCode(
+      settings?.themeMode,
+    );
+    final Color accent = parseAccent(settings?.accentColor);
 
     return MaterialApp(
       title: 'MaterialWord',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.light(),
-      darkTheme: AppTheme.dark(),
+      theme: AppTheme.of(Brightness.light, accent),
+      darkTheme: AppTheme.of(Brightness.dark, accent),
       themeMode: switch (preference) {
         ThemePreference.system => ThemeMode.system,
         ThemePreference.light => ThemeMode.light,

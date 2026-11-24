@@ -11,8 +11,10 @@ import '../../app/theme.dart';
 import '../../core/time_utils.dart';
 import '../../services/backup_service.dart';
 import '../../shared/widgets/common.dart';
+import '../sync/sync_settings_page.dart';
 
-/// Local backup / restore / merge plus the (planned) sync providers.
+/// Local backup / restore / merge. Cross-device sync has its own page so this
+/// one stays a simple "export / import" screen.
 class BackupPage extends ConsumerStatefulWidget {
   const BackupPage({super.key});
 
@@ -146,163 +148,94 @@ class _BackupPageState extends ConsumerState<BackupPage> {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('备份与同步')),
+      appBar: AppBar(title: const Text('备份与恢复')),
       body: ListView(
-        padding: const EdgeInsets.all(AppDimens.gutter),
+        padding: const EdgeInsets.only(bottom: 32),
         children: <Widget>[
-          ContentWidth(
-            maxWidth: 760,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                if (_error != null) ErrorBanner(message: _error!),
-                if (_busy)
-                  const Padding(
-                    padding: EdgeInsets.only(bottom: 12),
-                    child: LinearProgressIndicator(minHeight: 3),
-                  ),
-                SectionCard(
-                  title: '本地备份',
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: <Widget>[
-                      Text(
-                        '备份是带版本号的 JSON 文件，包含词条、词书、作答历史和学习设置。'
-                        '不包含任何 Token 或密码。',
-                        style: theme.textTheme.bodySmall,
-                      ),
-                      AppSpacing.h16,
-                      Wrap(
-                        spacing: AppDimens.compactGutter,
-                        runSpacing: AppDimens.compactGutter,
-                        children: <Widget>[
-                          ElevatedButton.icon(
-                            onPressed: _busy
-                                ? null
-                                : () => _export(chooseLocation: true),
-                            icon: const Icon(Icons.save_alt),
-                            label: const Text('导出到…'),
-                          ),
-                          OutlinedButton.icon(
-                            onPressed: _busy
-                                ? null
-                                : () => _export(chooseLocation: false),
-                            icon: const Icon(Icons.folder_outlined),
-                            label: const Text('导出到应用目录'),
-                          ),
-                          TextButton.icon(
-                            onPressed: _busy ? null : _import,
-                            icon: const Icon(Icons.restore),
-                            label: const Text('导入并合并'),
-                          ),
-                        ],
-                      ),
-                      if (_lastBackup != null) ...<Widget>[
-                        AppSpacing.h12,
-                        Text(
-                          '上次导出：${formatDateTime(DateTime.parse(_lastBackup!))}',
-                          style: theme.textTheme.bodySmall,
-                        ),
-                      ],
-                      if (_status != null) ...<Widget>[
-                        AppSpacing.h12,
-                        Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: theme.colorScheme.primary.withValues(
-                              alpha: 0.06,
-                            ),
-                            borderRadius: BorderRadius.circular(
-                              AppDimens.radius,
-                            ),
-                          ),
-                          child: Text(
-                            _status!,
-                            style: theme.textTheme.bodySmall,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                AppSpacing.h16,
-                SectionCard(
-                  title: '同步方式',
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: <Widget>[
-                      const _ProviderRow(
-                        label: '本地文件',
-                        description: '导出 / 导入 JSON 文件，第一版完全可用。',
-                        implemented: true,
-                      ),
-                      Divider(height: 1, color: theme.dividerColor),
-                      const _ProviderRow(
-                        label: 'GitHub 私有仓库',
-                        description: '计划中：REST API + Fine-grained PAT（仅存安全存储）+ SHA 并发处理。',
-                        implemented: false,
-                      ),
-                      Divider(height: 1, color: theme.dividerColor),
-                      const _ProviderRow(
-                        label: 'WebDAV',
-                        description: '计划中：HTTPS + ETag 条件请求，禁止关闭证书校验。',
-                        implemented: false,
-                      ),
-                      AppSpacing.h16,
-                      Text(
-                        '合并规则：作答记录按全局 ID 去重，学习状态由合并后的历史重新计算，'
-                        '同一份备份重复导入不会重复计入统计。',
-                        style: theme.textTheme.bodySmall,
-                      ),
-                    ],
-                  ),
-                ),
-                AppSpacing.h24,
-              ],
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: ErrorBanner(message: _error!),
             ),
+          if (_busy)
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: LinearProgressIndicator(minHeight: 3),
+            ),
+          SectionHeader(title: '本地备份（JSON）'),
+          SettingsGroup(
+            children: <Widget>[
+              SettingsTile(
+                leading: const Icon(Icons.save_alt),
+                title: '导出到…',
+                subtitle: '通过系统文件选择器保存到任意位置',
+                trailing: const Icon(Icons.chevron_right),
+                onTap: _busy ? null : () => _export(chooseLocation: true),
+              ),
+              SettingsTile(
+                leading: const Icon(Icons.folder_outlined),
+                title: '导出到应用目录',
+                subtitle: '保存在应用文档目录，便于再同步或手动拷贝',
+                trailing: const Icon(Icons.chevron_right),
+                onTap: _busy ? null : () => _export(chooseLocation: false),
+              ),
+              SettingsTile(
+                leading: const Icon(Icons.restore),
+                title: '导入并合并',
+                subtitle: '不会覆盖本地数据：按单词与作答记录去重后合并',
+                trailing: const Icon(Icons.chevron_right),
+                onTap: _busy ? null : _import,
+              ),
+            ],
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ProviderRow extends StatelessWidget {
-  const _ProviderRow({
-    required this.label,
-    required this.description,
-    required this.implemented,
-  });
-
-  final String label;
-  final String description;
-  final bool implemented;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Icon(
-            implemented ? Icons.check_circle_outline : Icons.construction,
-            size: AppDimens.iconSizeSmall,
-            color: implemented ? AppColors.known : theme.disabledColor,
-          ),
-          AppSpacing.w12,
-          Expanded(
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 Text(
-                  '$label${implemented ? '' : '（未实现）'}',
-                  style: theme.textTheme.bodyMedium,
+                  '备份是带版本号（schemaVersion 2）的 JSON 文件，包含词条、词书、'
+                  '词书关联（含删除标记）、作答历史和学习目标。'
+                  '不包含 Token、密码、主题或设备 ID。',
+                  style: theme.textTheme.bodySmall,
                 ),
-                const SizedBox(height: 2),
-                Text(description, style: theme.textTheme.bodySmall),
+                if (_lastBackup != null) ...<Widget>[
+                  AppSpacing.h8,
+                  Text(
+                    '上次导出：${formatDateTime(DateTime.parse(_lastBackup!))}',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ],
+                if (_status != null) ...<Widget>[
+                  AppSpacing.h8,
+                  Text(_status!, style: theme.textTheme.bodyMedium),
+                ],
               ],
+            ),
+          ),
+          SectionHeader(title: '跨设备同步'),
+          SettingsGroup(
+            children: <Widget>[
+              SettingsTile(
+                leading: const Icon(Icons.sync),
+                title: '打开数据同步',
+                subtitle: 'GitHub 私有仓库 / WebDAV / 本地文件',
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.of(context).push<void>(
+                  MaterialPageRoute<void>(
+                    builder: (BuildContext context) => const SyncSettingsPage(),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: Text(
+              '合并规则：作答记录按全局 ID 去重，学习状态由合并后的历史重新计算；'
+              '词书关联带版本与删除标记，因此旧备份不会让已移除的单词复活；'
+              '同一份数据重复导入不会重复计入统计。',
+              style: theme.textTheme.bodySmall,
             ),
           ),
         ],

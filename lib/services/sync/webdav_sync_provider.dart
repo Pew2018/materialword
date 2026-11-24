@@ -1,0 +1,401 @@
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:http/http.dart' as http;
+
+import 'credential_store.dart';
+import 'sync_provider.dart';
+
+/// Sync through a plain WebDAV collection.
+///
+/// Concurrency uses HTTP conditional requests: `If-Match: <etag>` when we are
+/// updating an existing file, `If-None-Match: *` when we are creating it. A 412
+/// means "someone else wrote first" and is reported as a conflict so the
+/// coordinator re-downloads and merges.
+///
+/// The provider never claims more than the server can do: if the server does not
+/// return an ETag, conditional writes cannot work, and the sync page refuses to
+/// enable *automatic* sync for that account (see `SyncTestResult.details`).
+class WebDavSyncProvider implements SyncProvider {
+  WebDavSyncProvider({
+    required this.baseUrl,
+    this.remoteDir = 'materialword',
+    this.fileName = 'materialword-data.json',
+    CredentialStore? credentials,
+    http.Client? client,
+    String? usernameOverride,
+    String? passwordOverride,
+  }) : _credentials = credentials ?? SecureCredentialStore(),
+       _client = client,
+       _usernameOverride = usernameOverride,
+       _passwordOverride = passwordOverride;
+
+  WebDavSyncProvider.fromConfig(
+    Map<String, Object?> config, {
+    CredentialStore? credentials,
+    http.Client? client,
+    String? usernameOverride,
+    String? passwordOverride,
+  }) : this(
+         baseUrl: (config['url'] as String?) ?? '',
+         remoteDir: (config['dir'] as String?) ?? '',
+         fileName: (config['file'] as String?) ?? 'materialword-data.json',
+         credentials: credentials,
+         client: client,
+         usernameOverride: usernameOverride,
+         passwordOverride: passwordOverride,
+       );
+
+  WebDavSyncProvider.placeholder()
+    : this(baseUrl: '', credentials: InMemoryCredentialStore());
+
+  final String baseUrl;
+  final String remoteDir;
+  final String fileName;
+
+  final CredentialStore _credentials;
+  final http.Client? _client;
+  final String? _usernameOverride;
+  final String? _passwordOverride;
+
+  static const int maxRedirects = 3;
+
+  @override
+  String get id => 'webdav';
+
+  @override
+  String get label => 'WebDAV';
+
+  @override
+  bool get isImplemented => true;
+
+  @override
+  bool get requiresNetwork => true;
+
+  @override
+  bool get supportsConditionalWrites => true;
+
+  @override
+  String get description => '通过 HTTPS + ETag 条件请求同步到自建 WebDAV 目录。';
+
+  http.Client get _http => _client ?? http.Client();
+
+  bool get isConfigured {
+    final Uri? uri = Uri.tryParse(baseUrl.trim());
+    return uri != null && uri.hasScheme && uri.host.isNotEmpty;
+  }
+
+  bool get isSecure => baseUrl.trim().toLowerCase().startsWith('https://');
+
+  Uri get _base => Uri.parse(baseUrl.trim());
+
+  Uri get _directoryUri {
+    final String base = baseUrl.trim().replaceAll(RegExp(r'/+$'), '');
+    final String dir = remoteDir
+        .split('/')
+        .where((String s) => s.trim().isNotEmpty)
+        .map((String s) => Uri.encodeComponent(s.trim()))
+        .join('/');
+    return Uri.parse(dir.isEmpty ? '$base/' : '$base/$dir/');
+  }
+
+  Uri get _fileUri =>
+      _directoryUri.replace(path: '${_directoryUri.path}$fileName');
+
+  Future<({String? username, String? password})> _auth() async {
+    final String? username =
+        _usernameOverride ??
+        await _credentials.read(CredentialKeys.webdavUsername);
+    final String? password =
+        _passwordOverride ??
+        await _credentials.read(CredentialKeys.webdavPassword);
+    return (username: username, password: password);
+  }
+
+  Future<Map<String, String>> _headers({
+    bool withAuth = true,
+    Map<String, String> extra = const <String, String>{},
+  }) async {
+    final auth = await _auth();
+    final Map<String, String> headers = <String, String>{
+      'User-Agent': 'MaterialWord',
+      ...extra,
+    };
+    if (withAuth && auth.username != null && auth.password != null) {
+      headers['Authorization'] =
+          'Basic ${base64Encode(utf8.encode('${auth.username}:${auth.password}'))}';
+    }
+    return headers;
+  }
+
+  /// Manual redirect handling: credentials are only forwarded to the *same*
+  /// host, so a misconfigured server cannot leak them to a third party.
+  Future<http.Response> _send(
+    String method,
+    Uri uri, {
+    Map<String, String> headers = const <String, String>{},
+    List<int>? body,
+  }) async {
+    Uri current = uri;
+    bool keepAuth = true;
+    for (int hop = 0; hop <= maxRedirects; hop++) {
+      final http.Request request = http.Request(method, current)
+        ..followRedirects = false
+        ..headers.addAll(
+          keepAuth
+              ? headers
+              : (Map<String, String>.from(headers)..remove('Authorization')),
+        );
+      if (body != null) request.bodyBytes = body;
+      http.StreamedResponse streamed;
+      try {
+        streamed = await _http
+            .send(request)
+            .timeout(const Duration(seconds: 45));
+      } on TimeoutException {
+        throw const SyncException('网络超时：请检查网络后重试', retryable: true);
+      } on http.ClientException catch (e) {
+        throw SyncException('网络请求失败：${e.message}', retryable: true);
+      } catch (e) {
+        if (e is SyncException) rethrow;
+        throw SyncException('网络请求失败：$e', retryable: true);
+      }
+      final http.Response response = await http.Response.fromStream(streamed);
+      if (response.statusCode >= 300 && response.statusCode < 400) {
+        final String? location = response.headers['location'];
+        if (location == null) return response;
+        final Uri next = current.resolve(location);
+        if (next.host != current.host) {
+          throw const SyncException('WebDAV 服务器重定向到其他主机，已拒绝携带认证信息继续请求');
+        }
+        keepAuth = true;
+        current = next;
+        continue;
+      }
+      return response;
+    }
+    throw const SyncException('WebDAV 重定向次数过多');
+  }
+
+  Never _raise(http.Response response, String action) {
+    final int status = response.statusCode;
+    if (status == 401) {
+      throw const SyncException('WebDAV 认证失败：用户名或密码错误');
+    }
+    if (status == 403) {
+      throw const SyncException('WebDAV 拒绝访问：请检查目录权限');
+    }
+    if (status == 404) {
+      throw SyncException('WebDAV 路径不存在：$remoteDir');
+    }
+    if (status == 412) {
+      throw const SyncConflictException('远程文件已被其他设备修改');
+    }
+    if (status == 507) {
+      throw const SyncException('WebDAV 服务器存储空间不足');
+    }
+    if (status >= 500) {
+      throw SyncException('WebDAV 服务器错误（HTTP $status）', retryable: true);
+    }
+    throw SyncException('WebDAV $action 失败（HTTP $status）');
+  }
+
+  static const String _propfindBody =
+      '<?xml version="1.0" encoding="utf-8"?>'
+      '<d:propfind xmlns:d="DAV:"><d:prop>'
+      '<d:getetag/><d:getcontentlength/><d:getlastmodified/><d:resourcetype/>'
+      '</d:prop></d:propfind>';
+
+  /// Extracts the ETag from a PROPFIND response.
+  String? _etagOf(String xml) {
+    final RegExpMatch? match = RegExp(
+      r'<[^>]*getetag[^>]*>\s*([^<]+?)\s*</',
+      caseSensitive: false,
+    ).firstMatch(xml);
+    final String? raw = match?.group(1)?.trim();
+    if (raw == null || raw.isEmpty) return null;
+    return raw.replaceAll('"', '');
+  }
+
+  Future<({int status, String? etag, String body})> _propfind(
+    Uri uri,
+    String method,
+  ) async {
+    final http.Response response = await _send(
+      method,
+      uri,
+      headers: await _headers(
+        extra: <String, String>{
+          'Depth': '0',
+          'Content-Type': 'application/xml; charset=utf-8',
+        },
+      ),
+      body: utf8.encode(_propfindBody),
+    );
+    return (
+      status: response.statusCode,
+      etag: _etagOf(response.body),
+      body: response.body,
+    );
+  }
+
+  /// Creates [dir] and every missing parent. 405 (already exists) is fine.
+  Future<void> _ensureDirectory(Uri dir) async {
+    final List<String> segments = dir.pathSegments
+        .where((String s) => s.isNotEmpty)
+        .toList(growable: false);
+    final StringBuffer path = StringBuffer('/');
+    for (int i = 0; i < segments.length; i++) {
+      path.write(segments[i]);
+      path.write('/');
+      final Uri target = dir.replace(path: path.toString());
+      final http.Response response = await _send(
+        'MKCOL',
+        target,
+        headers: await _headers(),
+      );
+      if (response.statusCode == 201 ||
+          response.statusCode == 200 ||
+          response.statusCode == 405 ||
+          response.statusCode == 301) {
+        continue;
+      }
+      if (response.statusCode == 401 || response.statusCode == 403) {
+        _raise(response, '创建目录');
+      }
+      // 409 = parent missing (retry next loop), anything else is tolerated so a
+      // server that hides MKCOL still gets a chance to serve the PUT.
+    }
+  }
+
+  @override
+  Future<SyncTestResult> testConnection() async {
+    if (!isConfigured) {
+      return const SyncTestResult(ok: false, message: '请填写 WebDAV 服务器地址');
+    }
+    if (!isSecure) {
+      return const SyncTestResult(
+        ok: false,
+        message: '只允许 HTTPS 地址（不会关闭 TLS 证书校验）',
+      );
+    }
+    try {
+      final List<String> details = <String>[];
+      final probe = await _propfind(_directoryUri, 'PROPFIND');
+      if (probe.status == 404) {
+        details.add('目录 $remoteDir 尚不存在，首次同步会自动创建');
+      } else if (probe.status != 207 && probe.status != 200) {
+        _raise(http.Response('', probe.status), '连接测试');
+      } else {
+        details.add('目录可访问：${_directoryUri.path}');
+      }
+
+      final fileProbe = await _propfind(_fileUri, 'PROPFIND');
+      if (fileProbe.status == 207 || fileProbe.status == 200) {
+        if (fileProbe.etag == null) {
+          details.add('NO_CONDITIONAL_WRITE:服务器未返回 ETag，无法检测并发修改');
+        } else {
+          details.add('数据文件已存在，支持 ETag 条件写入');
+        }
+      } else if (fileProbe.status == 404) {
+        details.add('数据文件尚未创建，首次同步会写入并读取服务器返回的 ETag');
+      }
+      return SyncTestResult(
+        ok: true,
+        message: '已连接 ${_base.host}',
+        details: details,
+      );
+    } on SyncException catch (e) {
+      return SyncTestResult(ok: false, message: e.message);
+    } on TimeoutException {
+      return const SyncTestResult(ok: false, message: 'WebDAV 请求超时，请检查网络');
+    } catch (e) {
+      return SyncTestResult(ok: false, message: '连接失败：$e');
+    }
+  }
+
+  @override
+  Future<SyncPayload?> download() async {
+    if (!isConfigured) throw const SyncException('WebDAV 同步尚未配置完整');
+    final http.Response response = await _send(
+      'GET',
+      _fileUri,
+      headers: await _headers(
+        extra: <String, String>{'Accept': 'application/json'},
+      ),
+    );
+    if (response.statusCode == 404) return null;
+    if (response.statusCode != 200) _raise(response, '读取数据');
+    Object? decoded;
+    try {
+      decoded = jsonDecode(utf8.decode(response.bodyBytes));
+    } on FormatException {
+      throw const SyncDataException('远程数据文件不是合法 JSON');
+    }
+    if (decoded is! Map<String, dynamic>) {
+      throw const SyncDataException('远程数据文件根节点必须是对象');
+    }
+    String? etag = response.headers['etag']?.replaceAll('"', '');
+    if (etag == null || etag.isEmpty) {
+      // Some servers only return the ETag on PROPFIND.
+      final probe = await _propfind(_fileUri, 'PROPFIND');
+      etag = probe.etag;
+    }
+    return SyncPayload(
+      dataset: decoded,
+      revision: etag,
+      contentHash: etag,
+      rawLength: response.bodyBytes.length,
+    );
+  }
+
+  @override
+  Future<SyncUploadResult> upload(
+    Map<String, Object?> dataset, {
+    String? ifRevision,
+  }) async {
+    if (!isConfigured) throw const SyncException('WebDAV 同步尚未配置完整');
+    final List<int> bytes = utf8.encode(jsonEncode(dataset));
+    final Map<String, String> conditional =
+        ifRevision != null && ifRevision.isNotEmpty
+        ? <String, String>{'If-Match': ifRevision}
+        : <String, String>{'If-None-Match': '*'};
+
+    Future<http.Response> put() async => _send(
+      'PUT',
+      _fileUri,
+      headers: await _headers(
+        extra: <String, String>{
+          ...conditional,
+          'Content-Type': 'application/json; charset=utf-8',
+        },
+      ),
+      body: bytes,
+    );
+
+    http.Response response = await put();
+    if (response.statusCode == 409 || response.statusCode == 404) {
+      // Directory missing: create it and retry exactly once.
+      await _ensureDirectory(_directoryUri);
+      response = await put();
+    }
+    if (response.statusCode == 412) {
+      throw const SyncConflictException('远程文件已被其他设备修改');
+    }
+    if (response.statusCode == 201 ||
+        response.statusCode == 204 ||
+        response.statusCode == 200) {
+      String? etag = response.headers['etag']?.replaceAll('"', '');
+      if (etag == null || etag.isEmpty) {
+        final probe = await _propfind(_fileUri, 'PROPFIND');
+        etag = probe.etag;
+      }
+      return SyncUploadResult(
+        ok: true,
+        message: '已写入 ${_fileUri.path}',
+        revision: etag,
+      );
+    }
+    _raise(response, '写入数据');
+  }
+}

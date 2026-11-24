@@ -15,6 +15,8 @@ word) so diffs stay small.
 from __future__ import annotations
 
 import csv
+import hashlib
+import json
 import os
 import re
 import sqlite3
@@ -121,6 +123,20 @@ def main() -> int:
     connection.execute("VACUUM")
     connection.commit()
     connection.close()
+
+    # Sidecar with an explicit content hash. The app compares this (not the
+    # file size) before copying the bundled database to its private directory,
+    # so two same-sized dictionaries with different content cannot be confused.
+    with open(target, "rb") as handle:
+        digest = hashlib.sha256(handle.read()).hexdigest()
+    meta = {
+        "schemaVersion": 1,
+        "sha256": digest,
+        "bytes": os.path.getsize(target),
+        "entries": len(entries),
+    }
+    with open(target + ".meta.json", "w", encoding="utf-8") as handle:
+        json.dump(meta, handle, ensure_ascii=False, sort_keys=True)
 
     size = os.path.getsize(target) / 1024 / 1024
     print(f"source rows : {total}")

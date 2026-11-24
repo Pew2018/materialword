@@ -4,11 +4,16 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 
 import '../core/database/app_database.dart';
+import '../core/text/dictionary_text.dart';
 import '../core/repositories/word_repository.dart';
 import '../core/repositories/wordbook_repository.dart';
 import 'dictionary_service.dart';
 
 /// One parsed row coming from a TXT / CSV / JSON file.
+///
+/// Use [ParsedEntry.clean] for anything that comes from a dictionary export:
+/// it normalises literal `\n` escapes, CRLF and stray blank lines while leaving
+/// the user's own note untouched.
 class ParsedEntry {
   const ParsedEntry({
     required this.word,
@@ -19,6 +24,26 @@ class ParsedEntry {
     this.example = '',
     this.note = '',
   });
+
+  factory ParsedEntry.clean({
+    required String word,
+    String phonetic = '',
+    String partOfSpeech = '',
+    String translation = '',
+    String definition = '',
+    String example = '',
+    String note = '',
+  }) {
+    return ParsedEntry(
+      word: word.trim(),
+      phonetic: normalizeDictionaryText(phonetic),
+      partOfSpeech: normalizeDictionaryText(partOfSpeech),
+      translation: normalizeDictionaryText(translation),
+      definition: normalizeDictionaryText(definition),
+      example: normalizeDictionaryText(example),
+      note: note,
+    );
+  }
 
   final String word;
   final String phonetic;
@@ -199,7 +224,7 @@ class ImportService {
         if (issues.length < 20) issues.add(ImportIssue(line, '不是合法英文单词'));
         continue;
       }
-      final ParsedEntry entry = ParsedEntry(
+      final ParsedEntry entry = ParsedEntry.clean(
         word: word,
         translation: parts.length > 1 ? parts.sublist(1).join(' ').trim() : '',
       );
@@ -268,7 +293,7 @@ class ImportService {
         }
         continue;
       }
-      final ParsedEntry entry = ParsedEntry(
+      final ParsedEntry entry = ParsedEntry.clean(
         word: word,
         phonetic: cell(row, phoneticIndex),
         partOfSpeech: cell(row, posIndex),
@@ -348,7 +373,7 @@ class ImportService {
         if (issues.length < 20) issues.add(ImportIssue(word, '无效词条'));
         continue;
       }
-      final ParsedEntry entry = ParsedEntry(
+      final ParsedEntry entry = ParsedEntry.clean(
         word: word.trim(),
         phonetic: phonetic,
         partOfSpeech: pos,

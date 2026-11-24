@@ -5,6 +5,11 @@ import 'package:drift/drift.dart';
 ///
 /// Timestamps are stored as milliseconds since epoch (UTC) in `IntColumn`s;
 /// that keeps ordering, indexing and JSON export trivially portable.
+///
+/// Sync-relevant columns: `revision` (monotonic per row edit), `updatedAt`
+/// (last mutation, used as the tie-breaker) and `deletedAt` (tombstone). A row
+/// is never physically removed during a merge, otherwise a stale backup could
+/// resurrect it.
 @TableIndex(name: 'idx_words_normalized', columns: {#normalized}, unique: true)
 @DataClassName('Word')
 class Words extends Table {
@@ -40,6 +45,7 @@ class WordBooks extends Table {
   TextColumn get description => text().withDefault(const Constant(''))();
   TextColumn get sourceType => text().withDefault(const Constant('manual'))();
   TextColumn get sourceUrl => text().withDefault(const Constant(''))();
+  IntColumn get revision => integer().withDefault(const Constant(1))();
   IntColumn get createdAt => integer()();
   IntColumn get updatedAt => integer()();
   IntColumn get deletedAt => integer().nullable()();
@@ -50,7 +56,13 @@ class WordBooks extends Table {
 
 /// Many-to-many relation between books and words. A word can live in several
 /// books; learning state is always stored per word, never per book.
+///
+/// Removing a word from a book writes a **tombstone** (`deletedAt`) instead of
+/// deleting the row: without it a merge could not tell "removed on device A"
+/// apart from "never existed on device B", and the link would come back on the
+/// next sync. `version` / `updatedAt` order concurrent edits deterministically.
 @TableIndex(name: 'idx_entries_word', columns: {#wordId})
+@TableIndex(name: 'idx_entries_book', columns: {#wordBookId, #deletedAt})
 @DataClassName('WordBookEntry')
 class WordBookEntries extends Table {
   TextColumn get wordBookId =>
@@ -58,12 +70,17 @@ class WordBookEntries extends Table {
   TextColumn get wordId =>
       text().references(Words, #id, onDelete: KeyAction.cascade)();
   IntColumn get addedAt => integer()();
+  IntColumn get version => integer().withDefault(const Constant(1))();
+  IntColumn get updatedAt => integer().withDefault(const Constant(0))();
+  IntColumn get deletedAt => integer().nullable()();
 
   @override
   Set<Column<Object>> get primaryKey => {wordBookId, wordId};
 }
 
 /// Current learning state per word (exactly one row per word).
+///
+/// This table is *derived*: it can always be rebuilt from [ReviewEvents].
 @TableIndex(name: 'idx_learning_due', columns: {#nextReviewAt})
 @TableIndex(name: 'idx_learning_stage', columns: {#stage})
 @DataClassName('LearningState')
@@ -86,6 +103,9 @@ class LearningStates extends Table {
 
 /// Immutable log of every answer. This is the source of truth: learning state
 /// can always be rebuilt from these rows.
+///
+/// `eventId` is a client-generated UUID, so double taps, retries and repeated
+/// imports all collapse into one row.
 @TableIndex(name: 'idx_events_word_time', columns: {#wordId, #answeredAt})
 @TableIndex(name: 'idx_events_day', columns: {#localDay, #type})
 @DataClassName('ReviewEvent')
@@ -101,12 +121,21 @@ class ReviewEvents extends Table {
   IntColumn get stageBefore => integer().withDefault(const Constant(0))();
   IntColumn get intervalDaysAfter => integer().withDefault(const Constant(0))();
   IntColumn get algoVersion => integer().withDefault(const Constant(1))();
+  TextColumn get mode => text().withDefault(const Constant('normal'))();
 
   @override
   Set<Column<Object>> get primaryKey => {id};
 }
 
 /// Single-row table (`id == 1`) holding user preferences.
+///
+/// Settings are split into two groups (see `docs/sync-protocol.md`):
+///  * **shared** — learning goals that should follow the user across devices:
+///    `dailyNewTarget`, `dailyReviewLimit`, `studyMode`.
+///  * **device-specific** — `themeMode`, `accentColor`, TTS options,
+///    `currentWordBookId` and every sync credential: these describe *this*
+///    device and are never applied from an incoming dataset.
+@TableIndex(name: 'idx_settings_id', columns: {#id})
 @DataClassName('StudySettingsRow')
 class StudySettings extends Table {
   IntColumn get id => integer().withDefault(const Constant(1))();
@@ -116,12 +145,17 @@ class StudySettings extends Table {
   TextColumn get currentWordBookId => text().nullable()();
   TextColumn get studyMode => text().withDefault(const Constant('mixed'))();
   TextColumn get themeMode => text().withDefault(const Constant('system'))();
+  TextColumn get accentColor => text().withDefault(const Constant('#1565C0'))();
+  TextColumn get ttsVoice => text().withDefault(const Constant(''))();
+  TextColumn get ttsLocale => text().withDefault(const Constant('en-US'))();
+  IntColumn get ttsRate => integer().withDefault(const Constant(50))();
+  BoolColumn get ttsAutoSpeak => boolean().withDefault(const Constant(false))();
 
   @override
   Set<Column<Object>> get primaryKey => {id};
 }
 
-/// Small key/value store: device id, whether the sample data was seeded, etc.
+/// Small key/value store: device id, sync bookkeeping, dictionary version…
 @DataClassName('AppMetaRow')
 class AppMeta extends Table {
   TextColumn get key => text()();

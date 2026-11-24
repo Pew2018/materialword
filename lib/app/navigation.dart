@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,10 +9,12 @@ import '../features/dictionary/dictionary_page.dart';
 import '../features/settings/settings_page.dart';
 import '../features/statistics/statistics_page.dart';
 import '../features/word_management/quick_add_page.dart';
+import '../features/word_management/word_management_page.dart';
 import '../features/wordbooks/wordbooks_page.dart';
+import 'providers.dart';
 import 'theme.dart';
 
-/// One entry in the bottom bar / desktop side navigation.
+/// One entry in the bottom bar / side navigation.
 class AppDestination {
   const AppDestination({
     required this.label,
@@ -47,9 +51,37 @@ const List<AppDestination> appDestinations = <AppDestination>[
   ),
 ];
 
-/// Application frame: an [AppBar] plus either a bottom navigation bar (phones)
-/// or a permanent side navigation (macOS / tablets). All screens share the same
-/// Dart code, only the surrounding chrome changes.
+/// Which navigation chrome the current window should use.
+enum ShellLayout { bottomBar, compactRail, rail }
+
+ShellLayout layoutFor({
+  required double width,
+  required TargetPlatform platform,
+}) {
+  final bool desktopPlatform = switch (platform) {
+    TargetPlatform.macOS ||
+    TargetPlatform.windows ||
+    TargetPlatform.linux => true,
+    _ => false,
+  };
+  if (desktopPlatform) {
+    if (width >= AppDimens.desktopBreakpoint) return ShellLayout.rail;
+    // A narrow macOS window keeps a (compact) side rail instead of dropping to
+    // a phone-style bottom bar: the pointer-driven workflow is unchanged.
+    if (width >= 620) return ShellLayout.compactRail;
+    return ShellLayout.bottomBar;
+  }
+  // Tablets in landscape get the rail; phones keep the classic bottom bar.
+  if (width >= AppDimens.desktopBreakpoint) return ShellLayout.rail;
+  return ShellLayout.bottomBar;
+}
+
+/// Application frame: an [AppBar] plus the platform-appropriate navigation.
+///
+/// First-level pages live in a lazily populated [IndexedStack]: scrolling,
+/// search text and expanded sections survive tab switches, but a page is not
+/// mounted (and therefore runs no database query or dictionary init) until the
+/// user actually visits it.
 class AppShell extends ConsumerStatefulWidget {
   const AppShell({super.key});
 
@@ -57,19 +89,93 @@ class AppShell extends ConsumerStatefulWidget {
   ConsumerState<AppShell> createState() => _AppShellState();
 }
 
-class _AppShellState extends ConsumerState<AppShell> {
+class _AppShellState extends ConsumerState<AppShell>
+    with WidgetsBindingObserver {
   int _index = 0;
+  final Set<int> _built = <int>{0};
   final FocusNode _searchFocus = FocusNode(debugLabel: 'dictionary-search');
+  Timer? _dayTimer;
+  bool _autoSyncStarted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _scheduleDayBoundary();
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _maybeAutoSync(start: true),
+    );
+  }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _dayTimer?.cancel();
     _searchFocus.dispose();
     super.dispose();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshDailyData();
+      _maybeAutoSync(start: false);
+    }
+  }
+
+  /// Recomputes "today" after midnight and whenever the app comes back to the
+  /// foreground. Without this a long-running window kept yesterday's queue.
+  void _scheduleDayBoundary() {
+    _dayTimer?.cancel();
+    final DateTime now = DateTime.now();
+    final DateTime nextMidnight = DateTime(now.year, now.month, now.day + 1);
+    _dayTimer = Timer(
+      nextMidnight.difference(now) + const Duration(seconds: 2),
+      () {
+        _refreshDailyData();
+        _scheduleDayBoundary();
+      },
+    );
+  }
+
+  void _refreshDailyData() {
+    if (!mounted) return;
+    ref.invalidate(todayProgressProvider);
+    ref.invalidate(statisticsProvider);
+    ref.invalidate(bookSummariesProvider);
+  }
+
+  Future<void> _maybeAutoSync({required bool start}) async {
+    if (_autoSyncStarted && start) return;
+    final Map<String, Object?>? config = await ref
+        .read(settingsRepositoryProvider)
+        .syncConfig();
+    if (config == null) return;
+    final bool enabled = start
+        ? config['autoOnStart'] == true
+        : config['autoOnResume'] == true;
+    if (!enabled) return;
+    if (start) _autoSyncStarted = true;
+    // Never block the UI: sync runs in the background and only invalidates the
+    // data providers when it actually changed something.
+    unawaited(() async {
+      try {
+        final report = await ref.read(syncCoordinatorProvider).autoSync();
+        if (report != null && report.ok && report.merge != null) {
+          _refreshDailyData();
+        }
+      } catch (_) {
+        // Automatic sync failures are surfaced on the sync page, not as a
+        // blocking dialog, and the app keeps working offline.
+      }
+    }());
+  }
+
   void _select(int index) {
-    if (index == _index) return;
-    setState(() => _index = index);
+    setState(() {
+      _index = index;
+      _built.add(index);
+    });
   }
 
   bool get _isEditingText {
@@ -77,6 +183,10 @@ class _AppShellState extends ConsumerState<AppShell> {
     if (context == null) return false;
     return context.widget is EditableText;
   }
+
+  bool get _hasModalRoute =>
+      ModalRoute.of(context)?.isCurrent == false ||
+      Navigator.of(context).canPop();
 
   void _focusSearch() {
     _select(2);
@@ -91,38 +201,61 @@ class _AppShellState extends ConsumerState<AppShell> {
         builder: (BuildContext context) => const QuickAddPage(),
       ),
     );
+    _refreshDailyData();
+  }
+
+  Future<void> _openWordManagement() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) => const WordManagementPage(),
+      ),
+    );
+    _refreshDailyData();
   }
 
   @override
   Widget build(BuildContext context) {
     final MediaQueryData media = MediaQuery.of(context);
-    final bool isDesktop = media.size.width >= AppDimens.desktopBreakpoint;
+    final ShellLayout layout = layoutFor(
+      width: media.size.width,
+      platform: Theme.of(context).platform,
+    );
+    final bool hasRail = layout != ShellLayout.bottomBar;
 
     final List<Widget> pages = <Widget>[
-      DashboardPage(onOpenBookTab: () => _select(1)),
-      const WordBooksPage(),
-      DictionaryPage(searchFocusNode: _searchFocus),
-      const StatisticsPage(),
-      const SettingsPage(),
+      _lazy(0, DashboardPage(onOpenBookTab: () => _select(1))),
+      _lazy(1, const WordBooksPage()),
+      _lazy(2, DictionaryPage(searchFocusNode: _searchFocus)),
+      _lazy(3, const StatisticsPage()),
+      _lazy(4, const SettingsPage()),
     ];
 
     final Widget body = CallbackShortcuts(
       bindings: <ShortcutActivator, VoidCallback>{
         const SingleActivator(LogicalKeyboardKey.keyF, meta: true): () {
-          if (!_isEditingText) _focusSearch();
+          if (!_isEditingText && !_hasModalRoute) _focusSearch();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyF, control: true): () {
+          if (!_isEditingText && !_hasModalRoute) _focusSearch();
         },
         const SingleActivator(LogicalKeyboardKey.keyN, meta: true): () {
-          if (!_isEditingText) _quickAdd();
+          if (!_isEditingText && !_hasModalRoute) _quickAdd();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyN, control: true): () {
+          if (!_isEditingText && !_hasModalRoute) _quickAdd();
         },
       },
-      child: Focus(autofocus: true, child: pages[_index]),
+      child: Focus(
+        autofocus: true,
+        child: IndexedStack(index: _index, children: pages),
+      ),
     );
 
     return Scaffold(
       appBar: AppBar(
         title: Text(appDestinations[_index].label),
         actions: <Widget>[
-          if (isDesktop)
+          if (hasRail)
             IconButton(
               tooltip: '快速添加单词 (⌘N)',
               icon: const Icon(Icons.add),
@@ -134,36 +267,36 @@ class _AppShellState extends ConsumerState<AppShell> {
               icon: const Icon(Icons.search),
               onPressed: _focusSearch,
             ),
+          if (_index == 1 && hasRail)
+            IconButton(
+              tooltip: '全部词汇管理',
+              icon: const Icon(Icons.table_rows_outlined),
+              onPressed: _openWordManagement,
+            ),
         ],
       ),
       body: SafeArea(
         top: false,
-        child: isDesktop
+        child: hasRail
             ? Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
-                  _SideNavigation(index: _index, onSelect: _select),
+                  _SideNavigation(
+                    index: _index,
+                    compact: layout == ShellLayout.compactRail,
+                    onSelect: _select,
+                    onManageWords: _openWordManagement,
+                  ),
                   const VerticalDivider(width: 1),
                   Expanded(child: body),
                 ],
               )
             : body,
       ),
-      bottomNavigationBar: isDesktop
+      bottomNavigationBar: hasRail
           ? null
-          : BottomNavigationBar(
-              currentIndex: _index,
-              onTap: _select,
-              items: <BottomNavigationBarItem>[
-                for (final AppDestination destination in appDestinations)
-                  BottomNavigationBarItem(
-                    icon: Icon(destination.icon),
-                    activeIcon: Icon(destination.activeIcon),
-                    label: destination.label,
-                  ),
-              ],
-            ),
-      floatingActionButton: _index == 0 && !isDesktop
+          : ClassicBottomNavigationBar(currentIndex: _index, onTap: _select),
+      floatingActionButton: _index == 0 && !hasRail
           ? FloatingActionButton(
               onPressed: _quickAdd,
               tooltip: '快速添加单词',
@@ -172,78 +305,306 @@ class _AppShellState extends ConsumerState<AppShell> {
           : null,
     );
   }
+
+  /// Mounts a first-level page only after its tab has been opened at least
+  /// once. Keeps start-up cheap: five pages would otherwise fire five sets of
+  /// database queries (and the dictionary provider) immediately.
+  Widget _lazy(int index, Widget page) =>
+      _built.contains(index) ? page : const SizedBox.shrink();
 }
 
-class _SideNavigation extends StatelessWidget {
-  const _SideNavigation({required this.index, required this.onSelect});
+/// Classic Material 1/2 bottom navigation bar.
+///
+/// Built on the official primitives ([Material], [InkWell], [Row], [Expanded],
+/// [Semantics]) because `BottomNavigationBar` cannot satisfy all of the phase-2
+/// requirements at once:
+///  * every item gets exactly the same width (`Expanded`) and the icon/label
+///    box has a fixed height, so switching tabs cannot shift or scale anything;
+///  * each item is wrapped in its own clipped [Material], so an InkSplash can
+///    only paint inside that item — this is what removes the oversized grey
+///    circle (and the ripple that appeared to belong to a neighbouring item);
+///  * hover, focus, pressed and selected are four *separate* visual states;
+///  * tapping never leaves a permanent M3 "pill" behind: the selection is a
+///    colour/weight change only.
+class ClassicBottomNavigationBar extends StatelessWidget {
+  const ClassicBottomNavigationBar({
+    super.key,
+    required this.currentIndex,
+    required this.onTap,
+    this.items = appDestinations,
+  });
 
-  final int index;
-  final ValueChanged<int> onSelect;
+  final int currentIndex;
+  final ValueChanged<int> onTap;
+  final List<AppDestination> items;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    return Material(
+      color: theme.bottomNavigationBarTheme.backgroundColor ?? theme.cardColor,
+      elevation: 8,
+      child: SafeArea(
+        top: false,
+        child: SizedBox(
+          height: AppDimens.bottomNavHeight,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              for (int i = 0; i < items.length; i++)
+                Expanded(
+                  child: _BottomNavItem(
+                    key: ValueKey<String>('nav-${items[i].label}'),
+                    destination: items[i],
+                    selected: i == currentIndex,
+                    onTap: () => onTap(i),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BottomNavItem extends StatelessWidget {
+  const _BottomNavItem({
+    super.key,
+    required this.destination,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final AppDestination destination;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final Color activeColor =
+        theme.bottomNavigationBarTheme.selectedItemColor ??
+        theme.colorScheme.primary;
+    final Color inactiveColor =
+        theme.bottomNavigationBarTheme.unselectedItemColor ?? Colors.grey;
+    final Color color = selected ? activeColor : inactiveColor;
+
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: destination.label,
+      excludeSemantics: true,
+      child: Material(
+        type: MaterialType.transparency,
+        // Confines the ripple to this item's rectangle.
+        clipBehavior: Clip.hardEdge,
+        child: InkWell(
+          onTap: onTap,
+          canRequestFocus: true,
+          // Four distinct feedbacks: hover (pointer), focus (keyboard),
+          // highlight (pressed) and the persistent selected state.
+          hoverColor: activeColor.withValues(alpha: 0.06),
+          focusColor: activeColor.withValues(alpha: 0.14),
+          highlightColor: activeColor.withValues(alpha: 0.10),
+          splashColor: activeColor.withValues(alpha: 0.16),
+          child: Tooltip(
+            message: destination.label,
+            waitDuration: const Duration(milliseconds: 700),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: <Widget>[
+                // Fixed 24dp icon box: the icon never grows or shrinks when
+                // the item becomes selected.
+                SizedBox(
+                  height: AppDimens.iconSize,
+                  width: AppDimens.iconSize,
+                  child: Icon(
+                    selected ? destination.activeIcon : destination.icon,
+                    size: AppDimens.iconSize,
+                    color: color,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                SizedBox(
+                  height: 16,
+                  child: Text(
+                    destination.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      height: 1.1,
+                      color: color,
+                      fontWeight: selected ? FontWeight.w500 : FontWeight.w400,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SideNavigation extends StatelessWidget {
+  const _SideNavigation({
+    required this.index,
+    required this.onSelect,
+    required this.onManageWords,
+    this.compact = false,
+  });
+
+  final int index;
+  final ValueChanged<int> onSelect;
+  final VoidCallback onManageWords;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final Color active = theme.colorScheme.primary;
     return SizedBox(
-      width: AppDimens.navRailWidth,
+      width: compact ? AppDimens.navRailCompactWidth : AppDimens.navRailWidth,
       child: Material(
         color: theme.cardColor,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 20, 16, 12),
-              child: Row(
-                children: <Widget>[
-                  Icon(
-                    Icons.menu_book,
-                    size: 22,
-                    color: theme.colorScheme.primary,
-                  ),
-                  AppSpacing.w8,
-                  Expanded(
-                    child: Text(
-                      'MaterialWord',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
+            if (!compact)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+                child: Row(
+                  children: <Widget>[
+                    Icon(Icons.menu_book, size: 22, color: active),
+                    AppSpacing.w8,
+                    Expanded(
+                      child: Text(
+                        'MaterialWord',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
-                  ),
-                ],
-              ),
-            ),
+                  ],
+                ),
+              )
+            else
+              AppSpacing.h12,
             const Divider(height: 1),
             AppSpacing.h8,
             for (int i = 0; i < appDestinations.length; i++)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                child: ListTile(
-                  dense: true,
-                  selected: i == index,
-                  selectedTileColor: theme.colorScheme.primary.withValues(
-                    alpha: 0.10,
-                  ),
-                  selectedColor: theme.colorScheme.primary,
-                  leading: Icon(
-                    i == index
-                        ? appDestinations[i].activeIcon
-                        : appDestinations[i].icon,
-                    size: AppDimens.iconSize,
-                  ),
-                  title: Text(appDestinations[i].label),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(AppDimens.radius),
-                  ),
-                  onTap: () => onSelect(i),
-                ),
+              _RailItem(
+                key: ValueKey<String>('nav-${appDestinations[i].label}'),
+                destination: appDestinations[i],
+                selected: i == index,
+                compact: compact,
+                onTap: () => onSelect(i),
               ),
-            const Spacer(),
-            const Padding(
-              padding: EdgeInsets.all(16),
-              child: Text('离线可用 · 本地优先', style: TextStyle(fontSize: 12)),
+            const Divider(height: 16, indent: 12, endIndent: 12),
+            _RailItem(
+              key: const ValueKey<String>('nav-词汇'),
+              destination: const AppDestination(
+                label: '词汇',
+                icon: Icons.table_rows_outlined,
+                activeIcon: Icons.table_rows,
+              ),
+              selected: false,
+              compact: compact,
+              onTap: onManageWords,
             ),
+            const Spacer(),
+            if (!compact)
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text('离线可用 · 本地优先', style: theme.textTheme.bodySmall),
+              ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RailItem extends StatelessWidget {
+  const _RailItem({
+    super.key,
+    required this.destination,
+    required this.selected,
+    required this.compact,
+    required this.onTap,
+  });
+
+  final AppDestination destination;
+  final bool selected;
+  final bool compact;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final Color color = selected
+        ? theme.colorScheme.primary
+        : theme.textTheme.bodySmall?.color ?? theme.disabledColor;
+    final Widget content = Row(
+      children: <Widget>[
+        Icon(
+          selected ? destination.activeIcon : destination.icon,
+          size: AppDimens.iconSize,
+          color: color,
+        ),
+        if (!compact) ...<Widget>[
+          AppSpacing.w12,
+          Expanded(
+            child: Text(
+              destination.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodyLarge?.copyWith(
+                color: color,
+                fontWeight: selected ? FontWeight.w500 : FontWeight.w400,
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      child: Semantics(
+        selected: selected,
+        button: true,
+        label: destination.label,
+        excludeSemantics: true,
+        child: Material(
+          color: selected
+              ? theme.colorScheme.primary.withValues(alpha: 0.10)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(AppDimens.radius),
+          clipBehavior: Clip.hardEdge,
+          child: InkWell(
+            onTap: onTap,
+            hoverColor: theme.colorScheme.primary.withValues(alpha: 0.06),
+            focusColor: theme.colorScheme.primary.withValues(alpha: 0.14),
+            splashColor: theme.colorScheme.primary.withValues(alpha: 0.14),
+            child: Tooltip(
+              message: compact ? destination.label : '',
+              waitDuration: const Duration(milliseconds: 600),
+              child: SizedBox(
+                height: AppDimens.listItemHeight - 8,
+                child: compact
+                    ? Center(child: content)
+                    : Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        child: content,
+                      ),
+              ),
+            ),
+          ),
         ),
       ),
     );

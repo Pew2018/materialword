@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../app/providers.dart';
 import '../../app/theme.dart';
 import '../../core/database/app_database.dart';
 import '../../core/models/enums.dart';
+import '../../core/text/dictionary_text.dart';
 import '../../core/time_utils.dart';
 import '../../shared/widgets/common.dart';
 
@@ -79,10 +81,11 @@ class _WordDetailPageState extends ConsumerState<WordDetailPage> {
         _word.text = word.word;
         _phonetic.text = word.phonetic;
         _pos.text = word.partOfSpeech;
-        _translation.text = word.translation;
-        _definition.text = word.definition;
-        _example.text = word.example;
-        _phrase.text = word.phrase;
+        // Dictionary-owned fields are shown normalised; the note is verbatim.
+        _translation.text = normalizeDictionaryText(word.translation);
+        _definition.text = normalizeDictionaryText(word.definition);
+        _example.text = normalizeDictionaryText(word.example);
+        _phrase.text = normalizeDictionaryText(word.phrase);
         _note.text = word.note;
       }
     });
@@ -139,6 +142,53 @@ class _WordDetailPageState extends ConsumerState<WordDetailPage> {
     showMessage(context, '已用词典补全空白字段，记得保存');
   }
 
+  Future<void> _markMastered() async {
+    final bool ok = await confirmDialog(
+      context,
+      title: '标记为已掌握',
+      message: '记录一次「认识」复习事件并推进下次复习时间；该事件会同步到其他设备。',
+      confirmLabel: '标记',
+    );
+    if (!ok) return;
+    final String device = await ref.read(settingsRepositoryProvider).deviceId();
+    await ref
+        .read(studyRepositoryProvider)
+        .markMastered(
+          wordId: widget.wordId,
+          deviceId: device,
+          now: ref.read(clockProvider).now(),
+          eventId: const Uuid().v4(),
+        );
+    ref.invalidate(todayProgressProvider);
+    ref.invalidate(statisticsProvider);
+    if (mounted) await _load();
+  }
+
+  Future<void> _resetProgress() async {
+    final bool ok = await confirmDialog(
+      context,
+      title: '重置学习进度',
+      message:
+          '清除该单词的学习状态（次数、间隔、下次复习时间）。'
+          '单词与作答历史保留，重置会记录为可同步的事件。',
+      confirmLabel: '重置',
+      destructive: true,
+    );
+    if (!ok) return;
+    final String device = await ref.read(settingsRepositoryProvider).deviceId();
+    await ref
+        .read(studyRepositoryProvider)
+        .resetProgress(
+          wordId: widget.wordId,
+          deviceId: device,
+          now: ref.read(clockProvider).now(),
+          eventId: const Uuid().v4(),
+        );
+    ref.invalidate(todayProgressProvider);
+    ref.invalidate(statisticsProvider);
+    if (mounted) await _load();
+  }
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
@@ -161,36 +211,46 @@ class _WordDetailPageState extends ConsumerState<WordDetailPage> {
         actions: <Widget>[
           PopupMenuButton<String>(
             onSelected: (String value) async {
-              if (value == 'dict') await _fillFromDictionary();
-              if (value == 'remove' && widget.bookId != null) {
-                if (!context.mounted) return;
-                final bool ok = await confirmDialog(
-                  context,
-                  title: '移出词书',
-                  message: '把「${_wordRow!.word}」从当前词书移除？学习记录会保留。',
-                  confirmLabel: '移出',
-                  destructive: true,
-                );
-                if (ok) {
+              switch (value) {
+                case 'dict':
+                  await _fillFromDictionary();
+                case 'mastered':
+                  await _markMastered();
+                case 'reset':
+                  await _resetProgress();
+                case 'remove':
+                  if (widget.bookId == null) return;
+                  final bool ok = await confirmDialog(
+                    context,
+                    title: '移出词书',
+                    message:
+                        '把「${_wordRow!.word}」从当前词书移除？单词本身、其他词书中的关联和学习进度都保留。',
+                    confirmLabel: '移出',
+                    destructive: true,
+                  );
+                  if (!ok) return;
                   await ref
                       .read(wordBookRepositoryProvider)
-                      .removeWord(widget.bookId!, widget.wordId);
+                      .removeWord(
+                        widget.bookId!,
+                        widget.wordId,
+                        now: ref.read(clockProvider).now(),
+                      );
                   ref.invalidate(bookSummariesProvider);
+                  ref.invalidate(todayProgressProvider);
                   if (!context.mounted) return;
                   Navigator.of(context).pop();
-                }
-              }
-              if (value == 'delete') {
-                if (!context.mounted) return;
-                final bool ok = await confirmDialog(
-                  context,
-                  title: '删除单词',
-                  message:
-                      '删除「${_wordRow!.word}」？原始作答记录仍然保留在数据库中，导出备份时也会带上删除标记。',
-                  confirmLabel: '删除',
-                  destructive: true,
-                );
-                if (ok) {
+                case 'delete':
+                  final bool ok = await confirmDialog(
+                    context,
+                    title: '删除单词',
+                    message:
+                        '从全部用户词汇中删除「${_wordRow!.word}」？所有词书都会移除它，'
+                        '作答历史作为同步墓碑保留。只想移除一个词书请用「移出词书」。',
+                    confirmLabel: '删除',
+                    destructive: true,
+                  );
+                  if (!ok) return;
                   await ref
                       .read(wordRepositoryProvider)
                       .softDelete(
@@ -199,14 +259,22 @@ class _WordDetailPageState extends ConsumerState<WordDetailPage> {
                       );
                   ref.invalidate(bookSummariesProvider);
                   ref.invalidate(statisticsProvider);
+                  ref.invalidate(todayProgressProvider);
                   if (context.mounted) Navigator.of(context).pop();
-                }
               }
             },
             itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
               const PopupMenuItem<String>(
                 value: 'dict',
                 child: Text('用离线词典补全空白'),
+              ),
+              const PopupMenuItem<String>(
+                value: 'mastered',
+                child: Text('标记为已掌握'),
+              ),
+              const PopupMenuItem<String>(
+                value: 'reset',
+                child: Text('重置学习进度'),
               ),
               if (widget.bookId != null)
                 const PopupMenuItem<String>(

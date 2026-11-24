@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/database/app_database.dart';
@@ -10,8 +11,14 @@ import '../core/time_utils.dart';
 import '../services/backup_service.dart';
 import '../services/dictionary_service.dart';
 import '../services/import_service.dart';
+import '../services/sync/credential_store.dart';
+import '../services/sync/github_sync_provider.dart';
 import '../services/sync/local_file_sync_provider.dart';
+import '../services/sync/sync_coordinator.dart';
 import '../services/sync/sync_provider.dart';
+import '../services/sync/webdav_sync_provider.dart';
+import '../services/tts_service.dart';
+import 'theme.dart';
 
 /// Overridden in `main()` (and in tests) with a real database.
 final Provider<AppDatabase> databaseProvider = Provider<AppDatabase>(
@@ -81,6 +88,13 @@ final Provider<String?> activeBookIdProvider = Provider<String?>((Ref ref) {
   return ref.watch(settingsProvider).value?.currentWordBookId;
 });
 
+/// Accent colour of the current theme. Rebuilt whenever the setting changes, so
+/// switching colours is instantaneous — no restart, and no state is lost
+/// because only the [ThemeData] changes.
+final Provider<Color> accentColorProvider = Provider<Color>((Ref ref) {
+  return parseAccent(ref.watch(settingsProvider).value?.accentColor);
+});
+
 final FutureProvider<TodayProgress> todayProgressProvider =
     FutureProvider<TodayProgress>((Ref ref) async {
       final StudySettingsRow settings = await ref
@@ -103,20 +117,73 @@ final StreamProvider<List<WordBookSummary>> bookSummariesProvider =
           .watchSummaries(now: ref.watch(clockProvider).now());
     });
 
+/// Statistics honour the explicit scope filter: `null` = every book.
+class StatisticsBookFilter extends Notifier<String?> {
+  @override
+  String? build() => null;
+
+  void select(String? bookId) => state = bookId;
+}
+
+final NotifierProvider<StatisticsBookFilter, String?>
+statisticsBookFilterProvider = NotifierProvider<StatisticsBookFilter, String?>(
+  StatisticsBookFilter.new,
+);
+
 final FutureProvider<StudyStatistics> statisticsProvider =
     FutureProvider<StudyStatistics>((Ref ref) async {
       return ref
           .watch(studyRepositoryProvider)
           .statistics(
             now: ref.watch(clockProvider).now(),
-            bookId: ref.watch(activeBookIdProvider),
+            bookId: ref.watch(statisticsBookFilterProvider),
           );
     });
 
-/// Sync providers shown in the backup screen. Only the local file provider is
-/// usable in phase 1; the other two are listed but clearly marked as planned.
+final Provider<TtsService> ttsServiceProvider = Provider<TtsService>(
+  (Ref ref) => TtsService(),
+);
+
+final Provider<CredentialStore> credentialStoreProvider =
+    Provider<CredentialStore>((Ref ref) => SecureCredentialStore());
+
+/// All sync providers that can be configured. Only one is active at a time.
+final Provider<SyncCoordinator> syncCoordinatorProvider =
+    Provider<SyncCoordinator>(
+      (Ref ref) => SyncCoordinator(
+        db: ref.watch(databaseProvider),
+        backup: ref.watch(backupServiceProvider),
+        study: ref.watch(studyRepositoryProvider),
+        settings: ref.watch(settingsRepositoryProvider),
+        credentials: ref.watch(credentialStoreProvider),
+        clock: ref.watch(clockProvider),
+      ),
+    );
+
+/// The provider for a stored config, used by the sync page and the auto-sync
+/// hooks. Returns null when sync is switched off.
+SyncProvider? providerForConfig(
+  Map<String, Object?>? config, {
+  CredentialStore? credentials,
+}) {
+  if (config == null) return null;
+  final String id = (config['provider'] as String?) ?? 'none';
+  switch (id) {
+    case 'local-file':
+      final String path = (config['path'] as String?) ?? '';
+      return LocalFileSyncProvider(filePath: path);
+    case 'github':
+      return GitHubSyncProvider.fromConfig(config, credentials: credentials);
+    case 'webdav':
+      return WebDavSyncProvider.fromConfig(config, credentials: credentials);
+    default:
+      return null;
+  }
+}
+
+/// Backwards-compatible helper kept for tests and the backup page.
 List<SyncProvider> buildSyncProviders(String localFilePath) => <SyncProvider>[
   LocalFileSyncProvider(filePath: localFilePath),
-  const GitHubSyncProvider(),
-  const WebDavSyncProvider(),
+  GitHubSyncProvider.placeholder(),
+  WebDavSyncProvider.placeholder(),
 ];

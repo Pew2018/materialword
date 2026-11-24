@@ -1,16 +1,14 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-/// Central design tokens. Every colour, size and radius used by the app lives
-/// here so that screens never hard-code raw values.
+/// Static colours that are *not* part of the accent system: surfaces, text and
+/// the three answer levels. Everything that should react to the user's accent
+/// colour comes from `Theme.of(context).colorScheme` instead of these values.
 class AppColors {
   const AppColors._();
 
-  // Primary / accent (Material Design 2 style: strong primary, warm accent).
-  static const Color primary = Color(0xFF1565C0);
-  static const Color primaryDark = Color(0xFF0D47A1);
-  static const Color primaryLight = Color(0xFF42A5F5);
-  static const Color accent = Color(0xFFFF6D00);
+  /// Classic blue — the default accent, kept identical to phase 1.
+  static const Color defaultAccent = Color(0xFF1565C0);
 
   // Surfaces.
   static const Color lightBackground = Color(0xFFFAFAFA);
@@ -29,10 +27,19 @@ class AppColors {
   static const Color dividerDark = Color(0xFF303030);
 
   // Answer levels. Deliberately conventional: green = known, amber = fuzzy,
-  // red = unknown. Chinese stock-market red/green semantics do not apply here.
+  // red = unknown. Chinese stock-market red/green semantics do not apply here,
+  // and these three never follow the theme accent: the meaning must stay
+  // unmistakable in every theme.
   static const Color known = Color(0xFF2E7D32);
   static const Color hazy = Color(0xFFEF6C00);
   static const Color unknown = Color(0xFFC62828);
+
+  /// Colour for an answer level, independent of the accent.
+  static Color forAnswer(int code) => switch (code) {
+    0 => unknown,
+    1 => hazy,
+    _ => known,
+  };
 }
 
 class AppDimens {
@@ -48,32 +55,124 @@ class AppDimens {
   static const double gutter = 16;
   static const double compactGutter = 12;
   static const double minTouchTarget = 48;
+  static const double bottomNavHeight = 56;
+  static const double fabSize = 56;
+  static const double sectionHeaderHeight = 40;
 
   /// Below this width we treat the window as a phone.
   static const double desktopBreakpoint = 900;
+
+  /// Narrow desktop window: icons + labels still fit, list stays readable.
+  static const double compactRailBreakpoint = 720;
+
+  /// Above this width a list/detail two-column layout is comfortable.
+  static const double twoPaneBreakpoint = 1040;
+
   static const double navRailWidth = 220;
+  static const double navRailCompactWidth = 76;
   static const double contentMaxWidth = 880;
 }
 
-/// Builds the two Material Design 2 themes (light / dark) plus the classic
-/// typography and ripple setup.
+/// A classic Material Design 2 accent colour.
+class AccentPalette {
+  const AccentPalette({
+    required this.id,
+    required this.label,
+    required this.color,
+  });
+
+  final String id;
+  final String label;
+  final Color color;
+
+  String get hex => hexOf(color);
+}
+
+/// 12 classic Material 2 palettes. Kept as plain hex strings so the selection
+/// persists as a single text column and a custom colour needs no migration.
+const List<AccentPalette> accentPalettes = <AccentPalette>[
+  AccentPalette(id: 'blue', label: '经典蓝', color: Color(0xFF1565C0)),
+  AccentPalette(id: 'indigo', label: '靛蓝', color: Color(0xFF303F9F)),
+  AccentPalette(id: 'teal', label: '蓝绿', color: Color(0xFF00796B)),
+  AccentPalette(id: 'green', label: '绿色', color: Color(0xFF2E7D32)),
+  AccentPalette(id: 'lightGreen', label: '浅绿', color: Color(0xFF558B2F)),
+  AccentPalette(id: 'amber', label: '琥珀', color: Color(0xFFB26A00)),
+  AccentPalette(id: 'orange', label: '橙色', color: Color(0xFFEF6C00)),
+  AccentPalette(id: 'deepOrange', label: '深橙', color: Color(0xFFD84315)),
+  AccentPalette(id: 'red', label: '红色', color: Color(0xFFC62828)),
+  AccentPalette(id: 'pink', label: '粉色', color: Color(0xFFAD1457)),
+  AccentPalette(id: 'purple', label: '紫色', color: Color(0xFF6A1B9A)),
+  AccentPalette(id: 'blueGrey', label: '蓝灰', color: Color(0xFF455A64)),
+  AccentPalette(id: 'brown', label: '棕色', color: Color(0xFF5D4037)),
+  AccentPalette(id: 'grey', label: '中性灰', color: Color(0xFF424242)),
+];
+
+/// `#RRGGBB` (upper case) for [color].
+String hexOf(Color color) {
+  final int argb = color.toARGB32() & 0xFFFFFF;
+  return '#${argb.toRadixString(16).padLeft(6, '0').toUpperCase()}';
+}
+
+/// Parses `#RRGGBB`, `RRGGBB`, `#AARRGGBB` or a preset id. Always returns a
+/// usable colour: an unreadable stored value falls back to the classic blue.
+Color parseAccent(String? stored) {
+  if (stored == null || stored.trim().isEmpty) return AppColors.defaultAccent;
+  final String value = stored.trim();
+  for (final AccentPalette palette in accentPalettes) {
+    if (palette.id.toLowerCase() == value.toLowerCase()) return palette.color;
+  }
+  final String hex = value.startsWith('#') ? value.substring(1) : value;
+  if (hex.length == 6 || hex.length == 8) {
+    final int? parsed = int.tryParse(hex, radix: 16);
+    if (parsed != null) {
+      return Color(hex.length == 6 ? 0xFF000000 | parsed : parsed);
+    }
+  }
+  return AppColors.defaultAccent;
+}
+
+/// Builds the two Material Design 2 themes plus the classic typography and
+/// ripple setup. Every colour used by a widget comes from the resulting
+/// [ThemeData], so switching the accent never requires a restart.
 class AppTheme {
   const AppTheme._();
 
-  static ThemeData light({TargetPlatform? platform}) =>
-      _build(Brightness.light, platform ?? defaultTargetPlatform);
+  static ThemeData light({Color? accent, TargetPlatform? platform}) => _build(
+    Brightness.light,
+    accent ?? AppColors.defaultAccent,
+    platform ?? defaultTargetPlatform,
+  );
 
-  static ThemeData dark({TargetPlatform? platform}) =>
-      _build(Brightness.dark, platform ?? defaultTargetPlatform);
+  static ThemeData dark({Color? accent, TargetPlatform? platform}) => _build(
+    Brightness.dark,
+    accent ?? AppColors.defaultAccent,
+    platform ?? defaultTargetPlatform,
+  );
 
-  static ThemeData _build(Brightness brightness, TargetPlatform platform) {
+  static ThemeData of(
+    Brightness brightness,
+    Color accent, {
+    TargetPlatform? platform,
+  }) => _build(brightness, accent, platform ?? defaultTargetPlatform);
+
+  /// The foreground colour that keeps text readable on [background].
+  static Color onColor(Color background) =>
+      ThemeData.estimateBrightnessForColor(background) == Brightness.dark
+      ? Colors.white
+      : Colors.black87;
+
+  static ThemeData _build(
+    Brightness brightness,
+    Color accent,
+    TargetPlatform platform,
+  ) {
     final bool isDark = brightness == Brightness.dark;
 
-    final MaterialColor swatch = _swatch(
-      AppColors.primary,
-      AppColors.primaryDark,
-      AppColors.primaryLight,
-    );
+    // Dark theme needs a slightly lighter accent to stay legible on #121212.
+    final Color primary = isDark ? _lighten(accent, 0.22) : accent;
+    final Color onPrimary = onColor(primary);
+    final MaterialColor swatch = _swatch(accent);
+
     final Color background = isDark
         ? AppColors.darkBackground
         : AppColors.lightBackground;
@@ -119,28 +218,62 @@ class AppTheme {
         )
         .apply(bodyColor: textPrimary, displayColor: textPrimary);
 
+    final ColorScheme scheme =
+        ColorScheme.fromSwatch(
+          primarySwatch: swatch,
+          accentColor: _secondaryOf(accent, isDark),
+          brightness: brightness,
+          backgroundColor: background,
+          cardColor: surface,
+        ).copyWith(
+          primary: primary,
+          onPrimary: onPrimary,
+          secondary: _secondaryOf(accent, isDark),
+          onSecondary: onColor(_secondaryOf(accent, isDark)),
+          surface: surface,
+          onSurface: textPrimary,
+          error: AppColors.unknown,
+          onError: Colors.white,
+          outline: divider,
+        );
+
     final ThemeData base2 = ThemeData(
       useMaterial3: false,
       brightness: brightness,
       primarySwatch: swatch,
-      primaryColor: AppColors.primary,
-      // Material 2 accent colour lives in the (legacy) colour scheme.
-      colorScheme: ColorScheme.fromSwatch(
-        primarySwatch: swatch,
-        accentColor: AppColors.accent,
-        brightness: brightness,
-        backgroundColor: background,
-        cardColor: surface,
-      ),
+      primaryColor: primary,
+      colorScheme: scheme,
       scaffoldBackgroundColor: background,
       canvasColor: surface,
       cardColor: surface,
       dividerColor: divider,
+      disabledColor: isDark ? const Color(0xFF616161) : const Color(0xFF9E9E9E),
+      // InkSplash keeps the classic Material 1/2 "expanding circle" feedback.
       splashFactory: InkSplash.splashFactory,
-      typography: Typography.material2014(platform: platform),
+      typography: typography,
       textTheme: textTheme,
       visualDensity: VisualDensity.standard,
       materialTapTargetSize: MaterialTapTargetSize.padded,
+      splashColor: primary.withValues(alpha: isDark ? 0.18 : 0.14),
+      highlightColor: primary.withValues(alpha: isDark ? 0.10 : 0.08),
+      hoverColor: primary.withValues(alpha: isDark ? 0.08 : 0.05),
+      focusColor: primary.withValues(alpha: isDark ? 0.16 : 0.12),
+      iconTheme: IconThemeData(
+        color: isDark ? textPrimary : AppColors.textPrimaryLight,
+        size: AppDimens.iconSize,
+      ),
+      // The side navigation and the compact rail need a predictable surface.
+      navigationRailTheme: NavigationRailThemeData(
+        backgroundColor: surface,
+        selectedIconTheme: IconThemeData(color: primary),
+        unselectedIconTheme: IconThemeData(color: textSecondary),
+        selectedLabelTextStyle: TextStyle(
+          color: primary,
+          fontSize: 12,
+          fontWeight: FontWeight.w500,
+        ),
+        unselectedLabelTextStyle: TextStyle(color: textSecondary, fontSize: 12),
+      ),
     );
 
     return base2.copyWith(
@@ -148,20 +281,22 @@ class AppTheme {
         toolbarHeight: AppDimens.appBarHeight,
         elevation: 4,
         centerTitle: false,
-        backgroundColor: isDark ? AppColors.darkSurface : AppColors.primary,
-        foregroundColor: isDark ? textPrimary : Colors.white,
+        backgroundColor: isDark
+            ? Color.alphaBlend(primary.withValues(alpha: 0.16), surface)
+            : primary,
+        foregroundColor: isDark ? textPrimary : onPrimary,
         titleTextStyle: TextStyle(
           fontSize: AppDimens.appBarTitleSize,
           fontWeight: FontWeight.w500,
-          color: isDark ? textPrimary : Colors.white,
+          color: isDark ? textPrimary : onPrimary,
         ),
         iconTheme: IconThemeData(
           size: AppDimens.iconSize,
-          color: isDark ? textPrimary : Colors.white,
+          color: isDark ? textPrimary : onPrimary,
         ),
         actionsIconTheme: IconThemeData(
           size: AppDimens.iconSize,
-          color: isDark ? textPrimary : Colors.white,
+          color: isDark ? textPrimary : onPrimary,
         ),
       ),
       cardTheme: CardThemeData(
@@ -174,17 +309,18 @@ class AppTheme {
       ),
       dividerTheme: DividerThemeData(color: divider, thickness: 1, space: 1),
       listTileTheme: ListTileThemeData(
-        iconColor: isDark ? textSecondary : AppColors.textSecondaryLight,
+        iconColor: textSecondary,
         textColor: textPrimary,
-        minVerticalPadding: 12,
-      ),
-      iconTheme: IconThemeData(
-        color: isDark ? textPrimary : AppColors.textPrimaryLight,
-        size: AppDimens.iconSize,
+        minVerticalPadding: 8,
+        selectedColor: primary,
+        selectedTileColor: primary.withValues(alpha: 0.08),
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(AppDimens.radius)),
+        ),
       ),
       bottomNavigationBarTheme: BottomNavigationBarThemeData(
         backgroundColor: surface,
-        selectedItemColor: isDark ? AppColors.primaryLight : AppColors.primary,
+        selectedItemColor: primary,
         unselectedItemColor: textSecondary,
         type: BottomNavigationBarType.fixed,
         elevation: 8,
@@ -199,6 +335,8 @@ class AppTheme {
           elevation: 2,
           minimumSize: const Size(88, 40),
           padding: const EdgeInsets.symmetric(horizontal: 16),
+          backgroundColor: primary,
+          foregroundColor: onPrimary,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppDimens.radius),
           ),
@@ -209,6 +347,7 @@ class AppTheme {
         style: OutlinedButton.styleFrom(
           minimumSize: const Size(88, 40),
           padding: const EdgeInsets.symmetric(horizontal: 16),
+          foregroundColor: primary,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppDimens.radius),
           ),
@@ -220,6 +359,7 @@ class AppTheme {
         style: TextButton.styleFrom(
           minimumSize: const Size(64, 40),
           padding: const EdgeInsets.symmetric(horizontal: 12),
+          foregroundColor: primary,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppDimens.radius),
           ),
@@ -227,12 +367,10 @@ class AppTheme {
         ),
       ),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
-        backgroundColor: isDark ? AppColors.primaryLight : AppColors.primary,
-        foregroundColor: isDark ? AppColors.textPrimaryLight : Colors.white,
+        backgroundColor: primary,
+        foregroundColor: onPrimary,
         elevation: 6,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppDimens.radius * 2),
-        ),
+        shape: const CircleBorder(),
       ),
       dialogTheme: DialogThemeData(
         elevation: 24,
@@ -244,9 +382,11 @@ class AppTheme {
         contentTextStyle: textTheme.bodyMedium,
       ),
       tabBarTheme: TabBarThemeData(
-        labelColor: isDark ? AppColors.primaryLight : Colors.white,
-        unselectedLabelColor: isDark ? textSecondary : Colors.white70,
-        indicatorColor: isDark ? AppColors.primaryLight : Colors.white,
+        labelColor: isDark ? primary : onPrimary,
+        unselectedLabelColor: isDark
+            ? textSecondary
+            : onPrimary.withValues(alpha: 0.7),
+        indicatorColor: isDark ? primary : onPrimary,
         labelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
         unselectedLabelStyle: const TextStyle(fontSize: 14),
       ),
@@ -267,13 +407,12 @@ class AppTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppDimens.radius),
-          borderSide: BorderSide(
-            color: isDark ? AppColors.primaryLight : AppColors.primary,
-            width: 2,
-          ),
+          borderSide: BorderSide(color: primary, width: 2),
         ),
         hintStyle: TextStyle(color: textSecondary, fontSize: 14),
         labelStyle: TextStyle(color: textSecondary, fontSize: 14),
+        prefixIconColor: textSecondary,
+        suffixIconColor: textSecondary,
       ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
@@ -281,15 +420,54 @@ class AppTheme {
             ? AppColors.darkSurface
             : const Color(0xFF323232),
         contentTextStyle: const TextStyle(color: Colors.white, fontSize: 14),
+        actionTextColor: isDark ? primary : const Color(0xFF80D8FF),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppDimens.radius),
         ),
       ),
       progressIndicatorTheme: ProgressIndicatorThemeData(
         linearMinHeight: 4,
-        color: isDark ? AppColors.primaryLight : AppColors.primary,
+        color: primary,
+        linearTrackColor: divider,
+        circularTrackColor: divider,
+      ),
+      sliderTheme: SliderThemeData(
+        activeTrackColor: primary,
+        inactiveTrackColor: divider,
+        thumbColor: primary,
+        overlayColor: primary.withValues(alpha: 0.12),
+        valueIndicatorColor: primary,
+        // No tick marks: a dense row of dots was pure visual noise.
+        tickMarkShape: SliderTickMarkShape.noTickMark,
+        showValueIndicator: ShowValueIndicator.onDrag,
+      ),
+      switchTheme: SwitchThemeData(
+        thumbColor: WidgetStateProperty.resolveWith<Color?>(
+          (Set<WidgetState> states) =>
+              states.contains(WidgetState.selected) ? primary : null,
+        ),
+        trackColor: WidgetStateProperty.resolveWith<Color?>(
+          (Set<WidgetState> states) => states.contains(WidgetState.selected)
+              ? primary.withValues(alpha: 0.5)
+              : null,
+        ),
+      ),
+      checkboxTheme: CheckboxThemeData(
+        fillColor: WidgetStateProperty.resolveWith<Color?>(
+          (Set<WidgetState> states) =>
+              states.contains(WidgetState.selected) ? primary : null,
+        ),
+      ),
+      radioTheme: RadioThemeData(
+        fillColor: WidgetStateProperty.resolveWith<Color?>(
+          (Set<WidgetState> states) =>
+              states.contains(WidgetState.selected) ? primary : null,
+        ),
       ),
       scrollbarTheme: ScrollbarThemeData(
+        thumbColor: WidgetStateProperty.all(
+          isDark ? const Color(0xFF4F4F4F) : const Color(0xFFBDBDBD),
+        ),
         thickness: WidgetStateProperty.all(8),
         radius: const Radius.circular(4),
       ),
@@ -304,22 +482,52 @@ class AppTheme {
       tooltipTheme: const TooltipThemeData(
         waitDuration: Duration(milliseconds: 500),
       ),
+      chipTheme: base2.chipTheme.copyWith(
+        backgroundColor: surface,
+        selectedColor: primary.withValues(alpha: 0.12),
+        side: BorderSide(color: divider),
+        labelStyle: textTheme.bodySmall,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppDimens.radius),
+        ),
+      ),
     );
   }
 
-  static MaterialColor _swatch(Color primary, Color dark, Color light) {
-    return MaterialColor(primary.toARGB32(), <int, Color>{
-      50: light.withValues(alpha: 0.15),
-      100: light.withValues(alpha: 0.3),
-      200: light.withValues(alpha: 0.5),
-      300: light.withValues(alpha: 0.7),
-      400: primary,
-      500: primary,
-      600: primary,
-      700: dark,
-      800: dark,
-      900: dark,
+  /// A MaterialColor built from one accent by tinting towards white (50–300)
+  /// and shading towards black (700–900).
+  static MaterialColor _swatch(Color accent) {
+    return MaterialColor(accent.toARGB32(), <int, Color>{
+      50: _mix(accent, Colors.white, 0.90),
+      100: _mix(accent, Colors.white, 0.75),
+      200: _mix(accent, Colors.white, 0.55),
+      300: _mix(accent, Colors.white, 0.35),
+      400: _mix(accent, Colors.white, 0.15),
+      500: accent,
+      600: _mix(accent, Colors.black, 0.08),
+      700: _mix(accent, Colors.black, 0.20),
+      800: _mix(accent, Colors.black, 0.32),
+      900: _mix(accent, Colors.black, 0.44),
     });
+  }
+
+  static Color _mix(Color base, Color other, double amount) =>
+      Color.alphaBlend(other.withValues(alpha: amount), base);
+
+  static Color _lighten(Color base, double amount) =>
+      _mix(base, Colors.white, amount);
+
+  /// A complementary accent for the Material 2 "secondary" role. Kept close to
+  /// the primary hue so the classic look survives, but distinguishable.
+  static Color _secondaryOf(Color accent, bool isDark) {
+    final HSLColor hsl = HSLColor.fromColor(accent);
+    final double hue = (hsl.hue + 28) % 360;
+    return HSLColor.fromAHSL(
+      1,
+      hue,
+      (hsl.saturation * 0.85).clamp(0.35, 0.9),
+      isDark ? 0.62 : 0.48,
+    ).toColor();
   }
 }
 
@@ -332,10 +540,10 @@ class AppSpacing {
   static const SizedBox h12 = SizedBox(height: 12);
   static const SizedBox h16 = SizedBox(height: 16);
   static const SizedBox h24 = SizedBox(height: 24);
+  static const SizedBox h32 = SizedBox(height: 32);
+  static const SizedBox h48 = SizedBox(height: 48);
   static const SizedBox w4 = SizedBox(width: 4);
   static const SizedBox w8 = SizedBox(width: 8);
   static const SizedBox w12 = SizedBox(width: 12);
   static const SizedBox w16 = SizedBox(width: 16);
-  static const SizedBox h32 = SizedBox(height: 32);
-  static const SizedBox h48 = SizedBox(height: 48);
 }

@@ -2,6 +2,7 @@ import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 
 import '../database/app_database.dart';
+import '../text/dictionary_text.dart';
 
 /// Normalisation key used to detect duplicates ("Hello " and "hello" are the
 /// same word). Kept in one place so import, quick-add and search agree.
@@ -54,6 +55,9 @@ class WordRepository {
   }
 
   /// Full text-ish search over word, translation and note.
+  ///
+  /// Callers that show the result of an *async* search must guard against
+  /// out-of-order completions; see [SearchGeneration] in the UI layer.
   Stream<List<WordWithState>> watchSearch(
     String query, {
     String? bookId,
@@ -112,7 +116,9 @@ class WordRepository {
         existsQuery(
           db.select(db.wordBookEntries)..where(
             (e) =>
-                e.wordBookId.equals(bookId) & e.wordId.equalsExp(db.words.id),
+                e.wordBookId.equals(bookId) &
+                e.wordId.equalsExp(db.words.id) &
+                e.deletedAt.isNull(),
           ),
         ),
       );
@@ -142,6 +148,9 @@ class WordRepository {
 
   /// Returns the existing word for [text] or creates a new one. Deleted words
   /// are revived instead of duplicated, which keeps review history attached.
+  ///
+  /// Dictionary-owned fields are normalised on the way in (literal `\n`
+  /// escapes, CRLF, stray blank lines); [note] is stored verbatim.
   Future<Word> ensureWord({
     required String text,
     String phonetic = '',
@@ -177,12 +186,12 @@ class WordRepository {
       id: _uuid.v4(),
       word: text.trim(),
       normalized: key,
-      phonetic: phonetic,
-      partOfSpeech: partOfSpeech,
-      translation: translation,
-      definition: definition,
-      example: example,
-      phrase: phrase,
+      phonetic: normalizeDictionaryText(phonetic),
+      partOfSpeech: normalizeDictionaryText(partOfSpeech),
+      translation: normalizeDictionaryText(translation),
+      definition: normalizeDictionaryText(definition),
+      example: normalizeDictionaryText(example),
+      phrase: normalizeDictionaryText(phrase),
       note: note,
       source: source,
       examTags: examTags,
@@ -200,6 +209,10 @@ class WordRepository {
 
   /// Edits made by the user. Marks the row as customised so that dictionary
   /// refreshes never overwrite it (see [applyDictionaryInfo]).
+  ///
+  /// A `null` argument means "leave this field alone"; an empty string means
+  /// "the user cleared it". That distinction is what lets quick-add preserve an
+  /// existing note while still allowing an explicit erase.
   Future<Word> updateContent(
     String id, {
     String? text,
@@ -219,12 +232,18 @@ class WordRepository {
     final Word updated = existing.copyWith(
       word: text?.trim(),
       normalized: text == null ? null : normalizeWordKey(text),
-      phonetic: phonetic,
-      partOfSpeech: partOfSpeech,
-      translation: translation,
-      definition: definition,
-      example: example,
-      phrase: phrase,
+      phonetic: phonetic == null ? null : normalizeDictionaryText(phonetic),
+      partOfSpeech: partOfSpeech == null
+          ? null
+          : normalizeDictionaryText(partOfSpeech),
+      translation: translation == null
+          ? null
+          : normalizeDictionaryText(translation),
+      definition: definition == null
+          ? null
+          : normalizeDictionaryText(definition),
+      example: example == null ? null : normalizeDictionaryText(example),
+      phrase: phrase == null ? null : normalizeDictionaryText(phrase),
       note: note,
       customized: true,
       revision: existing.revision + 1,
@@ -248,9 +267,11 @@ class WordRepository {
     required DateTime now,
   }) async {
     String pick(String current, String? incoming) {
-      if (incoming == null || incoming.trim().isEmpty) return current;
+      if (incoming == null) return current;
+      final String normalized = normalizeDictionaryText(incoming);
+      if (normalized.isEmpty) return current;
       if (current.trim().isNotEmpty) return current;
-      return incoming.trim();
+      return normalized;
     }
 
     final Word updated = word.copyWith(
@@ -282,6 +303,32 @@ class WordRepository {
         );
   }
 
+  /// Soft-deletes many words in one transaction. Tombstones (not hard deletes)
+  /// keep review history and prevent an old backup from resurrecting them.
+  Future<int> softDeleteMany(
+    Iterable<String> ids, {
+    required DateTime now,
+  }) async {
+    int deleted = 0;
+    await db.transaction(() async {
+      for (final String id in ids.toList(growable: false)) {
+        final Word? existing = await byId(id);
+        if (existing == null || existing.deletedAt != null) continue;
+        await db
+            .update(db.words)
+            .replace(
+              existing.copyWith(
+                deletedAt: Value<int?>(now.millisecondsSinceEpoch),
+                updatedAt: now.millisecondsSinceEpoch,
+                revision: existing.revision + 1,
+              ),
+            );
+        deleted++;
+      }
+    });
+    return deleted;
+  }
+
   Future<void> hardDeleteIfUnused(String id) async {
     final List<WordBookEntry> entries = await (db.select(
       db.wordBookEntries,
@@ -309,12 +356,11 @@ class WordRepository {
     db.learningStates,
   )..where((t) => t.wordId.equals(wordId))).getSingleOrNull();
 
-  Future<Map<String, int>> bookIdsForWord(String wordId) async {
+  /// Live book ids (deleted links excluded).
+  Future<Set<String>> bookIdsForWord(String wordId) async {
     final List<WordBookEntry> entries = await (db.select(
       db.wordBookEntries,
-    )..where((t) => t.wordId.equals(wordId))).get();
-    return <String, int>{
-      for (final WordBookEntry e in entries) e.wordBookId: e.addedAt,
-    };
+    )..where((t) => t.wordId.equals(wordId) & t.deletedAt.isNull())).get();
+    return entries.map((WordBookEntry e) => e.wordBookId).toSet();
   }
 }

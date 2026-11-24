@@ -1,9 +1,13 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqlite3/sqlite3.dart';
+
+import '../core/text/dictionary_text.dart';
 
 /// One dictionary hit.
 class DictionaryEntry {
@@ -72,26 +76,54 @@ class DictionaryService {
   /// use or when the asset version changes.
   static Future<DictionaryService> openBundled() async {
     const String assetPath = 'assets/dictionary/ecdict_core.db';
+    const String metaAssetPath = 'assets/dictionary/ecdict_core.db.meta.json';
     final Directory support = await getApplicationSupportDirectory();
     final Directory target = Directory('${support.path}/dictionary');
     if (!target.existsSync()) {
       target.createSync(recursive: true);
     }
     final File file = File('${target.path}/ecdict_core.db');
+    final File cachedMeta = File('${target.path}/ecdict_core.meta.json');
 
     final ByteData data = await rootBundle.load(assetPath);
-    final int assetLength = data.lengthInBytes;
-    final bool needsCopy =
-        !file.existsSync() || file.lengthSync() != assetLength;
+    final Uint8List bytes = data.buffer.asUint8List(
+      data.offsetInBytes,
+      data.lengthInBytes,
+    );
+
+    String expectedHash = sha256.convert(bytes).toString();
+    int expectedVersion = 1;
+    try {
+      final String rawMeta = await rootBundle.loadString(metaAssetPath);
+      final Map<String, dynamic> meta =
+          jsonDecode(rawMeta) as Map<String, dynamic>;
+      expectedHash = (meta['sha256'] as String?) ?? expectedHash;
+      expectedVersion = meta['schemaVersion'] as int? ?? expectedVersion;
+    } catch (_) {
+      // Older builds did not ship the sidecar; hashing the asset is still far
+      // more reliable than comparing file sizes.
+    }
+
+    final String marker = '$expectedVersion:$expectedHash';
+    final bool cachedMarkerMatches =
+        cachedMeta.existsSync() &&
+        (await cachedMeta.readAsString()).trim() == marker;
+    final bool fileHashMatches =
+        file.existsSync() &&
+        sha256.convert(await file.readAsBytes()).toString() == expectedHash;
+    final bool needsCopy = !cachedMarkerMatches || !fileHashMatches;
 
     if (needsCopy) {
-      await file.writeAsBytes(
-        data.buffer.asUint8List(data.offsetInBytes, assetLength),
-        flush: true,
-      );
+      // Write to a temp file and rename so an interrupted copy never leaves a
+      // truncated dictionary behind.
+      final File temp = File('${file.path}.tmp');
+      await temp.writeAsBytes(bytes, flush: true);
+      await temp.rename(file.path);
+      await cachedMeta.writeAsString(marker, flush: true);
     }
     final Database db = sqlite3.open(file.path, mode: OpenMode.readOnly);
-    if (db.userVersion != 1) {
+    if (db.userVersion != expectedVersion) {
+      db.close();
       throw StateError(
         'Unsupported dictionary schema version: ${db.userVersion}',
       );
@@ -142,8 +174,8 @@ class DictionaryService {
       display: row['display'] as String? ?? row['word'] as String,
       phonetic: row['phonetic'] as String? ?? '',
       partOfSpeech: row['pos'] as String? ?? '',
-      translation: row['translation'] as String? ?? '',
-      definition: row['definition'] as String? ?? '',
+      translation: normalizeDictionaryText(row['translation'] as String? ?? ''),
+      definition: normalizeDictionaryText(row['definition'] as String? ?? ''),
       examTags: row['tag'] as String? ?? '',
       bncRank: (row['bnc'] as int?) ?? 0,
       frqRank: (row['frq'] as int?) ?? 0,

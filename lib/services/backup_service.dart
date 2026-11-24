@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 
@@ -8,9 +9,18 @@ import '../core/database/app_database.dart';
 import '../core/repositories/settings_repository.dart';
 import '../core/repositories/study_repository.dart';
 import '../core/repositories/word_repository.dart';
+import '../core/text/dictionary_text.dart';
+import 'study_scheduler.dart';
 
 const Uuid _uuid = Uuid();
-const int backupSchemaVersion = 1;
+
+/// Backup / sync document format.
+///
+/// * v1 — phase 1: words, books, entries, events, settings (no tombstones).
+/// * v2 — phase 2: stable `datasetId`, per-row `revision`/`version`/`updatedAt`,
+///   entry tombstones (`deletedAt`), review-event `mode`, shared/device
+///   settings split, and a stable `contentHash` used to skip no-op uploads.
+const int backupSchemaVersion = 2;
 const String backupKind = 'materialword-backup';
 
 /// Summary of what an import/merge actually changed.
@@ -24,8 +34,10 @@ class MergeReport {
     this.newBooks = 0,
     this.updatedBooks = 0,
     this.newEntries = 0,
+    this.removedEntries = 0,
     this.rebuiltStates = 0,
     this.skippedEntries = 0,
+    this.conflicts = 0,
     this.settingsKept = true,
   });
 
@@ -37,9 +49,24 @@ class MergeReport {
   final int newBooks;
   final int updatedBooks;
   final int newEntries;
+  final int removedEntries;
   final int rebuiltStates;
   final int skippedEntries;
+
+  /// Words where both sides changed the same content and the winner was chosen
+  /// by (revision, updatedAt). Reported so the user knows something was merged.
+  final int conflicts;
   final bool settingsKept;
+
+  bool get hasChanges =>
+      addedEvents > 0 ||
+      newWords > 0 ||
+      updatedWords > 0 ||
+      deletedWords > 0 ||
+      newBooks > 0 ||
+      updatedBooks > 0 ||
+      newEntries > 0 ||
+      removedEntries > 0;
 
   String get summary {
     final List<String> parts = <String>[
@@ -50,7 +77,9 @@ class MergeReport {
       if (deletedWords > 0) '同步删除 $deletedWords 个',
       if (newBooks > 0) '新增词书 $newBooks 个',
       if (newEntries > 0) '新增词书关联 $newEntries 条',
+      if (removedEntries > 0) '同步移出词书 $removedEntries 条',
       if (rebuiltStates > 0) '重算学习状态 $rebuiltStates 个',
+      if (conflicts > 0) '内容冲突 $conflicts 个（按更新时间保留较新版本）',
     ];
     return parts.join('，');
   }
@@ -69,11 +98,15 @@ class BackupException implements Exception {
 ///
 /// Design rules (see `docs/sync-protocol.md`):
 ///  * never replace the whole database — merge instead;
+///  * the *normalised word text* is the identity: two devices that created the
+///    same word independently keep one row, and every remote id is mapped to
+///    the canonical local id before entries/events are written;
 ///  * review events are immutable and de-duplicated by id, which makes repeated
-///    imports idempotent;
-///  * word content resolves conflicts by (revision, updatedAt);
-///  * learning state is *recomputed* from the merged event log;
-///  * a failed import aborts the transaction and leaves data untouched.
+///    imports and round-trip syncs idempotent;
+///  * deletions are tombstones with a version, so an old backup cannot
+///    resurrect them;
+///  * learning state is recomputed from the merged event log **inside the same
+///    transaction**, so an interrupted merge leaves no half-rebuilt state.
 class BackupService {
   BackupService({
     required this.db,
@@ -87,11 +120,14 @@ class BackupService {
   final WordRepository words;
   final SettingsRepository settings;
 
+  // ------------------------------------------------------------- building
+
   Future<Map<String, Object?>> buildDataset({
     required DateTime now,
     bool includeEvents = true,
   }) async {
     final String deviceId = await settings.deviceId();
+    final String datasetId = await settings.datasetId();
     final List<Word> wordRows =
         await (db.select(db.words)..orderBy(<OrderClauseGenerator<$WordsTable>>[
               (t) => OrderingTerm(expression: t.normalized),
@@ -101,15 +137,21 @@ class BackupService {
         await (db.select(db.wordBooks)
               ..orderBy(<OrderClauseGenerator<$WordBooksTable>>[
                 (t) => OrderingTerm(expression: t.createdAt),
+                (t) => OrderingTerm(expression: t.id),
               ]))
             .get();
-    final List<WordBookEntry> entryRows = await db
-        .select(db.wordBookEntries)
-        .get();
+    final List<WordBookEntry> entryRows =
+        await (db.select(db.wordBookEntries)
+              ..orderBy(<OrderClauseGenerator<$WordBookEntriesTable>>[
+                (t) => OrderingTerm(expression: t.wordBookId),
+                (t) => OrderingTerm(expression: t.wordId),
+              ]))
+            .get();
     final List<ReviewEvent> eventRows = includeEvents
         ? await (db.select(db.reviewEvents)
                 ..orderBy(<OrderClauseGenerator<$ReviewEventsTable>>[
                   (t) => OrderingTerm(expression: t.answeredAt),
+                  (t) => OrderingTerm(expression: t.id),
                 ]))
               .get()
         : const <ReviewEvent>[];
@@ -118,28 +160,20 @@ class BackupService {
     return <String, Object?>{
       'schemaVersion': backupSchemaVersion,
       'kind': backupKind,
-      'exportedAt': now.toUtc().toIso8601String(),
-      'datasetId': _uuid.v4(),
+      'datasetId': datasetId,
       'deviceId': deviceId,
-      'appVersion': '1.0.0',
+      'exportedAt': now.toUtc().toIso8601String(),
+      'appVersion': '1.1.0',
       'words': wordRows.map(_wordToJson).toList(growable: false),
       'wordBooks': bookRows.map(_bookToJson).toList(growable: false),
-      'entries': entryRows
-          .map(
-            (WordBookEntry e) => <String, Object?>{
-              'wordBookId': e.wordBookId,
-              'wordId': e.wordId,
-              'addedAt': _iso(e.addedAt),
-            },
-          )
-          .toList(growable: false),
+      'entries': entryRows.map(_entryToJson).toList(growable: false),
       'reviewEvents': eventRows.map(_eventToJson).toList(growable: false),
+      // Only *shared* settings travel. Theme, accent, TTS and the active book
+      // describe this device and must not jump between devices.
       'settings': <String, Object?>{
         'dailyNewTarget': current.dailyNewTarget,
         'dailyReviewLimit': current.dailyReviewLimit,
-        'currentWordBookId': current.currentWordBookId,
         'studyMode': current.studyMode,
-        'themeMode': current.themeMode,
       },
     };
   }
@@ -149,7 +183,9 @@ class BackupService {
     bool pretty = true,
   }) async {
     final Map<String, Object?> dataset = await buildDataset(now: now);
-    return const JsonEncoder.withIndent('  ').convert(dataset);
+    return pretty
+        ? const JsonEncoder.withIndent('  ').convert(dataset)
+        : jsonEncode(dataset);
   }
 
   Future<File> writeBackupFile({
@@ -174,6 +210,9 @@ class BackupService {
     return decodeDataset(raw);
   }
 
+  /// Validates structure and protocol version. Used by every entry point
+  /// (file import, local file sync, GitHub, WebDAV) so a corrupt remote cannot
+  /// reach the merge code.
   Map<String, Object?> decodeDataset(String raw) {
     Object? decoded;
     try {
@@ -184,16 +223,20 @@ class BackupService {
     if (decoded is! Map<String, dynamic>) {
       throw const BackupException('备份文件根节点必须是对象');
     }
-    final Object? version = decoded['schemaVersion'];
+    return validateDataset(decoded);
+  }
+
+  Map<String, Object?> validateDataset(Map<String, Object?> dataset) {
+    final Object? version = dataset['schemaVersion'];
     if (version is! int) {
       throw const BackupException('缺少 schemaVersion');
     }
     if (version > backupSchemaVersion) {
-      throw BackupException('备份文件版本过新（$version），请升级应用');
+      throw BackupException('数据版本过新（$version），请升级应用后再同步');
     }
-    final Object? kind = decoded['kind'];
+    final Object? kind = dataset['kind'];
     if (kind != null && kind != backupKind) {
-      throw const BackupException('不是 MaterialWord 备份文件');
+      throw const BackupException('不是 MaterialWord 数据文件');
     }
     for (final String field in <String>[
       'words',
@@ -201,11 +244,27 @@ class BackupService {
       'entries',
       'reviewEvents',
     ]) {
-      if (decoded[field] != null && decoded[field] is! List<dynamic>) {
+      final Object? value = dataset[field];
+      if (value != null && value is! List<dynamic>) {
         throw BackupException('字段 $field 必须是数组');
       }
     }
-    return decoded;
+    return dataset;
+  }
+
+  /// Stable hash of the *content* of a dataset. Volatile metadata (`exportedAt`,
+  /// `deviceId`, `appVersion`) is excluded, so two exports of the same data
+  /// produce the same hash and a no-op sync does not upload anything.
+  static String contentHashOf(Map<String, Object?> dataset) {
+    final Map<String, Object?> canonical = <String, Object?>{
+      'schemaVersion': dataset['schemaVersion'],
+      'words': dataset['words'] ?? const <Object?>[],
+      'wordBooks': dataset['wordBooks'] ?? const <Object?>[],
+      'entries': dataset['entries'] ?? const <Object?>[],
+      'reviewEvents': dataset['reviewEvents'] ?? const <Object?>[],
+      'settings': dataset['settings'] ?? const <Object?>{},
+    };
+    return 'sha256:${sha256.convert(utf8.encode(jsonEncode(canonical)))}';
   }
 
   Future<MergeReport> importFromFile(String path) async {
@@ -213,19 +272,23 @@ class BackupService {
     return mergeDataset(dataset, now: DateTime.now());
   }
 
-  /// Merges [dataset] into the local database in a single transaction.
+  // -------------------------------------------------------------- merging
+
+  /// Merges [dataset] into the local database in a single transaction, then
+  /// rebuilds every touched learning state **inside** that transaction.
   Future<MergeReport> mergeDataset(
     Map<String, Object?> dataset, {
     required DateTime now,
   }) async {
+    final Map<String, Object?> valid = validateDataset(dataset);
     final List<dynamic> rawWords =
-        (dataset['words'] as List<dynamic>?) ?? const <dynamic>[];
+        (valid['words'] as List<dynamic>?) ?? const <dynamic>[];
     final List<dynamic> rawBooks =
-        (dataset['wordBooks'] as List<dynamic>?) ?? const <dynamic>[];
+        (valid['wordBooks'] as List<dynamic>?) ?? const <dynamic>[];
     final List<dynamic> rawEntries =
-        (dataset['entries'] as List<dynamic>?) ?? const <dynamic>[];
+        (valid['entries'] as List<dynamic>?) ?? const <dynamic>[];
     final List<dynamic> rawEvents =
-        (dataset['reviewEvents'] as List<dynamic>?) ?? const <dynamic>[];
+        (valid['reviewEvents'] as List<dynamic>?) ?? const <dynamic>[];
 
     int addedEvents = 0;
     int duplicateEvents = 0;
@@ -235,11 +298,18 @@ class BackupService {
     int newBooks = 0;
     int updatedBooks = 0;
     int newEntries = 0;
+    int removedEntries = 0;
+    int conflicts = 0;
     int skipped = 0;
     final Set<String> touchedWords = <String>{};
 
     await db.transaction(() async {
-      // ---- words
+      // ------------------------------------------------------------- words
+      // remote id → canonical local id. This is the fix for the phase-1 bug
+      // where entries/events kept pointing at the remote UUID and were dropped.
+      final Map<String, String> wordIdMap = <String, String>{};
+      final Map<String, String> bookIdMap = <String, String>{};
+
       for (final dynamic node in rawWords) {
         if (node is! Map<String, dynamic>) {
           skipped++;
@@ -256,44 +326,33 @@ class BackupService {
         );
         if (local == null) {
           String id = incoming.id;
-          final Word? idClash = await words.byId(id);
-          if (idClash != null) id = _uuid.v4();
+          if (await words.byId(id) != null) {
+            // A different word already owns this UUID on this device.
+            id = _uuid.v4();
+          }
           await db.into(db.words).insert(incoming.copyWith(id: id));
+          wordIdMap[incoming.id] = id;
           newWords++;
           continue;
         }
-        final bool incomingNewer =
-            incoming.revision > local.revision ||
-            (incoming.revision == local.revision &&
-                incoming.updatedAt > local.updatedAt);
-        if (!incomingNewer) continue;
-        final Word merged = local.copyWith(
-          word: incoming.word,
-          phonetic: incoming.phonetic,
-          partOfSpeech: incoming.partOfSpeech,
-          translation: incoming.translation,
-          definition: incoming.definition,
-          example: incoming.example,
-          phrase: incoming.phrase,
-          note: incoming.note,
-          source: incoming.source,
-          examTags: incoming.examTags,
-          bncRank: incoming.bncRank,
-          frqRank: incoming.frqRank,
-          customized: incoming.customized,
-          revision: incoming.revision,
-          updatedAt: incoming.updatedAt,
-          deletedAt: Value<int?>(incoming.deletedAt),
+
+        wordIdMap[incoming.id] = local.id;
+        final ({bool apply, bool conflict, bool deletion}) verdict = _mergeWord(
+          local,
+          incoming,
         );
-        await db.update(db.words).replace(merged);
-        if (incoming.deletedAt != null && local.deletedAt == null) {
-          deletedWords++;
-        } else {
-          updatedWords++;
+        if (verdict.apply) {
+          await db.update(db.words).replace(_applyWord(local, incoming));
+          if (verdict.deletion) {
+            deletedWords++;
+          } else {
+            updatedWords++;
+          }
         }
+        if (verdict.conflict) conflicts++;
       }
 
-      // ---- books
+      // ------------------------------------------------------------- books
       for (final dynamic node in rawBooks) {
         if (node is! Map<String, dynamic>) {
           skipped++;
@@ -307,65 +366,126 @@ class BackupService {
         final WordBook? local = await (db.select(
           db.wordBooks,
         )..where((t) => t.id.equals(incoming.id))).getSingleOrNull();
-        if (local == null) {
-          await db.into(db.wordBooks).insert(incoming);
-          newBooks++;
+        if (local != null) {
+          bookIdMap[incoming.id] = local.id;
+          if (_versionOf(incoming.revision, incoming.updatedAt) >
+              _versionOf(local.revision, local.updatedAt)) {
+            await db
+                .update(db.wordBooks)
+                .replace(
+                  local.copyWith(
+                    name: incoming.name,
+                    description: incoming.description,
+                    sourceType: incoming.sourceType,
+                    sourceUrl: incoming.sourceUrl,
+                    revision: incoming.revision,
+                    updatedAt: incoming.updatedAt,
+                    deletedAt: Value<int?>(incoming.deletedAt),
+                  ),
+                );
+            updatedBooks++;
+          }
           continue;
         }
-        if (incoming.updatedAt > local.updatedAt) {
-          await db.update(db.wordBooks).replace(incoming);
-          updatedBooks++;
+
+        // Two devices independently created a book with the same name: treat
+        // them as the same book instead of showing a duplicate after sync.
+        if (incoming.deletedAt == null) {
+          final WordBook? sameName =
+              await (db.select(db.wordBooks)..where(
+                    (t) => t.name.equals(incoming.name) & t.deletedAt.isNull(),
+                  ))
+                  .getSingleOrNull();
+          if (sameName != null) {
+            bookIdMap[incoming.id] = sameName.id;
+            continue;
+          }
         }
+        await db
+            .into(db.wordBooks)
+            .insert(incoming, mode: InsertMode.insertOrIgnore);
+        bookIdMap[incoming.id] = incoming.id;
+        if (incoming.deletedAt == null) newBooks++;
       }
 
-      // ---- entries (only when both sides exist)
+      // ----------------------------------------------------------- entries
       for (final dynamic node in rawEntries) {
         if (node is! Map<String, dynamic>) {
           skipped++;
           continue;
         }
-        final String? bookId = node['wordBookId'] as String?;
-        final String? wordId = node['wordId'] as String?;
+        final String? remoteBookId = node['wordBookId'] as String?;
+        final String? remoteWordId = node['wordId'] as String?;
+        if (remoteBookId == null || remoteWordId == null) {
+          skipped++;
+          continue;
+        }
+        final String? bookId = bookIdMap[remoteBookId] ?? remoteBookId;
+        final String? wordId = wordIdMap[remoteWordId];
         if (bookId == null || wordId == null) {
           skipped++;
           continue;
         }
-        final Word? wordRow = await words.byId(wordId);
-        final WordBook? bookRow = await (db.select(
-          db.wordBooks,
-        )..where((t) => t.id.equals(bookId))).getSingleOrNull();
-        if (wordRow == null || bookRow == null) {
+        final WordBookEntry? incoming = _entryFromJson(node, bookId, wordId);
+        if (incoming == null) {
           skipped++;
           continue;
         }
-        final int addedAt =
-            _parseTime(node['addedAt'])?.millisecondsSinceEpoch ??
-            now.millisecondsSinceEpoch;
-        final List<WordBookEntry> existing =
+        final WordBookEntry? local =
             await (db.select(db.wordBookEntries)..where(
                   (t) => t.wordBookId.equals(bookId) & t.wordId.equals(wordId),
                 ))
-                .get();
-        if (existing.isNotEmpty) continue;
+                .getSingleOrNull();
+        if (local == null) {
+          await db
+              .into(db.wordBookEntries)
+              .insert(incoming, mode: InsertMode.insertOrIgnore);
+          if (incoming.deletedAt == null) {
+            newEntries++;
+          } else {
+            removedEntries++;
+          }
+          continue;
+        }
+        if (_versionOf(incoming.version, incoming.updatedAt) <=
+            _versionOf(local.version, local.updatedAt)) {
+          continue;
+        }
         await db
-            .into(db.wordBookEntries)
-            .insert(
-              WordBookEntriesCompanion.insert(
-                wordBookId: bookId,
-                wordId: wordId,
-                addedAt: addedAt,
+            .update(db.wordBookEntries)
+            .replace(
+              local.copyWith(
+                version: incoming.version,
+                updatedAt: incoming.updatedAt,
+                deletedAt: Value<int?>(incoming.deletedAt),
               ),
             );
-        newEntries++;
+        if (incoming.deletedAt != null) {
+          removedEntries++;
+        } else {
+          newEntries++;
+        }
       }
 
-      // ---- review events (idempotent by primary key)
+      // ------------------------------------------------------------ events
       for (final dynamic node in rawEvents) {
         if (node is! Map<String, dynamic>) {
           skipped++;
           continue;
         }
-        final ReviewEvent? incoming = _eventFromJson(node);
+        final String? remoteWordId = node['wordId'] as String?;
+        if (remoteWordId == null) {
+          skipped++;
+          continue;
+        }
+        final String? wordId = wordIdMap[remoteWordId];
+        if (wordId == null) {
+          // The event belongs to a word that is not part of this dataset and
+          // does not exist locally either; nothing sensible to attach it to.
+          skipped++;
+          continue;
+        }
+        final ReviewEvent? incoming = _eventFromJson(node, wordId);
         if (incoming == null) {
           skipped++;
           continue;
@@ -377,22 +497,43 @@ class BackupService {
           duplicateEvents++;
           continue;
         }
-        final Word? wordRow = await words.byId(incoming.wordId);
-        if (wordRow == null) {
-          skipped++;
-          continue;
-        }
-        await db.into(db.reviewEvents).insert(incoming);
+        await db
+            .into(db.reviewEvents)
+            .insert(incoming, mode: InsertMode.insertOrIgnore);
         addedEvents++;
-        touchedWords.add(incoming.wordId);
+        touchedWords.add(wordId);
+      }
+
+      // ---------------------------------------------------------- settings
+      // Shared goals are only adopted when this device has no learning data
+      // yet; otherwise the local (possibly deliberate) targets win.
+      final Object? sharedSettings = valid['settings'];
+      if (sharedSettings is Map<String, dynamic>) {
+        final int localWords = await _countWords();
+        final int localEvents = await _countEvents();
+        if (localWords == 0 && localEvents == 0) {
+          final StudySettingsRow current = await settings.load();
+          await settings.save(
+            dailyNewTarget: _positiveInt(
+              sharedSettings['dailyNewTarget'],
+              current.dailyNewTarget,
+            ),
+            dailyReviewLimit: _positiveInt(
+              sharedSettings['dailyReviewLimit'],
+              current.dailyReviewLimit,
+            ),
+          );
+        }
+      }
+
+      // ---- rebuild derived state inside the transaction ------------------
+      // Every state row is a pure function of the merged event log, so this is
+      // deterministic and cannot be left half-applied: an interruption rolls
+      // the whole transaction back.
+      for (final String wordId in touchedWords) {
+        await study.rebuildStateFromEvents(wordId);
       }
     });
-
-    // Recomputing state outside the merge transaction keeps that transaction
-    // short; each word is recalculated from its full merged history.
-    for (final String wordId in touchedWords) {
-      await study.rebuildStateFromEvents(wordId);
-    }
 
     return MergeReport(
       addedEvents: addedEvents,
@@ -403,9 +544,139 @@ class BackupService {
       newBooks: newBooks,
       updatedBooks: updatedBooks,
       newEntries: newEntries,
+      removedEntries: removedEntries,
       rebuiltStates: touchedWords.length,
       skippedEntries: skipped,
+      conflicts: conflicts,
+      settingsKept: true,
     );
+  }
+
+  Future<int> _countWords() async {
+    final QueryRow row = await db
+        .customSelect(
+          'SELECT COUNT(*) AS c FROM words WHERE deleted_at IS NULL',
+          readsFrom: <ResultSetImplementation<dynamic, dynamic>>{db.words},
+        )
+        .getSingle();
+    return row.read<int>('c');
+  }
+
+  Future<int> _countEvents() async {
+    final QueryRow row = await db
+        .customSelect(
+          'SELECT COUNT(*) AS c FROM review_events',
+          readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
+            db.reviewEvents,
+          },
+        )
+        .getSingle();
+    return row.read<int>('c');
+  }
+
+  // ----------------------------------------------------------- merge rules
+
+  /// Merge rules for one word, in order of precedence:
+  ///  1. a deletion beats an *older* edit, a newer edit revives a deletion;
+  ///  2. identical content is a no-op;
+  ///  3. otherwise the higher (revision, updatedAt) wins;
+  ///  4. when both sides edited the *same* word (both `customized`) the change
+  ///     is also reported as a conflict so the user is told that a merge
+  ///     happened, instead of silently losing one side.
+  ///
+  /// The local row always keeps its id, so no book link or review event can be
+  /// orphaned by a content merge.
+  ({bool apply, bool conflict, bool deletion}) _mergeWord(
+    Word local,
+    Word incoming,
+  ) {
+    final bool localDeleted = local.deletedAt != null;
+    final bool remoteDeleted = incoming.deletedAt != null;
+
+    if (localDeleted || remoteDeleted) {
+      final _Version localVersion = _versionOf(
+        local.revision,
+        local.deletedAt ?? local.updatedAt,
+      );
+      final _Version remoteVersion = _versionOf(
+        incoming.revision,
+        incoming.deletedAt ?? incoming.updatedAt,
+      );
+      if (localDeleted && !remoteDeleted) {
+        // Revived on the other device: only if that edit is newer.
+        return (
+          apply: remoteVersion > localVersion,
+          conflict: remoteVersion > localVersion,
+          deletion: false,
+        );
+      }
+      if (remoteDeleted && !localDeleted) {
+        return (
+          apply: remoteVersion >= localVersion,
+          conflict: false,
+          deletion: remoteVersion >= localVersion,
+        );
+      }
+      return (apply: false, conflict: false, deletion: false);
+    }
+
+    if (_sameWordContent(local, incoming)) {
+      return (apply: false, conflict: false, deletion: false);
+    }
+
+    final _Version localVersion = _versionOf(local.revision, local.updatedAt);
+    final _Version remoteVersion = _versionOf(
+      incoming.revision,
+      incoming.updatedAt,
+    );
+    final bool bothEdited = local.customized && incoming.customized;
+    if (remoteVersion > localVersion) {
+      return (apply: true, conflict: bothEdited, deletion: false);
+    }
+    return (apply: false, conflict: bothEdited, deletion: false);
+  }
+
+  bool _sameWordContent(Word a, Word b) =>
+      a.word == b.word &&
+      a.phonetic == b.phonetic &&
+      a.partOfSpeech == b.partOfSpeech &&
+      sameDictionaryText(a.translation, b.translation) &&
+      sameDictionaryText(a.definition, b.definition) &&
+      sameDictionaryText(a.example, b.example) &&
+      sameDictionaryText(a.phrase, b.phrase) &&
+      a.note == b.note &&
+      a.examTags == b.examTags &&
+      a.source == b.source &&
+      a.bncRank == b.bncRank &&
+      a.frqRank == b.frqRank;
+
+  Word _applyWord(Word local, Word incoming) => local.copyWith(
+    word: incoming.word,
+    phonetic: normalizeDictionaryText(incoming.phonetic),
+    partOfSpeech: normalizeDictionaryText(incoming.partOfSpeech),
+    translation: normalizeDictionaryText(incoming.translation),
+    definition: normalizeDictionaryText(incoming.definition),
+    example: normalizeDictionaryText(incoming.example),
+    phrase: normalizeDictionaryText(incoming.phrase),
+    // Notes are user text: stored exactly as received.
+    note: incoming.note,
+    source: incoming.source,
+    examTags: incoming.examTags,
+    bncRank: incoming.bncRank,
+    frqRank: incoming.frqRank,
+    customized: local.customized || incoming.customized,
+    revision: incoming.revision,
+    updatedAt: incoming.updatedAt,
+    deletedAt: Value<int?>(incoming.deletedAt),
+  );
+
+  _Version _versionOf(int revision, int updatedAt) =>
+      _Version(revision, updatedAt);
+
+  int _positiveInt(Object? value, int fallback) {
+    final int? parsed = value is int ? value : int.tryParse('${value ?? ''}');
+    if (parsed == null || parsed <= 0) return fallback;
+    return parsed;
   }
 
   // ------------------------------------------------------------ (de)serialise
@@ -441,12 +712,12 @@ class BackupService {
       id: (node['id'] as String?) ?? _uuid.v4(),
       word: word,
       normalized: normalized,
-      phonetic: _str(node['phonetic']),
-      partOfSpeech: _str(node['partOfSpeech']),
-      translation: _str(node['translation']),
-      definition: _str(node['definition']),
-      example: _str(node['example']),
-      phrase: _str(node['phrase']),
+      phonetic: normalizeDictionaryText(_str(node['phonetic'])),
+      partOfSpeech: normalizeDictionaryText(_str(node['partOfSpeech'])),
+      translation: normalizeDictionaryText(_str(node['translation'])),
+      definition: normalizeDictionaryText(_str(node['definition'])),
+      example: normalizeDictionaryText(_str(node['example'])),
+      phrase: normalizeDictionaryText(_str(node['phrase'])),
       note: _str(node['note']),
       source: _str(node['source'], fallback: 'import'),
       examTags: _str(node['examTags']),
@@ -470,6 +741,7 @@ class BackupService {
     'description': b.description,
     'sourceType': b.sourceType,
     'sourceUrl': b.sourceUrl,
+    'revision': b.revision,
     'createdAt': _iso(b.createdAt),
     'updatedAt': _iso(b.updatedAt),
     'deletedAt': b.deletedAt == null ? null : _iso(b.deletedAt!),
@@ -479,18 +751,49 @@ class BackupService {
     final String? id = node['id'] as String?;
     final String? name = node['name'] as String?;
     if (id == null || name == null) return null;
+    final int updatedAt =
+        _parseTime(node['updatedAt'])?.millisecondsSinceEpoch ??
+        DateTime.now().millisecondsSinceEpoch;
     return WordBook(
       id: id,
       name: name,
       description: _str(node['description']),
       sourceType: _str(node['sourceType'], fallback: 'import'),
       sourceUrl: _str(node['sourceUrl']),
+      revision: _int(node['revision'], fallback: 1),
       createdAt:
-          _parseTime(node['createdAt'])?.millisecondsSinceEpoch ??
-          DateTime.now().millisecondsSinceEpoch,
-      updatedAt:
-          _parseTime(node['updatedAt'])?.millisecondsSinceEpoch ??
-          DateTime.now().millisecondsSinceEpoch,
+          _parseTime(node['createdAt'])?.millisecondsSinceEpoch ?? updatedAt,
+      updatedAt: updatedAt,
+      deletedAt: _parseTime(node['deletedAt'])?.millisecondsSinceEpoch,
+    );
+  }
+
+  Map<String, Object?> _entryToJson(WordBookEntry e) => <String, Object?>{
+    'wordBookId': e.wordBookId,
+    'wordId': e.wordId,
+    'addedAt': _iso(e.addedAt),
+    'version': e.version,
+    'updatedAt': _iso(e.updatedAt == 0 ? e.addedAt : e.updatedAt),
+    'deletedAt': e.deletedAt == null ? null : _iso(e.deletedAt!),
+  };
+
+  WordBookEntry? _entryFromJson(
+    Map<String, dynamic> node,
+    String bookId,
+    String wordId,
+  ) {
+    final int addedAt =
+        _parseTime(node['addedAt'])?.millisecondsSinceEpoch ??
+        DateTime.now().millisecondsSinceEpoch;
+    final int updatedAt =
+        _parseTime(node['updatedAt'])?.millisecondsSinceEpoch ??
+        (_int(node['version']) > 0 ? addedAt : addedAt);
+    return WordBookEntry(
+      wordBookId: bookId,
+      wordId: wordId,
+      addedAt: addedAt,
+      version: _int(node['version'], fallback: 1),
+      updatedAt: updatedAt,
       deletedAt: _parseTime(node['deletedAt'])?.millisecondsSinceEpoch,
     );
   }
@@ -506,13 +809,13 @@ class BackupService {
     'stageBefore': e.stageBefore,
     'intervalDaysAfter': e.intervalDaysAfter,
     'algoVersion': e.algoVersion,
+    'mode': e.mode,
   };
 
-  ReviewEvent? _eventFromJson(Map<String, dynamic> node) {
+  ReviewEvent? _eventFromJson(Map<String, dynamic> node, String wordId) {
     final String? id = node['id'] as String?;
-    final String? wordId = node['wordId'] as String?;
     final DateTime? answeredAt = _parseTime(node['answeredAt']);
-    if (id == null || wordId == null || answeredAt == null) return null;
+    if (id == null || answeredAt == null) return null;
     final Object? result = node['result'];
     final int resultCode = result is int
         ? result
@@ -522,6 +825,7 @@ class BackupService {
         ? 'review'
         : 'study';
     final DateTime local = answeredAt.toLocal();
+    String two(int v) => v.toString().padLeft(2, '0');
     return ReviewEvent(
       id: id,
       wordId: wordId,
@@ -529,14 +833,17 @@ class BackupService {
       answeredAt: answeredAt.millisecondsSinceEpoch,
       localDay: _str(node['localDay']).isEmpty
           ? '${local.year.toString().padLeft(4, '0')}-'
-                '${local.month.toString().padLeft(2, '0')}-'
-                '${local.day.toString().padLeft(2, '0')}'
+                '${two(local.month)}-${two(local.day)}'
           : _str(node['localDay']),
       result: resultCode,
       type: type,
       stageBefore: _int(node['stageBefore']),
       intervalDaysAfter: _int(node['intervalDaysAfter']),
-      algoVersion: _int(node['algoVersion'], fallback: 1),
+      algoVersion: _int(
+        node['algoVersion'],
+        fallback: StudyScheduler.algorithmVersion,
+      ),
+      mode: _str(node['mode'], fallback: 'normal'),
     );
   }
 
@@ -562,4 +869,24 @@ class BackupService {
     if (value is String) return int.tryParse(value) ?? fallback;
     return fallback;
   }
+}
+
+/// Total order over (revision, updatedAt) with a deterministic tie-break, so
+/// clock skew between devices cannot produce different results on each device.
+class _Version implements Comparable<_Version> {
+  const _Version(this.revision, this.updatedAt);
+
+  final int revision;
+  final int updatedAt;
+
+  @override
+  int compareTo(_Version other) {
+    if (revision != other.revision) return revision.compareTo(other.revision);
+    return updatedAt.compareTo(other.updatedAt);
+  }
+
+  bool operator >(_Version other) => compareTo(other) > 0;
+  bool operator >=(_Version other) => compareTo(other) >= 0;
+  bool operator <(_Version other) => compareTo(other) < 0;
+  bool operator <=(_Version other) => compareTo(other) <= 0;
 }

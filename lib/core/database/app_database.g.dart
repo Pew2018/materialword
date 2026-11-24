@@ -1088,6 +1088,18 @@ class $WordBooksTable extends WordBooks
     requiredDuringInsert: false,
     defaultValue: const Constant(''),
   );
+  static const VerificationMeta _revisionMeta = const VerificationMeta(
+    'revision',
+  );
+  @override
+  late final GeneratedColumn<int> revision = GeneratedColumn<int>(
+    'revision',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(1),
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -1128,6 +1140,7 @@ class $WordBooksTable extends WordBooks
     description,
     sourceType,
     sourceUrl,
+    revision,
     createdAt,
     updatedAt,
     deletedAt,
@@ -1176,6 +1189,12 @@ class $WordBooksTable extends WordBooks
       context.handle(
         _sourceUrlMeta,
         sourceUrl.isAcceptableOrUnknown(data['source_url']!, _sourceUrlMeta),
+      );
+    }
+    if (data.containsKey('revision')) {
+      context.handle(
+        _revisionMeta,
+        revision.isAcceptableOrUnknown(data['revision']!, _revisionMeta),
       );
     }
     if (data.containsKey('created_at')) {
@@ -1229,6 +1248,10 @@ class $WordBooksTable extends WordBooks
         DriftSqlType.string,
         data['${effectivePrefix}source_url'],
       )!,
+      revision: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}revision'],
+      )!,
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}created_at'],
@@ -1256,6 +1279,7 @@ class WordBook extends DataClass implements Insertable<WordBook> {
   final String description;
   final String sourceType;
   final String sourceUrl;
+  final int revision;
   final int createdAt;
   final int updatedAt;
   final int? deletedAt;
@@ -1265,6 +1289,7 @@ class WordBook extends DataClass implements Insertable<WordBook> {
     required this.description,
     required this.sourceType,
     required this.sourceUrl,
+    required this.revision,
     required this.createdAt,
     required this.updatedAt,
     this.deletedAt,
@@ -1277,6 +1302,7 @@ class WordBook extends DataClass implements Insertable<WordBook> {
     map['description'] = Variable<String>(description);
     map['source_type'] = Variable<String>(sourceType);
     map['source_url'] = Variable<String>(sourceUrl);
+    map['revision'] = Variable<int>(revision);
     map['created_at'] = Variable<int>(createdAt);
     map['updated_at'] = Variable<int>(updatedAt);
     if (!nullToAbsent || deletedAt != null) {
@@ -1292,6 +1318,7 @@ class WordBook extends DataClass implements Insertable<WordBook> {
       description: Value(description),
       sourceType: Value(sourceType),
       sourceUrl: Value(sourceUrl),
+      revision: Value(revision),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
       deletedAt: deletedAt == null && nullToAbsent
@@ -1311,6 +1338,7 @@ class WordBook extends DataClass implements Insertable<WordBook> {
       description: serializer.fromJson<String>(json['description']),
       sourceType: serializer.fromJson<String>(json['sourceType']),
       sourceUrl: serializer.fromJson<String>(json['sourceUrl']),
+      revision: serializer.fromJson<int>(json['revision']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
       updatedAt: serializer.fromJson<int>(json['updatedAt']),
       deletedAt: serializer.fromJson<int?>(json['deletedAt']),
@@ -1325,6 +1353,7 @@ class WordBook extends DataClass implements Insertable<WordBook> {
       'description': serializer.toJson<String>(description),
       'sourceType': serializer.toJson<String>(sourceType),
       'sourceUrl': serializer.toJson<String>(sourceUrl),
+      'revision': serializer.toJson<int>(revision),
       'createdAt': serializer.toJson<int>(createdAt),
       'updatedAt': serializer.toJson<int>(updatedAt),
       'deletedAt': serializer.toJson<int?>(deletedAt),
@@ -1337,6 +1366,7 @@ class WordBook extends DataClass implements Insertable<WordBook> {
     String? description,
     String? sourceType,
     String? sourceUrl,
+    int? revision,
     int? createdAt,
     int? updatedAt,
     Value<int?> deletedAt = const Value.absent(),
@@ -1346,6 +1376,7 @@ class WordBook extends DataClass implements Insertable<WordBook> {
     description: description ?? this.description,
     sourceType: sourceType ?? this.sourceType,
     sourceUrl: sourceUrl ?? this.sourceUrl,
+    revision: revision ?? this.revision,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
     deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
@@ -1361,6 +1392,7 @@ class WordBook extends DataClass implements Insertable<WordBook> {
           ? data.sourceType.value
           : this.sourceType,
       sourceUrl: data.sourceUrl.present ? data.sourceUrl.value : this.sourceUrl,
+      revision: data.revision.present ? data.revision.value : this.revision,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
@@ -1375,6 +1407,7 @@ class WordBook extends DataClass implements Insertable<WordBook> {
           ..write('description: $description, ')
           ..write('sourceType: $sourceType, ')
           ..write('sourceUrl: $sourceUrl, ')
+          ..write('revision: $revision, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt')
@@ -1389,6 +1422,7 @@ class WordBook extends DataClass implements Insertable<WordBook> {
     description,
     sourceType,
     sourceUrl,
+    revision,
     createdAt,
     updatedAt,
     deletedAt,
@@ -1402,6 +1436,7 @@ class WordBook extends DataClass implements Insertable<WordBook> {
           other.description == this.description &&
           other.sourceType == this.sourceType &&
           other.sourceUrl == this.sourceUrl &&
+          other.revision == this.revision &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt &&
           other.deletedAt == this.deletedAt);
@@ -1413,6 +1448,7 @@ class WordBooksCompanion extends UpdateCompanion<WordBook> {
   final Value<String> description;
   final Value<String> sourceType;
   final Value<String> sourceUrl;
+  final Value<int> revision;
   final Value<int> createdAt;
   final Value<int> updatedAt;
   final Value<int?> deletedAt;
@@ -1423,6 +1459,7 @@ class WordBooksCompanion extends UpdateCompanion<WordBook> {
     this.description = const Value.absent(),
     this.sourceType = const Value.absent(),
     this.sourceUrl = const Value.absent(),
+    this.revision = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.deletedAt = const Value.absent(),
@@ -1434,6 +1471,7 @@ class WordBooksCompanion extends UpdateCompanion<WordBook> {
     this.description = const Value.absent(),
     this.sourceType = const Value.absent(),
     this.sourceUrl = const Value.absent(),
+    this.revision = const Value.absent(),
     required int createdAt,
     required int updatedAt,
     this.deletedAt = const Value.absent(),
@@ -1448,6 +1486,7 @@ class WordBooksCompanion extends UpdateCompanion<WordBook> {
     Expression<String>? description,
     Expression<String>? sourceType,
     Expression<String>? sourceUrl,
+    Expression<int>? revision,
     Expression<int>? createdAt,
     Expression<int>? updatedAt,
     Expression<int>? deletedAt,
@@ -1459,6 +1498,7 @@ class WordBooksCompanion extends UpdateCompanion<WordBook> {
       if (description != null) 'description': description,
       if (sourceType != null) 'source_type': sourceType,
       if (sourceUrl != null) 'source_url': sourceUrl,
+      if (revision != null) 'revision': revision,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (deletedAt != null) 'deleted_at': deletedAt,
@@ -1472,6 +1512,7 @@ class WordBooksCompanion extends UpdateCompanion<WordBook> {
     Value<String>? description,
     Value<String>? sourceType,
     Value<String>? sourceUrl,
+    Value<int>? revision,
     Value<int>? createdAt,
     Value<int>? updatedAt,
     Value<int?>? deletedAt,
@@ -1483,6 +1524,7 @@ class WordBooksCompanion extends UpdateCompanion<WordBook> {
       description: description ?? this.description,
       sourceType: sourceType ?? this.sourceType,
       sourceUrl: sourceUrl ?? this.sourceUrl,
+      revision: revision ?? this.revision,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       deletedAt: deletedAt ?? this.deletedAt,
@@ -1508,6 +1550,9 @@ class WordBooksCompanion extends UpdateCompanion<WordBook> {
     if (sourceUrl.present) {
       map['source_url'] = Variable<String>(sourceUrl.value);
     }
+    if (revision.present) {
+      map['revision'] = Variable<int>(revision.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<int>(createdAt.value);
     }
@@ -1531,6 +1576,7 @@ class WordBooksCompanion extends UpdateCompanion<WordBook> {
           ..write('description: $description, ')
           ..write('sourceType: $sourceType, ')
           ..write('sourceUrl: $sourceUrl, ')
+          ..write('revision: $revision, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
@@ -1583,8 +1629,50 @@ class $WordBookEntriesTable extends WordBookEntries
     type: DriftSqlType.int,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _versionMeta = const VerificationMeta(
+    'version',
+  );
   @override
-  List<GeneratedColumn> get $columns => [wordBookId, wordId, addedAt];
+  late final GeneratedColumn<int> version = GeneratedColumn<int>(
+    'version',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(1),
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _deletedAtMeta = const VerificationMeta(
+    'deletedAt',
+  );
+  @override
+  late final GeneratedColumn<int> deletedAt = GeneratedColumn<int>(
+    'deleted_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    wordBookId,
+    wordId,
+    addedAt,
+    version,
+    updatedAt,
+    deletedAt,
+  ];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -1624,6 +1712,24 @@ class $WordBookEntriesTable extends WordBookEntries
     } else if (isInserting) {
       context.missing(_addedAtMeta);
     }
+    if (data.containsKey('version')) {
+      context.handle(
+        _versionMeta,
+        version.isAcceptableOrUnknown(data['version']!, _versionMeta),
+      );
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    }
+    if (data.containsKey('deleted_at')) {
+      context.handle(
+        _deletedAtMeta,
+        deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta),
+      );
+    }
     return context;
   }
 
@@ -1645,6 +1751,18 @@ class $WordBookEntriesTable extends WordBookEntries
         DriftSqlType.int,
         data['${effectivePrefix}added_at'],
       )!,
+      version: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}version'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}updated_at'],
+      )!,
+      deletedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}deleted_at'],
+      ),
     );
   }
 
@@ -1658,10 +1776,16 @@ class WordBookEntry extends DataClass implements Insertable<WordBookEntry> {
   final String wordBookId;
   final String wordId;
   final int addedAt;
+  final int version;
+  final int updatedAt;
+  final int? deletedAt;
   const WordBookEntry({
     required this.wordBookId,
     required this.wordId,
     required this.addedAt,
+    required this.version,
+    required this.updatedAt,
+    this.deletedAt,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -1669,6 +1793,11 @@ class WordBookEntry extends DataClass implements Insertable<WordBookEntry> {
     map['word_book_id'] = Variable<String>(wordBookId);
     map['word_id'] = Variable<String>(wordId);
     map['added_at'] = Variable<int>(addedAt);
+    map['version'] = Variable<int>(version);
+    map['updated_at'] = Variable<int>(updatedAt);
+    if (!nullToAbsent || deletedAt != null) {
+      map['deleted_at'] = Variable<int>(deletedAt);
+    }
     return map;
   }
 
@@ -1677,6 +1806,11 @@ class WordBookEntry extends DataClass implements Insertable<WordBookEntry> {
       wordBookId: Value(wordBookId),
       wordId: Value(wordId),
       addedAt: Value(addedAt),
+      version: Value(version),
+      updatedAt: Value(updatedAt),
+      deletedAt: deletedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deletedAt),
     );
   }
 
@@ -1689,6 +1823,9 @@ class WordBookEntry extends DataClass implements Insertable<WordBookEntry> {
       wordBookId: serializer.fromJson<String>(json['wordBookId']),
       wordId: serializer.fromJson<String>(json['wordId']),
       addedAt: serializer.fromJson<int>(json['addedAt']),
+      version: serializer.fromJson<int>(json['version']),
+      updatedAt: serializer.fromJson<int>(json['updatedAt']),
+      deletedAt: serializer.fromJson<int?>(json['deletedAt']),
     );
   }
   @override
@@ -1698,15 +1835,27 @@ class WordBookEntry extends DataClass implements Insertable<WordBookEntry> {
       'wordBookId': serializer.toJson<String>(wordBookId),
       'wordId': serializer.toJson<String>(wordId),
       'addedAt': serializer.toJson<int>(addedAt),
+      'version': serializer.toJson<int>(version),
+      'updatedAt': serializer.toJson<int>(updatedAt),
+      'deletedAt': serializer.toJson<int?>(deletedAt),
     };
   }
 
-  WordBookEntry copyWith({String? wordBookId, String? wordId, int? addedAt}) =>
-      WordBookEntry(
-        wordBookId: wordBookId ?? this.wordBookId,
-        wordId: wordId ?? this.wordId,
-        addedAt: addedAt ?? this.addedAt,
-      );
+  WordBookEntry copyWith({
+    String? wordBookId,
+    String? wordId,
+    int? addedAt,
+    int? version,
+    int? updatedAt,
+    Value<int?> deletedAt = const Value.absent(),
+  }) => WordBookEntry(
+    wordBookId: wordBookId ?? this.wordBookId,
+    wordId: wordId ?? this.wordId,
+    addedAt: addedAt ?? this.addedAt,
+    version: version ?? this.version,
+    updatedAt: updatedAt ?? this.updatedAt,
+    deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
+  );
   WordBookEntry copyWithCompanion(WordBookEntriesCompanion data) {
     return WordBookEntry(
       wordBookId: data.wordBookId.present
@@ -1714,6 +1863,9 @@ class WordBookEntry extends DataClass implements Insertable<WordBookEntry> {
           : this.wordBookId,
       wordId: data.wordId.present ? data.wordId.value : this.wordId,
       addedAt: data.addedAt.present ? data.addedAt.value : this.addedAt,
+      version: data.version.present ? data.version.value : this.version,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
     );
   }
 
@@ -1722,37 +1874,53 @@ class WordBookEntry extends DataClass implements Insertable<WordBookEntry> {
     return (StringBuffer('WordBookEntry(')
           ..write('wordBookId: $wordBookId, ')
           ..write('wordId: $wordId, ')
-          ..write('addedAt: $addedAt')
+          ..write('addedAt: $addedAt, ')
+          ..write('version: $version, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(wordBookId, wordId, addedAt);
+  int get hashCode =>
+      Object.hash(wordBookId, wordId, addedAt, version, updatedAt, deletedAt);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is WordBookEntry &&
           other.wordBookId == this.wordBookId &&
           other.wordId == this.wordId &&
-          other.addedAt == this.addedAt);
+          other.addedAt == this.addedAt &&
+          other.version == this.version &&
+          other.updatedAt == this.updatedAt &&
+          other.deletedAt == this.deletedAt);
 }
 
 class WordBookEntriesCompanion extends UpdateCompanion<WordBookEntry> {
   final Value<String> wordBookId;
   final Value<String> wordId;
   final Value<int> addedAt;
+  final Value<int> version;
+  final Value<int> updatedAt;
+  final Value<int?> deletedAt;
   final Value<int> rowid;
   const WordBookEntriesCompanion({
     this.wordBookId = const Value.absent(),
     this.wordId = const Value.absent(),
     this.addedAt = const Value.absent(),
+    this.version = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.deletedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   WordBookEntriesCompanion.insert({
     required String wordBookId,
     required String wordId,
     required int addedAt,
+    this.version = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.deletedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : wordBookId = Value(wordBookId),
        wordId = Value(wordId),
@@ -1761,12 +1929,18 @@ class WordBookEntriesCompanion extends UpdateCompanion<WordBookEntry> {
     Expression<String>? wordBookId,
     Expression<String>? wordId,
     Expression<int>? addedAt,
+    Expression<int>? version,
+    Expression<int>? updatedAt,
+    Expression<int>? deletedAt,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
       if (wordBookId != null) 'word_book_id': wordBookId,
       if (wordId != null) 'word_id': wordId,
       if (addedAt != null) 'added_at': addedAt,
+      if (version != null) 'version': version,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (deletedAt != null) 'deleted_at': deletedAt,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -1775,12 +1949,18 @@ class WordBookEntriesCompanion extends UpdateCompanion<WordBookEntry> {
     Value<String>? wordBookId,
     Value<String>? wordId,
     Value<int>? addedAt,
+    Value<int>? version,
+    Value<int>? updatedAt,
+    Value<int?>? deletedAt,
     Value<int>? rowid,
   }) {
     return WordBookEntriesCompanion(
       wordBookId: wordBookId ?? this.wordBookId,
       wordId: wordId ?? this.wordId,
       addedAt: addedAt ?? this.addedAt,
+      version: version ?? this.version,
+      updatedAt: updatedAt ?? this.updatedAt,
+      deletedAt: deletedAt ?? this.deletedAt,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -1797,6 +1977,15 @@ class WordBookEntriesCompanion extends UpdateCompanion<WordBookEntry> {
     if (addedAt.present) {
       map['added_at'] = Variable<int>(addedAt.value);
     }
+    if (version.present) {
+      map['version'] = Variable<int>(version.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<int>(deletedAt.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -1809,6 +1998,9 @@ class WordBookEntriesCompanion extends UpdateCompanion<WordBookEntry> {
           ..write('wordBookId: $wordBookId, ')
           ..write('wordId: $wordId, ')
           ..write('addedAt: $addedAt, ')
+          ..write('version: $version, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -2553,6 +2745,16 @@ class $ReviewEventsTable extends ReviewEvents
     requiredDuringInsert: false,
     defaultValue: const Constant(1),
   );
+  static const VerificationMeta _modeMeta = const VerificationMeta('mode');
+  @override
+  late final GeneratedColumn<String> mode = GeneratedColumn<String>(
+    'mode',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('normal'),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -2565,6 +2767,7 @@ class $ReviewEventsTable extends ReviewEvents
     stageBefore,
     intervalDaysAfter,
     algoVersion,
+    mode,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -2658,6 +2861,12 @@ class $ReviewEventsTable extends ReviewEvents
         ),
       );
     }
+    if (data.containsKey('mode')) {
+      context.handle(
+        _modeMeta,
+        mode.isAcceptableOrUnknown(data['mode']!, _modeMeta),
+      );
+    }
     return context;
   }
 
@@ -2707,6 +2916,10 @@ class $ReviewEventsTable extends ReviewEvents
         DriftSqlType.int,
         data['${effectivePrefix}algo_version'],
       )!,
+      mode: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}mode'],
+      )!,
     );
   }
 
@@ -2727,6 +2940,7 @@ class ReviewEvent extends DataClass implements Insertable<ReviewEvent> {
   final int stageBefore;
   final int intervalDaysAfter;
   final int algoVersion;
+  final String mode;
   const ReviewEvent({
     required this.id,
     required this.wordId,
@@ -2738,6 +2952,7 @@ class ReviewEvent extends DataClass implements Insertable<ReviewEvent> {
     required this.stageBefore,
     required this.intervalDaysAfter,
     required this.algoVersion,
+    required this.mode,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -2752,6 +2967,7 @@ class ReviewEvent extends DataClass implements Insertable<ReviewEvent> {
     map['stage_before'] = Variable<int>(stageBefore);
     map['interval_days_after'] = Variable<int>(intervalDaysAfter);
     map['algo_version'] = Variable<int>(algoVersion);
+    map['mode'] = Variable<String>(mode);
     return map;
   }
 
@@ -2767,6 +2983,7 @@ class ReviewEvent extends DataClass implements Insertable<ReviewEvent> {
       stageBefore: Value(stageBefore),
       intervalDaysAfter: Value(intervalDaysAfter),
       algoVersion: Value(algoVersion),
+      mode: Value(mode),
     );
   }
 
@@ -2786,6 +3003,7 @@ class ReviewEvent extends DataClass implements Insertable<ReviewEvent> {
       stageBefore: serializer.fromJson<int>(json['stageBefore']),
       intervalDaysAfter: serializer.fromJson<int>(json['intervalDaysAfter']),
       algoVersion: serializer.fromJson<int>(json['algoVersion']),
+      mode: serializer.fromJson<String>(json['mode']),
     );
   }
   @override
@@ -2802,6 +3020,7 @@ class ReviewEvent extends DataClass implements Insertable<ReviewEvent> {
       'stageBefore': serializer.toJson<int>(stageBefore),
       'intervalDaysAfter': serializer.toJson<int>(intervalDaysAfter),
       'algoVersion': serializer.toJson<int>(algoVersion),
+      'mode': serializer.toJson<String>(mode),
     };
   }
 
@@ -2816,6 +3035,7 @@ class ReviewEvent extends DataClass implements Insertable<ReviewEvent> {
     int? stageBefore,
     int? intervalDaysAfter,
     int? algoVersion,
+    String? mode,
   }) => ReviewEvent(
     id: id ?? this.id,
     wordId: wordId ?? this.wordId,
@@ -2827,6 +3047,7 @@ class ReviewEvent extends DataClass implements Insertable<ReviewEvent> {
     stageBefore: stageBefore ?? this.stageBefore,
     intervalDaysAfter: intervalDaysAfter ?? this.intervalDaysAfter,
     algoVersion: algoVersion ?? this.algoVersion,
+    mode: mode ?? this.mode,
   );
   ReviewEvent copyWithCompanion(ReviewEventsCompanion data) {
     return ReviewEvent(
@@ -2848,6 +3069,7 @@ class ReviewEvent extends DataClass implements Insertable<ReviewEvent> {
       algoVersion: data.algoVersion.present
           ? data.algoVersion.value
           : this.algoVersion,
+      mode: data.mode.present ? data.mode.value : this.mode,
     );
   }
 
@@ -2863,7 +3085,8 @@ class ReviewEvent extends DataClass implements Insertable<ReviewEvent> {
           ..write('type: $type, ')
           ..write('stageBefore: $stageBefore, ')
           ..write('intervalDaysAfter: $intervalDaysAfter, ')
-          ..write('algoVersion: $algoVersion')
+          ..write('algoVersion: $algoVersion, ')
+          ..write('mode: $mode')
           ..write(')'))
         .toString();
   }
@@ -2880,6 +3103,7 @@ class ReviewEvent extends DataClass implements Insertable<ReviewEvent> {
     stageBefore,
     intervalDaysAfter,
     algoVersion,
+    mode,
   );
   @override
   bool operator ==(Object other) =>
@@ -2894,7 +3118,8 @@ class ReviewEvent extends DataClass implements Insertable<ReviewEvent> {
           other.type == this.type &&
           other.stageBefore == this.stageBefore &&
           other.intervalDaysAfter == this.intervalDaysAfter &&
-          other.algoVersion == this.algoVersion);
+          other.algoVersion == this.algoVersion &&
+          other.mode == this.mode);
 }
 
 class ReviewEventsCompanion extends UpdateCompanion<ReviewEvent> {
@@ -2908,6 +3133,7 @@ class ReviewEventsCompanion extends UpdateCompanion<ReviewEvent> {
   final Value<int> stageBefore;
   final Value<int> intervalDaysAfter;
   final Value<int> algoVersion;
+  final Value<String> mode;
   final Value<int> rowid;
   const ReviewEventsCompanion({
     this.id = const Value.absent(),
@@ -2920,6 +3146,7 @@ class ReviewEventsCompanion extends UpdateCompanion<ReviewEvent> {
     this.stageBefore = const Value.absent(),
     this.intervalDaysAfter = const Value.absent(),
     this.algoVersion = const Value.absent(),
+    this.mode = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   ReviewEventsCompanion.insert({
@@ -2933,6 +3160,7 @@ class ReviewEventsCompanion extends UpdateCompanion<ReviewEvent> {
     this.stageBefore = const Value.absent(),
     this.intervalDaysAfter = const Value.absent(),
     this.algoVersion = const Value.absent(),
+    this.mode = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        wordId = Value(wordId),
@@ -2952,6 +3180,7 @@ class ReviewEventsCompanion extends UpdateCompanion<ReviewEvent> {
     Expression<int>? stageBefore,
     Expression<int>? intervalDaysAfter,
     Expression<int>? algoVersion,
+    Expression<String>? mode,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -2965,6 +3194,7 @@ class ReviewEventsCompanion extends UpdateCompanion<ReviewEvent> {
       if (stageBefore != null) 'stage_before': stageBefore,
       if (intervalDaysAfter != null) 'interval_days_after': intervalDaysAfter,
       if (algoVersion != null) 'algo_version': algoVersion,
+      if (mode != null) 'mode': mode,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -2980,6 +3210,7 @@ class ReviewEventsCompanion extends UpdateCompanion<ReviewEvent> {
     Value<int>? stageBefore,
     Value<int>? intervalDaysAfter,
     Value<int>? algoVersion,
+    Value<String>? mode,
     Value<int>? rowid,
   }) {
     return ReviewEventsCompanion(
@@ -2993,6 +3224,7 @@ class ReviewEventsCompanion extends UpdateCompanion<ReviewEvent> {
       stageBefore: stageBefore ?? this.stageBefore,
       intervalDaysAfter: intervalDaysAfter ?? this.intervalDaysAfter,
       algoVersion: algoVersion ?? this.algoVersion,
+      mode: mode ?? this.mode,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -3030,6 +3262,9 @@ class ReviewEventsCompanion extends UpdateCompanion<ReviewEvent> {
     if (algoVersion.present) {
       map['algo_version'] = Variable<int>(algoVersion.value);
     }
+    if (mode.present) {
+      map['mode'] = Variable<String>(mode.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -3049,6 +3284,7 @@ class ReviewEventsCompanion extends UpdateCompanion<ReviewEvent> {
           ..write('stageBefore: $stageBefore, ')
           ..write('intervalDaysAfter: $intervalDaysAfter, ')
           ..write('algoVersion: $algoVersion, ')
+          ..write('mode: $mode, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -3131,6 +3367,69 @@ class $StudySettingsTable extends StudySettings
     requiredDuringInsert: false,
     defaultValue: const Constant('system'),
   );
+  static const VerificationMeta _accentColorMeta = const VerificationMeta(
+    'accentColor',
+  );
+  @override
+  late final GeneratedColumn<String> accentColor = GeneratedColumn<String>(
+    'accent_color',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('#1565C0'),
+  );
+  static const VerificationMeta _ttsVoiceMeta = const VerificationMeta(
+    'ttsVoice',
+  );
+  @override
+  late final GeneratedColumn<String> ttsVoice = GeneratedColumn<String>(
+    'tts_voice',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _ttsLocaleMeta = const VerificationMeta(
+    'ttsLocale',
+  );
+  @override
+  late final GeneratedColumn<String> ttsLocale = GeneratedColumn<String>(
+    'tts_locale',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('en-US'),
+  );
+  static const VerificationMeta _ttsRateMeta = const VerificationMeta(
+    'ttsRate',
+  );
+  @override
+  late final GeneratedColumn<int> ttsRate = GeneratedColumn<int>(
+    'tts_rate',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(50),
+  );
+  static const VerificationMeta _ttsAutoSpeakMeta = const VerificationMeta(
+    'ttsAutoSpeak',
+  );
+  @override
+  late final GeneratedColumn<bool> ttsAutoSpeak = GeneratedColumn<bool>(
+    'tts_auto_speak',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("tts_auto_speak" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -3139,6 +3438,11 @@ class $StudySettingsTable extends StudySettings
     currentWordBookId,
     studyMode,
     themeMode,
+    accentColor,
+    ttsVoice,
+    ttsLocale,
+    ttsRate,
+    ttsAutoSpeak,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -3194,6 +3498,42 @@ class $StudySettingsTable extends StudySettings
         themeMode.isAcceptableOrUnknown(data['theme_mode']!, _themeModeMeta),
       );
     }
+    if (data.containsKey('accent_color')) {
+      context.handle(
+        _accentColorMeta,
+        accentColor.isAcceptableOrUnknown(
+          data['accent_color']!,
+          _accentColorMeta,
+        ),
+      );
+    }
+    if (data.containsKey('tts_voice')) {
+      context.handle(
+        _ttsVoiceMeta,
+        ttsVoice.isAcceptableOrUnknown(data['tts_voice']!, _ttsVoiceMeta),
+      );
+    }
+    if (data.containsKey('tts_locale')) {
+      context.handle(
+        _ttsLocaleMeta,
+        ttsLocale.isAcceptableOrUnknown(data['tts_locale']!, _ttsLocaleMeta),
+      );
+    }
+    if (data.containsKey('tts_rate')) {
+      context.handle(
+        _ttsRateMeta,
+        ttsRate.isAcceptableOrUnknown(data['tts_rate']!, _ttsRateMeta),
+      );
+    }
+    if (data.containsKey('tts_auto_speak')) {
+      context.handle(
+        _ttsAutoSpeakMeta,
+        ttsAutoSpeak.isAcceptableOrUnknown(
+          data['tts_auto_speak']!,
+          _ttsAutoSpeakMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -3227,6 +3567,26 @@ class $StudySettingsTable extends StudySettings
         DriftSqlType.string,
         data['${effectivePrefix}theme_mode'],
       )!,
+      accentColor: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}accent_color'],
+      )!,
+      ttsVoice: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}tts_voice'],
+      )!,
+      ttsLocale: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}tts_locale'],
+      )!,
+      ttsRate: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}tts_rate'],
+      )!,
+      ttsAutoSpeak: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}tts_auto_speak'],
+      )!,
     );
   }
 
@@ -3244,6 +3604,11 @@ class StudySettingsRow extends DataClass
   final String? currentWordBookId;
   final String studyMode;
   final String themeMode;
+  final String accentColor;
+  final String ttsVoice;
+  final String ttsLocale;
+  final int ttsRate;
+  final bool ttsAutoSpeak;
   const StudySettingsRow({
     required this.id,
     required this.dailyNewTarget,
@@ -3251,6 +3616,11 @@ class StudySettingsRow extends DataClass
     this.currentWordBookId,
     required this.studyMode,
     required this.themeMode,
+    required this.accentColor,
+    required this.ttsVoice,
+    required this.ttsLocale,
+    required this.ttsRate,
+    required this.ttsAutoSpeak,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -3263,6 +3633,11 @@ class StudySettingsRow extends DataClass
     }
     map['study_mode'] = Variable<String>(studyMode);
     map['theme_mode'] = Variable<String>(themeMode);
+    map['accent_color'] = Variable<String>(accentColor);
+    map['tts_voice'] = Variable<String>(ttsVoice);
+    map['tts_locale'] = Variable<String>(ttsLocale);
+    map['tts_rate'] = Variable<int>(ttsRate);
+    map['tts_auto_speak'] = Variable<bool>(ttsAutoSpeak);
     return map;
   }
 
@@ -3276,6 +3651,11 @@ class StudySettingsRow extends DataClass
           : Value(currentWordBookId),
       studyMode: Value(studyMode),
       themeMode: Value(themeMode),
+      accentColor: Value(accentColor),
+      ttsVoice: Value(ttsVoice),
+      ttsLocale: Value(ttsLocale),
+      ttsRate: Value(ttsRate),
+      ttsAutoSpeak: Value(ttsAutoSpeak),
     );
   }
 
@@ -3293,6 +3673,11 @@ class StudySettingsRow extends DataClass
       ),
       studyMode: serializer.fromJson<String>(json['studyMode']),
       themeMode: serializer.fromJson<String>(json['themeMode']),
+      accentColor: serializer.fromJson<String>(json['accentColor']),
+      ttsVoice: serializer.fromJson<String>(json['ttsVoice']),
+      ttsLocale: serializer.fromJson<String>(json['ttsLocale']),
+      ttsRate: serializer.fromJson<int>(json['ttsRate']),
+      ttsAutoSpeak: serializer.fromJson<bool>(json['ttsAutoSpeak']),
     );
   }
   @override
@@ -3305,6 +3690,11 @@ class StudySettingsRow extends DataClass
       'currentWordBookId': serializer.toJson<String?>(currentWordBookId),
       'studyMode': serializer.toJson<String>(studyMode),
       'themeMode': serializer.toJson<String>(themeMode),
+      'accentColor': serializer.toJson<String>(accentColor),
+      'ttsVoice': serializer.toJson<String>(ttsVoice),
+      'ttsLocale': serializer.toJson<String>(ttsLocale),
+      'ttsRate': serializer.toJson<int>(ttsRate),
+      'ttsAutoSpeak': serializer.toJson<bool>(ttsAutoSpeak),
     };
   }
 
@@ -3315,6 +3705,11 @@ class StudySettingsRow extends DataClass
     Value<String?> currentWordBookId = const Value.absent(),
     String? studyMode,
     String? themeMode,
+    String? accentColor,
+    String? ttsVoice,
+    String? ttsLocale,
+    int? ttsRate,
+    bool? ttsAutoSpeak,
   }) => StudySettingsRow(
     id: id ?? this.id,
     dailyNewTarget: dailyNewTarget ?? this.dailyNewTarget,
@@ -3324,6 +3719,11 @@ class StudySettingsRow extends DataClass
         : this.currentWordBookId,
     studyMode: studyMode ?? this.studyMode,
     themeMode: themeMode ?? this.themeMode,
+    accentColor: accentColor ?? this.accentColor,
+    ttsVoice: ttsVoice ?? this.ttsVoice,
+    ttsLocale: ttsLocale ?? this.ttsLocale,
+    ttsRate: ttsRate ?? this.ttsRate,
+    ttsAutoSpeak: ttsAutoSpeak ?? this.ttsAutoSpeak,
   );
   StudySettingsRow copyWithCompanion(StudySettingsCompanion data) {
     return StudySettingsRow(
@@ -3339,6 +3739,15 @@ class StudySettingsRow extends DataClass
           : this.currentWordBookId,
       studyMode: data.studyMode.present ? data.studyMode.value : this.studyMode,
       themeMode: data.themeMode.present ? data.themeMode.value : this.themeMode,
+      accentColor: data.accentColor.present
+          ? data.accentColor.value
+          : this.accentColor,
+      ttsVoice: data.ttsVoice.present ? data.ttsVoice.value : this.ttsVoice,
+      ttsLocale: data.ttsLocale.present ? data.ttsLocale.value : this.ttsLocale,
+      ttsRate: data.ttsRate.present ? data.ttsRate.value : this.ttsRate,
+      ttsAutoSpeak: data.ttsAutoSpeak.present
+          ? data.ttsAutoSpeak.value
+          : this.ttsAutoSpeak,
     );
   }
 
@@ -3350,7 +3759,12 @@ class StudySettingsRow extends DataClass
           ..write('dailyReviewLimit: $dailyReviewLimit, ')
           ..write('currentWordBookId: $currentWordBookId, ')
           ..write('studyMode: $studyMode, ')
-          ..write('themeMode: $themeMode')
+          ..write('themeMode: $themeMode, ')
+          ..write('accentColor: $accentColor, ')
+          ..write('ttsVoice: $ttsVoice, ')
+          ..write('ttsLocale: $ttsLocale, ')
+          ..write('ttsRate: $ttsRate, ')
+          ..write('ttsAutoSpeak: $ttsAutoSpeak')
           ..write(')'))
         .toString();
   }
@@ -3363,6 +3777,11 @@ class StudySettingsRow extends DataClass
     currentWordBookId,
     studyMode,
     themeMode,
+    accentColor,
+    ttsVoice,
+    ttsLocale,
+    ttsRate,
+    ttsAutoSpeak,
   );
   @override
   bool operator ==(Object other) =>
@@ -3373,7 +3792,12 @@ class StudySettingsRow extends DataClass
           other.dailyReviewLimit == this.dailyReviewLimit &&
           other.currentWordBookId == this.currentWordBookId &&
           other.studyMode == this.studyMode &&
-          other.themeMode == this.themeMode);
+          other.themeMode == this.themeMode &&
+          other.accentColor == this.accentColor &&
+          other.ttsVoice == this.ttsVoice &&
+          other.ttsLocale == this.ttsLocale &&
+          other.ttsRate == this.ttsRate &&
+          other.ttsAutoSpeak == this.ttsAutoSpeak);
 }
 
 class StudySettingsCompanion extends UpdateCompanion<StudySettingsRow> {
@@ -3383,6 +3807,11 @@ class StudySettingsCompanion extends UpdateCompanion<StudySettingsRow> {
   final Value<String?> currentWordBookId;
   final Value<String> studyMode;
   final Value<String> themeMode;
+  final Value<String> accentColor;
+  final Value<String> ttsVoice;
+  final Value<String> ttsLocale;
+  final Value<int> ttsRate;
+  final Value<bool> ttsAutoSpeak;
   const StudySettingsCompanion({
     this.id = const Value.absent(),
     this.dailyNewTarget = const Value.absent(),
@@ -3390,6 +3819,11 @@ class StudySettingsCompanion extends UpdateCompanion<StudySettingsRow> {
     this.currentWordBookId = const Value.absent(),
     this.studyMode = const Value.absent(),
     this.themeMode = const Value.absent(),
+    this.accentColor = const Value.absent(),
+    this.ttsVoice = const Value.absent(),
+    this.ttsLocale = const Value.absent(),
+    this.ttsRate = const Value.absent(),
+    this.ttsAutoSpeak = const Value.absent(),
   });
   StudySettingsCompanion.insert({
     this.id = const Value.absent(),
@@ -3398,6 +3832,11 @@ class StudySettingsCompanion extends UpdateCompanion<StudySettingsRow> {
     this.currentWordBookId = const Value.absent(),
     this.studyMode = const Value.absent(),
     this.themeMode = const Value.absent(),
+    this.accentColor = const Value.absent(),
+    this.ttsVoice = const Value.absent(),
+    this.ttsLocale = const Value.absent(),
+    this.ttsRate = const Value.absent(),
+    this.ttsAutoSpeak = const Value.absent(),
   });
   static Insertable<StudySettingsRow> custom({
     Expression<int>? id,
@@ -3406,6 +3845,11 @@ class StudySettingsCompanion extends UpdateCompanion<StudySettingsRow> {
     Expression<String>? currentWordBookId,
     Expression<String>? studyMode,
     Expression<String>? themeMode,
+    Expression<String>? accentColor,
+    Expression<String>? ttsVoice,
+    Expression<String>? ttsLocale,
+    Expression<int>? ttsRate,
+    Expression<bool>? ttsAutoSpeak,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -3414,6 +3858,11 @@ class StudySettingsCompanion extends UpdateCompanion<StudySettingsRow> {
       if (currentWordBookId != null) 'current_word_book_id': currentWordBookId,
       if (studyMode != null) 'study_mode': studyMode,
       if (themeMode != null) 'theme_mode': themeMode,
+      if (accentColor != null) 'accent_color': accentColor,
+      if (ttsVoice != null) 'tts_voice': ttsVoice,
+      if (ttsLocale != null) 'tts_locale': ttsLocale,
+      if (ttsRate != null) 'tts_rate': ttsRate,
+      if (ttsAutoSpeak != null) 'tts_auto_speak': ttsAutoSpeak,
     });
   }
 
@@ -3424,6 +3873,11 @@ class StudySettingsCompanion extends UpdateCompanion<StudySettingsRow> {
     Value<String?>? currentWordBookId,
     Value<String>? studyMode,
     Value<String>? themeMode,
+    Value<String>? accentColor,
+    Value<String>? ttsVoice,
+    Value<String>? ttsLocale,
+    Value<int>? ttsRate,
+    Value<bool>? ttsAutoSpeak,
   }) {
     return StudySettingsCompanion(
       id: id ?? this.id,
@@ -3432,6 +3886,11 @@ class StudySettingsCompanion extends UpdateCompanion<StudySettingsRow> {
       currentWordBookId: currentWordBookId ?? this.currentWordBookId,
       studyMode: studyMode ?? this.studyMode,
       themeMode: themeMode ?? this.themeMode,
+      accentColor: accentColor ?? this.accentColor,
+      ttsVoice: ttsVoice ?? this.ttsVoice,
+      ttsLocale: ttsLocale ?? this.ttsLocale,
+      ttsRate: ttsRate ?? this.ttsRate,
+      ttsAutoSpeak: ttsAutoSpeak ?? this.ttsAutoSpeak,
     );
   }
 
@@ -3456,6 +3915,21 @@ class StudySettingsCompanion extends UpdateCompanion<StudySettingsRow> {
     if (themeMode.present) {
       map['theme_mode'] = Variable<String>(themeMode.value);
     }
+    if (accentColor.present) {
+      map['accent_color'] = Variable<String>(accentColor.value);
+    }
+    if (ttsVoice.present) {
+      map['tts_voice'] = Variable<String>(ttsVoice.value);
+    }
+    if (ttsLocale.present) {
+      map['tts_locale'] = Variable<String>(ttsLocale.value);
+    }
+    if (ttsRate.present) {
+      map['tts_rate'] = Variable<int>(ttsRate.value);
+    }
+    if (ttsAutoSpeak.present) {
+      map['tts_auto_speak'] = Variable<bool>(ttsAutoSpeak.value);
+    }
     return map;
   }
 
@@ -3467,7 +3941,12 @@ class StudySettingsCompanion extends UpdateCompanion<StudySettingsRow> {
           ..write('dailyReviewLimit: $dailyReviewLimit, ')
           ..write('currentWordBookId: $currentWordBookId, ')
           ..write('studyMode: $studyMode, ')
-          ..write('themeMode: $themeMode')
+          ..write('themeMode: $themeMode, ')
+          ..write('accentColor: $accentColor, ')
+          ..write('ttsVoice: $ttsVoice, ')
+          ..write('ttsLocale: $ttsLocale, ')
+          ..write('ttsRate: $ttsRate, ')
+          ..write('ttsAutoSpeak: $ttsAutoSpeak')
           ..write(')'))
         .toString();
   }
@@ -3704,6 +4183,10 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     'idx_entries_word',
     'CREATE INDEX idx_entries_word ON word_book_entries (word_id)',
   );
+  late final Index idxEntriesBook = Index(
+    'idx_entries_book',
+    'CREATE INDEX idx_entries_book ON word_book_entries (word_book_id, deleted_at)',
+  );
   late final Index idxLearningDue = Index(
     'idx_learning_due',
     'CREATE INDEX idx_learning_due ON learning_states (next_review_at)',
@@ -3720,6 +4203,10 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     'idx_events_day',
     'CREATE INDEX idx_events_day ON review_events (local_day, type)',
   );
+  late final Index idxSettingsId = Index(
+    'idx_settings_id',
+    'CREATE INDEX idx_settings_id ON study_settings (id)',
+  );
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -3735,10 +4222,12 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     idxWordsNormalized,
     idxWordbooksDeleted,
     idxEntriesWord,
+    idxEntriesBook,
     idxLearningDue,
     idxLearningStage,
     idxEventsWordTime,
     idxEventsDay,
+    idxSettingsId,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -4549,6 +5038,7 @@ typedef $$WordBooksTableCreateCompanionBuilder = WordBooksCompanion Function({
   Value<String> description,
   Value<String> sourceType,
   Value<String> sourceUrl,
+  Value<int> revision,
   required int createdAt,
   required int updatedAt,
   Value<int?> deletedAt,
@@ -4560,6 +5050,7 @@ typedef $$WordBooksTableUpdateCompanionBuilder = WordBooksCompanion Function({
   Value<String> description,
   Value<String> sourceType,
   Value<String> sourceUrl,
+  Value<int> revision,
   Value<int> createdAt,
   Value<int> updatedAt,
   Value<int?> deletedAt,
@@ -4622,6 +5113,11 @@ class $$WordBooksTableFilterComposer
 
   ColumnFilters<String> get sourceUrl => $composableBuilder(
     column: $table.sourceUrl,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get revision => $composableBuilder(
+    column: $table.revision,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -4700,6 +5196,11 @@ class $$WordBooksTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get revision => $composableBuilder(
+    column: $table.revision,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -4743,6 +5244,9 @@ class $$WordBooksTableAnnotationComposer
 
   GeneratedColumn<String> get sourceUrl =>
       $composableBuilder(column: $table.sourceUrl, builder: (column) => column);
+
+  GeneratedColumn<int> get revision =>
+      $composableBuilder(column: $table.revision, builder: (column) => column);
 
   GeneratedColumn<int> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
@@ -4812,6 +5316,7 @@ class $$WordBooksTableTableManager
                 Value<String> description = const Value.absent(),
                 Value<String> sourceType = const Value.absent(),
                 Value<String> sourceUrl = const Value.absent(),
+                Value<int> revision = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
                 Value<int> updatedAt = const Value.absent(),
                 Value<int?> deletedAt = const Value.absent(),
@@ -4822,6 +5327,7 @@ class $$WordBooksTableTableManager
                 description: description,
                 sourceType: sourceType,
                 sourceUrl: sourceUrl,
+                revision: revision,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,
@@ -4834,6 +5340,7 @@ class $$WordBooksTableTableManager
                 Value<String> description = const Value.absent(),
                 Value<String> sourceType = const Value.absent(),
                 Value<String> sourceUrl = const Value.absent(),
+                Value<int> revision = const Value.absent(),
                 required int createdAt,
                 required int updatedAt,
                 Value<int?> deletedAt = const Value.absent(),
@@ -4844,6 +5351,7 @@ class $$WordBooksTableTableManager
                 description: description,
                 sourceType: sourceType,
                 sourceUrl: sourceUrl,
+                revision: revision,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,
@@ -4913,6 +5421,9 @@ typedef $$WordBookEntriesTableCreateCompanionBuilder =
       required String wordBookId,
       required String wordId,
       required int addedAt,
+      Value<int> version,
+      Value<int> updatedAt,
+      Value<int?> deletedAt,
       Value<int> rowid,
     });
 typedef $$WordBookEntriesTableUpdateCompanionBuilder =
@@ -4920,6 +5431,9 @@ typedef $$WordBookEntriesTableUpdateCompanionBuilder =
       Value<String> wordBookId,
       Value<String> wordId,
       Value<int> addedAt,
+      Value<int> version,
+      Value<int> updatedAt,
+      Value<int?> deletedAt,
       Value<int> rowid,
     });
 
@@ -4978,6 +5492,21 @@ class $$WordBookEntriesTableFilterComposer
   });
   ColumnFilters<int> get addedAt => $composableBuilder(
     column: $table.addedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get version => $composableBuilder(
+    column: $table.version,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -5042,6 +5571,21 @@ class $$WordBookEntriesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get version => $composableBuilder(
+    column: $table.version,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$WordBooksTableOrderingComposer get wordBookId {
     final $$WordBooksTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -5100,6 +5644,15 @@ class $$WordBookEntriesTableAnnotationComposer
   });
   GeneratedColumn<int> get addedAt =>
       $composableBuilder(column: $table.addedAt, builder: (column) => column);
+
+  GeneratedColumn<int> get version =>
+      $composableBuilder(column: $table.version, builder: (column) => column);
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<int> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
 
   $$WordBooksTableAnnotationComposer get wordBookId {
     final $$WordBooksTableAnnotationComposer composer = $composerBuilder(
@@ -5181,11 +5734,17 @@ class $$WordBookEntriesTableTableManager
                 Value<String> wordBookId = const Value.absent(),
                 Value<String> wordId = const Value.absent(),
                 Value<int> addedAt = const Value.absent(),
+                Value<int> version = const Value.absent(),
+                Value<int> updatedAt = const Value.absent(),
+                Value<int?> deletedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => WordBookEntriesCompanion(
                 wordBookId: wordBookId,
                 wordId: wordId,
                 addedAt: addedAt,
+                version: version,
+                updatedAt: updatedAt,
+                deletedAt: deletedAt,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -5193,11 +5752,17 @@ class $$WordBookEntriesTableTableManager
                 required String wordBookId,
                 required String wordId,
                 required int addedAt,
+                Value<int> version = const Value.absent(),
+                Value<int> updatedAt = const Value.absent(),
+                Value<int?> deletedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => WordBookEntriesCompanion.insert(
                 wordBookId: wordBookId,
                 wordId: wordId,
                 addedAt: addedAt,
+                version: version,
+                updatedAt: updatedAt,
+                deletedAt: deletedAt,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -5714,6 +6279,7 @@ typedef $$ReviewEventsTableCreateCompanionBuilder =
       Value<int> stageBefore,
       Value<int> intervalDaysAfter,
       Value<int> algoVersion,
+      Value<String> mode,
       Value<int> rowid,
     });
 typedef $$ReviewEventsTableUpdateCompanionBuilder =
@@ -5728,6 +6294,7 @@ typedef $$ReviewEventsTableUpdateCompanionBuilder =
       Value<int> stageBefore,
       Value<int> intervalDaysAfter,
       Value<int> algoVersion,
+      Value<String> mode,
       Value<int> rowid,
     });
 
@@ -5804,6 +6371,11 @@ class $$ReviewEventsTableFilterComposer
 
   ColumnFilters<int> get algoVersion => $composableBuilder(
     column: $table.algoVersion,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get mode => $composableBuilder(
+    column: $table.mode,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -5885,6 +6457,11 @@ class $$ReviewEventsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get mode => $composableBuilder(
+    column: $table.mode,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$WordsTableOrderingComposer get wordId {
     final $$WordsTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -5953,6 +6530,9 @@ class $$ReviewEventsTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<String> get mode =>
+      $composableBuilder(column: $table.mode, builder: (column) => column);
+
   $$WordsTableAnnotationComposer get wordId {
     final $$WordsTableAnnotationComposer composer = $composerBuilder(
       composer: this,
@@ -6015,6 +6595,7 @@ class $$ReviewEventsTableTableManager
                 Value<int> stageBefore = const Value.absent(),
                 Value<int> intervalDaysAfter = const Value.absent(),
                 Value<int> algoVersion = const Value.absent(),
+                Value<String> mode = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ReviewEventsCompanion(
                 id: id,
@@ -6027,6 +6608,7 @@ class $$ReviewEventsTableTableManager
                 stageBefore: stageBefore,
                 intervalDaysAfter: intervalDaysAfter,
                 algoVersion: algoVersion,
+                mode: mode,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -6041,6 +6623,7 @@ class $$ReviewEventsTableTableManager
                 Value<int> stageBefore = const Value.absent(),
                 Value<int> intervalDaysAfter = const Value.absent(),
                 Value<int> algoVersion = const Value.absent(),
+                Value<String> mode = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ReviewEventsCompanion.insert(
                 id: id,
@@ -6053,6 +6636,7 @@ class $$ReviewEventsTableTableManager
                 stageBefore: stageBefore,
                 intervalDaysAfter: intervalDaysAfter,
                 algoVersion: algoVersion,
+                mode: mode,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -6128,6 +6712,11 @@ typedef $$StudySettingsTableCreateCompanionBuilder =
       Value<String?> currentWordBookId,
       Value<String> studyMode,
       Value<String> themeMode,
+      Value<String> accentColor,
+      Value<String> ttsVoice,
+      Value<String> ttsLocale,
+      Value<int> ttsRate,
+      Value<bool> ttsAutoSpeak,
     });
 typedef $$StudySettingsTableUpdateCompanionBuilder =
     StudySettingsCompanion Function({
@@ -6137,6 +6726,11 @@ typedef $$StudySettingsTableUpdateCompanionBuilder =
       Value<String?> currentWordBookId,
       Value<String> studyMode,
       Value<String> themeMode,
+      Value<String> accentColor,
+      Value<String> ttsVoice,
+      Value<String> ttsLocale,
+      Value<int> ttsRate,
+      Value<bool> ttsAutoSpeak,
     });
 
 class $$StudySettingsTableFilterComposer
@@ -6175,6 +6769,31 @@ class $$StudySettingsTableFilterComposer
 
   ColumnFilters<String> get themeMode => $composableBuilder(
     column: $table.themeMode,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get accentColor => $composableBuilder(
+    column: $table.accentColor,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get ttsVoice => $composableBuilder(
+    column: $table.ttsVoice,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get ttsLocale => $composableBuilder(
+    column: $table.ttsLocale,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get ttsRate => $composableBuilder(
+    column: $table.ttsRate,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get ttsAutoSpeak => $composableBuilder(
+    column: $table.ttsAutoSpeak,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -6217,6 +6836,31 @@ class $$StudySettingsTableOrderingComposer
     column: $table.themeMode,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get accentColor => $composableBuilder(
+    column: $table.accentColor,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get ttsVoice => $composableBuilder(
+    column: $table.ttsVoice,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get ttsLocale => $composableBuilder(
+    column: $table.ttsLocale,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get ttsRate => $composableBuilder(
+    column: $table.ttsRate,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get ttsAutoSpeak => $composableBuilder(
+    column: $table.ttsAutoSpeak,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$StudySettingsTableAnnotationComposer
@@ -6251,6 +6895,25 @@ class $$StudySettingsTableAnnotationComposer
 
   GeneratedColumn<String> get themeMode =>
       $composableBuilder(column: $table.themeMode, builder: (column) => column);
+
+  GeneratedColumn<String> get accentColor => $composableBuilder(
+    column: $table.accentColor,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get ttsVoice =>
+      $composableBuilder(column: $table.ttsVoice, builder: (column) => column);
+
+  GeneratedColumn<String> get ttsLocale =>
+      $composableBuilder(column: $table.ttsLocale, builder: (column) => column);
+
+  GeneratedColumn<int> get ttsRate =>
+      $composableBuilder(column: $table.ttsRate, builder: (column) => column);
+
+  GeneratedColumn<bool> get ttsAutoSpeak => $composableBuilder(
+    column: $table.ttsAutoSpeak,
+    builder: (column) => column,
+  );
 }
 
 class $$StudySettingsTableTableManager
@@ -6294,6 +6957,11 @@ class $$StudySettingsTableTableManager
                 Value<String?> currentWordBookId = const Value.absent(),
                 Value<String> studyMode = const Value.absent(),
                 Value<String> themeMode = const Value.absent(),
+                Value<String> accentColor = const Value.absent(),
+                Value<String> ttsVoice = const Value.absent(),
+                Value<String> ttsLocale = const Value.absent(),
+                Value<int> ttsRate = const Value.absent(),
+                Value<bool> ttsAutoSpeak = const Value.absent(),
               }) => StudySettingsCompanion(
                 id: id,
                 dailyNewTarget: dailyNewTarget,
@@ -6301,6 +6969,11 @@ class $$StudySettingsTableTableManager
                 currentWordBookId: currentWordBookId,
                 studyMode: studyMode,
                 themeMode: themeMode,
+                accentColor: accentColor,
+                ttsVoice: ttsVoice,
+                ttsLocale: ttsLocale,
+                ttsRate: ttsRate,
+                ttsAutoSpeak: ttsAutoSpeak,
               ),
           createCompanionCallback:
               ({
@@ -6310,6 +6983,11 @@ class $$StudySettingsTableTableManager
                 Value<String?> currentWordBookId = const Value.absent(),
                 Value<String> studyMode = const Value.absent(),
                 Value<String> themeMode = const Value.absent(),
+                Value<String> accentColor = const Value.absent(),
+                Value<String> ttsVoice = const Value.absent(),
+                Value<String> ttsLocale = const Value.absent(),
+                Value<int> ttsRate = const Value.absent(),
+                Value<bool> ttsAutoSpeak = const Value.absent(),
               }) => StudySettingsCompanion.insert(
                 id: id,
                 dailyNewTarget: dailyNewTarget,
@@ -6317,6 +6995,11 @@ class $$StudySettingsTableTableManager
                 currentWordBookId: currentWordBookId,
                 studyMode: studyMode,
                 themeMode: themeMode,
+                accentColor: accentColor,
+                ttsVoice: ttsVoice,
+                ttsLocale: ttsLocale,
+                ttsRate: ttsRate,
+                ttsAutoSpeak: ttsAutoSpeak,
               ),
           withReferenceMapper: (p0) => p0
               .map(

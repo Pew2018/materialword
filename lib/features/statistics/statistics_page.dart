@@ -5,38 +5,169 @@ import '../../app/providers.dart';
 import '../../app/theme.dart';
 import '../../core/models/study_models.dart';
 import '../../core/repositories/word_repository.dart';
+import '../../core/repositories/wordbook_repository.dart';
 import '../../shared/widgets/common.dart';
 import '../word_management/word_detail_page.dart';
 
-/// Simple statistics: counts, accuracy and the words that keep failing.
+/// Statistics with an explicit scope filter.
+///
+/// Content numbers (total / learned / hard words) follow the selected book;
+/// "today" counts are device-wide because the daily goal is device-wide. The
+/// header says so, so the two numbers can never be mistaken for each other.
 class StatisticsPage extends ConsumerWidget {
   const StatisticsPage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final AsyncValue<StudyStatistics> stats = ref.watch(statisticsProvider);
+    final AsyncValue<List<WordBookSummary>> books = ref.watch(
+      bookSummariesProvider,
+    );
+    final String? filter = ref.watch(statisticsBookFilterProvider);
     final ThemeData theme = Theme.of(context);
     final StudyStatistics? data = stats.value;
 
-    if (stats.hasError) {
-      return ErrorBanner(
-        message: '读取统计失败：${stats.error}',
-        onRetry: () => ref.invalidate(statisticsProvider),
-      );
-    }
-    if (data == null) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
     return ListView(
-      padding: const EdgeInsets.all(AppDimens.gutter),
+      padding: const EdgeInsets.only(bottom: 24),
       children: <Widget>[
-        ContentWidth(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+          child: Row(
             children: <Widget>[
-              SectionCard(
-                title: '总览',
+              const Icon(
+                Icons.filter_alt_outlined,
+                size: AppDimens.iconSizeSmall,
+              ),
+              AppSpacing.w8,
+              Expanded(
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String?>(
+                    isExpanded: true,
+                    isDense: true,
+                    value: filter,
+                    hint: const Text('全部词书'),
+                    items: <DropdownMenuItem<String?>>[
+                      const DropdownMenuItem<String?>(
+                        value: null,
+                        child: Text('全部词书'),
+                      ),
+                      for (final WordBookSummary summary
+                          in books.value ?? const <WordBookSummary>[])
+                        DropdownMenuItem<String?>(
+                          value: summary.book.id,
+                          child: Text(summary.book.name),
+                        ),
+                    ],
+                    onChanged: (String? value) => ref
+                        .read(statisticsBookFilterProvider.notifier)
+                        .select(value),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (stats.hasError)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: ErrorBanner(
+              message: '读取统计失败：${stats.error}',
+              onRetry: () => ref.invalidate(statisticsProvider),
+            ),
+          ),
+        if (data == null)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 48),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else ...<Widget>[
+          SectionHeader(title: data.scopedToBook ? '总览（当前词书）' : '总览（全部词书）'),
+          SettingsGroup(
+            children: <Widget>[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                child: Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: StatBlock(
+                        value: '${data.totalWords}',
+                        label: '总词数',
+                      ),
+                    ),
+                    Expanded(
+                      child: StatBlock(
+                        value: '${data.learnedWords}',
+                        label: '已学习',
+                      ),
+                    ),
+                    Expanded(
+                      child: StatBlock(
+                        value: '${data.unlearnedWords}',
+                        label: '未学习',
+                      ),
+                    ),
+                    Expanded(
+                      child: StatBlock(
+                        value: data.accuracyOrNull == null
+                            ? '—'
+                            : '${(data.accuracyOrNull! * 100).round()}%',
+                        label: data.accuracyOrNull == null
+                            ? '正确率（无记录）'
+                            : '历史正确率',
+                        color: data.accuracyOrNull == null
+                            ? null
+                            : (data.accuracyOrNull! >= 0.8
+                                  ? AppColors.known
+                                  : AppColors.hazy),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          SectionHeader(title: '今日（全设备）'),
+          SettingsGroup(
+            children: <Widget>[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                child: Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: StatBlock(
+                        value: '${data.todayNew}',
+                        label: '今日新词',
+                      ),
+                    ),
+                    Expanded(
+                      child: StatBlock(
+                        value: '${data.todayReview}',
+                        label: '今日复习',
+                      ),
+                    ),
+                    Expanded(
+                      child: StatBlock(
+                        value: '${data.correctCount}',
+                        label: '累计正确',
+                      ),
+                    ),
+                    Expanded(
+                      child: StatBlock(
+                        value: '${data.wrongCount}',
+                        label: '累计错误',
+                        color: data.wrongCount > 0 ? AppColors.unknown : null,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          SectionHeader(title: '字词表现'),
+          SettingsGroup(
+            children: <Widget>[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
@@ -44,132 +175,60 @@ class StatisticsPage extends ConsumerWidget {
                       children: <Widget>[
                         Expanded(
                           child: StatBlock(
-                            value: '${data.learnedWords}',
-                            label: '已学习',
+                            value: '${data.hardWords.length}',
+                            label: '困难词（错误/模糊≥1）',
                           ),
                         ),
                         Expanded(
                           child: StatBlock(
-                            value: '${data.unlearnedWords}',
-                            label: '未学习',
+                            value: '${data.hazyCount}',
+                            label: '累计模糊',
+                            color: AppColors.hazy,
                           ),
                         ),
                         Expanded(
                           child: StatBlock(
-                            value: '${data.totalWords}',
-                            label: '总词数',
-                          ),
-                        ),
-                        Expanded(
-                          child: StatBlock(
-                            value: '${(data.accuracy * 100).round()}%',
-                            label: '历史正确率',
-                            color: data.accuracy >= 0.8
-                                ? AppColors.known
-                                : AppColors.hazy,
+                            value: data.lastStudyDay ?? '—',
+                            label: '最近学习日',
                           ),
                         ),
                       ],
                     ),
-                    const Divider(height: 32),
-                    Row(
-                      children: <Widget>[
-                        Expanded(
-                          child: StatBlock(
-                            value: '${data.todayNew}',
-                            label: '今日新词',
-                          ),
-                        ),
-                        Expanded(
-                          child: StatBlock(
-                            value: '${data.todayReview}',
-                            label: '今日复习',
-                          ),
-                        ),
-                        Expanded(
-                          child: StatBlock(
-                            value: '${data.correctCount}',
-                            label: '累计正确',
-                          ),
-                        ),
-                        Expanded(
-                          child: StatBlock(
-                            value: '${data.wrongCount}',
-                            label: '累计错误',
-                            color: AppColors.unknown,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const Divider(height: 32),
-                    Row(
-                      children: <Widget>[
-                        Expanded(
-                          child: StatBlock(
-                            value: data.lastStudyDay ?? '—',
-                            label: '最近学习日期',
-                          ),
-                        ),
-                        Expanded(
-                          child: StatBlock(
-                            value: '${data.totalAnswers}',
-                            label: '累计作答',
-                          ),
-                        ),
-                      ],
+                    AppSpacing.h8,
+                    Text(
+                      data.hasAnswers
+                          ? '正确率 = 认识 /（认识 + 模糊 + 不认识）次作答，口径为累计作答记录。'
+                          : '还没有作答记录，因此没有正确率。完成一次学习后这里会显示真实比例。',
+                      style: theme.textTheme.bodySmall,
                     ),
                   ],
                 ),
               ),
-              AppSpacing.h16,
-              SectionCard(
-                title: '困难词（错误 / 模糊次数最多）',
-                child: data.hardWords.isEmpty
-                    ? Text('暂时没有困难词。', style: theme.textTheme.bodySmall)
-                    : Column(
-                        children: <Widget>[
-                          for (final WordWithState row in data.hardWords)
-                            ListTile(
-                              dense: true,
-                              contentPadding: EdgeInsets.zero,
-                              title: Text(row.word.word),
-                              subtitle: Text(
-                                row.word.translation,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: <Widget>[
-                                  Text(
-                                    '错 ${row.state?.wrongCount ?? 0} · 模糊 ${row.state?.hazyCount ?? 0}',
-                                    style: theme.textTheme.bodySmall,
-                                  ),
-                                  const Icon(
-                                    Icons.chevron_right,
-                                    size: AppDimens.iconSizeSmall,
-                                  ),
-                                ],
-                              ),
-                              onTap: () => Navigator.of(context).push<void>(
-                                MaterialPageRoute<void>(
-                                  builder: (BuildContext context) =>
-                                      WordDetailPage(wordId: row.word.id),
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-              ),
-              AppSpacing.h16,
-              Text(
-                '正确率 = 认识 /（认识 + 模糊 + 不认识）次作答。'
-                '统计口径包含所有词书的单词，只统计已保存到本地的真实作答记录。',
-                style: theme.textTheme.bodySmall,
-              ),
             ],
           ),
-        ),
+          if (data.hardWords.isNotEmpty) ...<Widget>[
+            SectionHeader(title: '困难词（错误次数最多）'),
+            SettingsGroup(
+              children: <Widget>[
+                for (final WordWithState row in data.hardWords)
+                  SettingsTile(
+                    title: row.word.word,
+                    subtitle: row.word.translation.replaceAll('\n', ' '),
+                    trailing: Text(
+                      '错 ${row.state?.wrongCount ?? 0} · 模糊 ${row.state?.hazyCount ?? 0}',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                    onTap: () => Navigator.of(context).push<void>(
+                      MaterialPageRoute<void>(
+                        builder: (BuildContext context) =>
+                            WordDetailPage(wordId: row.word.id),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ],
       ],
     );
   }
