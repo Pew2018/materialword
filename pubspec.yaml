@@ -1,0 +1,46 @@
+name: materialword
+description: "MaterialWord — offline English vocabulary learning (Flutter, Material Design 2 classic theme)."
+publish_to: 'none'
+
+# Version is also stored in backups and shown in Settings.
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.14.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  # State management (small, no codegen).
+  flutter_riverpod: ^3.5.0
+
+  # Local database: SQLite via Drift.
+  drift: ^2.35.4
+  drift_flutter: ^0.3.1
+  sqlite3: ^3.9.2
+
+  # Utilities.
+  uuid: ^4.6.0
+  path_provider: ^2.1.6
+  file_picker: ^13.4.1
+  http: ^1.6.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  drift_dev: ^2.35.3
+  build_runner: ^2.17.1
+  integration_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true
+  assets:
+    # Offline dictionary, generated from ECDICT (MIT) by tool/build_dictionary.py.
+    - assets/dictionary/ecdict_core.db
+    # Tiny demo wordbook used by "载入示例词书".
+    - assets/wordbooks/sample_cet6.json
