@@ -208,6 +208,8 @@ class ContentSyncRepository {
     final candidates = {remoteId, ...aliases};
     final table = kind == 'word'
         ? db.words.actualTableName
+        : kind == 'tag'
+        ? db.userTags.actualTableName
         : db.wordBooks.actualTableName;
     final slots = List.filled(candidates.length, '?').join(',');
     final variables = [for (final id in candidates) Variable<String>(id)];

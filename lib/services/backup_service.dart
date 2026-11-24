@@ -14,6 +14,7 @@ import '../core/repositories/study_repository.dart';
 import '../core/repositories/word_repository.dart';
 import '../core/text/dictionary_text.dart';
 import 'study_scheduler.dart';
+import 'word_metadata_sync.dart';
 
 const Uuid _uuid = Uuid();
 
@@ -42,6 +43,7 @@ class MergeReport {
     this.skippedEntries = 0,
     this.conflicts = 0,
     this.settingsKept = true,
+    this.metadataUpdates = 0,
   });
 
   final int addedEvents;
@@ -60,8 +62,10 @@ class MergeReport {
   /// by (revision, updatedAt). Reported so the user knows something was merged.
   final int conflicts;
   final bool settingsKept;
+  final int metadataUpdates;
 
   bool get hasChanges =>
+      metadataUpdates > 0 ||
       addedEvents > 0 ||
       newWords > 0 ||
       updatedWords > 0 ||
@@ -83,6 +87,7 @@ class MergeReport {
       if (newEntries > 0) '新增词书关联 $newEntries 条',
       if (removedEntries > 0) '同步移出词书 $removedEntries 条',
       if (rebuiltStates > 0) '重算学习状态 $rebuiltStates 个',
+      if (metadataUpdates > 0) '收藏与标签变更 $metadataUpdates 项',
       if (conflicts > 0) '内容冲突 $conflicts 个（按字段版本、时间和来源确定保留值）',
     ];
     return parts.join('，');
@@ -197,6 +202,7 @@ class BackupService {
           .toList(growable: false),
       'entries': entryRows.map(_entryToJson).toList(growable: false),
       'reviewEvents': eventRows.map(_eventToJson).toList(growable: false),
+      ...await WordMetadataSync(db).snapshot(),
       // Only *shared* settings travel. Theme, accent, TTS and the active book
       // describe this device and must not jump between devices.
       'settings': <String, Object?>{
@@ -303,6 +309,7 @@ class BackupService {
                 'special-hard',
                 'special-mistakes',
                 'special-book',
+                'special-favorites',
                 'manual-mastered',
                 'manual-unmastered',
                 'reset',
@@ -456,6 +463,7 @@ class BackupService {
       }
       number(book, 'revision');
     }
+    WordMetadataSync.validate(data, wordIds, invalid);
     for (final entry in entries) {
       text(entry, 'wordId', required: true);
       text(entry, 'wordBookId', required: true);
@@ -587,6 +595,23 @@ class BackupService {
     }
     final entries = rows('entries');
     final events = rows('reviewEvents');
+    final tags = rows('tags');
+    final tagKeys = <String, String>{
+      for (final tag in tags)
+        tag['id'] as String: jsonEncode([tag['normalized'], tag['deletedAt']]),
+    };
+    for (final tag in tags) {
+      tag.remove('id');
+      tag.remove('aliases');
+    }
+    final favorites = rows('favorites');
+    final wordTags = rows('wordTags');
+    for (final row in [...favorites, ...wordTags]) {
+      row['wordId'] = wordKeys[row['wordId']] ?? row['wordId'];
+      if (row.containsKey('tagId')) {
+        row['tagId'] = tagKeys[row['tagId']] ?? row['tagId'];
+      }
+    }
     for (final e in [...entries, ...events]) {
       e['wordId'] = wordKeys[e['wordId']] ?? e['wordId'];
       if (e.containsKey('wordBookId')) {
@@ -617,6 +642,9 @@ class BackupService {
       'wordBooks': books,
       'entries': entries,
       'reviewEvents': events,
+      'favorites': favorites,
+      'tags': tags,
+      'wordTags': wordTags,
       'settings': dataset['settings'] ?? const <String, Object?>{},
     });
     return 'sha256:${sha256.convert(utf8.encode(jsonEncode(canonical)))}';
@@ -658,6 +686,7 @@ class BackupService {
     int newEntries = 0;
     int removedEntries = 0;
     int conflicts = 0;
+    int metadataUpdates = 0;
     int skipped = 0;
     final Set<String> touchedWords = <String>{};
 
@@ -877,6 +906,7 @@ class BackupService {
         }
       }
 
+      metadataUpdates = await WordMetadataSync(db).merge(valid, wordIdMap);
       // ------------------------------------------------------------ events
       for (final dynamic node in rawEvents) {
         if (node is! Map<String, dynamic>) {
@@ -1002,6 +1032,7 @@ class BackupService {
     });
 
     return MergeReport(
+      metadataUpdates: metadataUpdates,
       addedEvents: addedEvents,
       duplicateEvents: duplicateEvents,
       newWords: newWords,

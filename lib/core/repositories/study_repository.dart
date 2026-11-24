@@ -130,6 +130,23 @@ SELECT $wordColumnsWithState
     String? bookId,
     int limit = 30,
   }) async {
+    if (kind == SpecialReview.favorites) {
+      final rows = await managedWords(
+        bookId: bookId,
+        favoritesOnly: true,
+        sort: ManagedSort.alpha,
+        limit: limit,
+      );
+      return rows
+          .map(
+            (r) => WordWithState(
+              word: r.word,
+              state: r.state,
+              bookCount: r.bookCount,
+            ),
+          )
+          .toList();
+    }
     if (kind == SpecialReview.none) {
       return const <WordWithState>[];
     }
@@ -156,6 +173,7 @@ SELECT $wordColumnsWithState
         filter = 'AND ls.stage != 0';
         order = 'ORDER BY ls.next_review_at ASC, w.normalized, w.id';
       case SpecialReview.none:
+      case SpecialReview.favorites:
         return const <WordWithState>[];
     }
     if (bookId != null) {
@@ -969,6 +987,8 @@ SELECT COALESCE(SUM(CASE WHEN re.result = 2 THEN 1 ELSE 0 END), 0) AS correct,
   String _managedWhere({
     required String? search,
     required String? bookId,
+    bool favoritesOnly = false,
+    String? tagId,
     required ManagedStageFilter stage,
     required List<Variable<Object>> variables,
   }) {
@@ -976,6 +996,17 @@ SELECT COALESCE(SUM(CASE WHEN re.result = 2 THEN 1 ELSE 0 END), 0) AS correct,
     if (bookId != null) {
       where.write(' AND $_activeEntry');
       variables.add(Variable<String>(bookId));
+    }
+    if (favoritesOnly) {
+      where.write(
+        ' AND EXISTS (SELECT 1 FROM word_favorites f WHERE f.word_id = w.id AND f.value = 1)',
+      );
+    }
+    if (tagId != null) {
+      where.write(
+        ' AND EXISTS (SELECT 1 FROM word_tags wt JOIN user_tags t ON t.id = wt.tag_id WHERE wt.word_id = w.id AND wt.tag_id = ? AND wt.deleted_at IS NULL AND t.deleted_at IS NULL)',
+      );
+      variables.add(Variable<String>(tagId));
     }
     switch (stage) {
       case ManagedStageFilter.all:
@@ -1000,9 +1031,12 @@ SELECT COALESCE(SUM(CASE WHEN re.result = 2 THEN 1 ELSE 0 END), 0) AS correct,
     if (needle.isNotEmpty) {
       final String like = '%${needle.toLowerCase()}%';
       where.write(
-        ' AND (w.normalized LIKE ? OR w.translation LIKE ? OR w.note LIKE ?)',
+        ' AND (w.normalized LIKE ? OR w.translation LIKE ? OR w.note LIKE ?'
+        ' OR EXISTS (SELECT 1 FROM word_tags wt JOIN user_tags t ON t.id = wt.tag_id'
+        ' WHERE wt.word_id = w.id AND wt.deleted_at IS NULL AND t.deleted_at IS NULL AND t.normalized LIKE ?))',
       );
       variables
+        ..add(Variable<String>(like))
         ..add(Variable<String>(like))
         ..add(Variable<String>(like))
         ..add(Variable<String>(like));
@@ -1024,6 +1058,8 @@ SELECT COALESCE(SUM(CASE WHEN re.result = 2 THEN 1 ELSE 0 END), 0) AS correct,
   /// One page of the word-management list (user words, not the dictionary).
   Future<List<ManagedWord>> managedWords({
     String? bookId,
+    bool favoritesOnly = false,
+    String? tagId,
     String search = '',
     ManagedStageFilter stage = ManagedStageFilter.all,
     ManagedSort sort = ManagedSort.addedDesc,
@@ -1034,6 +1070,8 @@ SELECT COALESCE(SUM(CASE WHEN re.result = 2 THEN 1 ELSE 0 END), 0) AS correct,
     final String where = _managedWhere(
       search: search,
       bookId: bookId,
+      favoritesOnly: favoritesOnly,
+      tagId: tagId,
       stage: stage,
       variables: variables,
     );
@@ -1056,6 +1094,9 @@ SELECT $wordColumnsWithState,
             db.words,
             db.learningStates,
             db.wordBookEntries,
+            db.wordFavorites,
+            db.userTags,
+            db.wordTags,
           },
         )
         .get();
@@ -1092,6 +1133,8 @@ SELECT $wordColumnsWithState,
   /// IDs only: selecting a filtered library never loads definitions or event history.
   Future<List<String>> managedWordIds({
     String? bookId,
+    bool favoritesOnly = false,
+    String? tagId,
     String search = '',
     ManagedStageFilter stage = ManagedStageFilter.all,
   }) async {
@@ -1099,6 +1142,8 @@ SELECT $wordColumnsWithState,
     final where = _managedWhere(
       search: search,
       bookId: bookId,
+      favoritesOnly: favoritesOnly,
+      tagId: tagId,
       stage: stage,
       variables: variables,
     );
@@ -1106,7 +1151,14 @@ SELECT $wordColumnsWithState,
         .customSelect(
           'SELECT w.id FROM words w $_stateJoin WHERE $where ORDER BY w.id',
           variables: variables,
-          readsFrom: {db.words, db.learningStates, db.wordBookEntries},
+          readsFrom: {
+            db.words,
+            db.learningStates,
+            db.wordBookEntries,
+            db.wordFavorites,
+            db.userTags,
+            db.wordTags,
+          },
         )
         .get();
     return rows.map((row) => row.read<String>('id')).toList(growable: false);
@@ -1114,6 +1166,8 @@ SELECT $wordColumnsWithState,
 
   Future<int> managedCount({
     String? bookId,
+    bool favoritesOnly = false,
+    String? tagId,
     String search = '',
     ManagedStageFilter stage = ManagedStageFilter.all,
   }) async {
@@ -1121,6 +1175,8 @@ SELECT $wordColumnsWithState,
     final String where = _managedWhere(
       search: search,
       bookId: bookId,
+      favoritesOnly: favoritesOnly,
+      tagId: tagId,
       stage: stage,
       variables: variables,
     );
@@ -1136,6 +1192,9 @@ SELECT COUNT(*) AS c
             db.words,
             db.learningStates,
             db.wordBookEntries,
+            db.wordFavorites,
+            db.userTags,
+            db.wordTags,
           },
         )
         .getSingle();

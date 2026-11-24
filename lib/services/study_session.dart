@@ -205,7 +205,17 @@ class StudySession extends ChangeNotifier {
               : await (_study.db.select(
                   _study.db.wordBooks,
                 )..where((t) => t.id.equals(_bookId!))).getSingleOrNull();
+          final favoriteEligible =
+              _special != SpecialReview.favorites ||
+              (await (_study.db.select(_study.db.wordFavorites)..where(
+                        (t) =>
+                            t.wordId.equals(card.word.id) &
+                            t.value.equals(true),
+                      ))
+                      .getSingleOrNull()) !=
+                  null;
           if (word == null ||
+              !favoriteEligible ||
               !link ||
               (_bookId != null && (book == null || book.deletedAt != null))) {
             _answeredCardIds.remove(cardId);
@@ -362,6 +372,17 @@ class StudySession extends ChangeNotifier {
       if (row == null) {
         changed = true;
         continue;
+      }
+      if (_special == SpecialReview.favorites) {
+        final favorite =
+            await (_study.db.select(_study.db.wordFavorites)..where(
+                  (t) => t.wordId.equals(row.word.id) & t.value.equals(true),
+                ))
+                .getSingleOrNull();
+        if (favorite == null) {
+          changed = true;
+          continue;
+        }
       }
       if (_bookId != null) {
         final link =

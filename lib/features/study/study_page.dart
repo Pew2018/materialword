@@ -10,6 +10,7 @@ import '../../core/models/study_models.dart';
 import '../../services/study_session.dart';
 import '../../services/tts_service.dart';
 import '../../shared/widgets/common.dart';
+import '../word_management/word_metadata_widgets.dart';
 
 /// Learning / review screen.
 ///
@@ -189,6 +190,10 @@ class _StudyPageState extends ConsumerState<StudyPage> {
               ),
             ),
             actions: <Widget>[
+              if (_session.current != null &&
+                  !_session.isLoading &&
+                  !_session.isFinished)
+                FavoriteButton(wordId: _session.current!.word.id),
               if (_session.current != null && !_session.isLoading)
                 IconButton(
                   tooltip: '跳过（不计入作答）',

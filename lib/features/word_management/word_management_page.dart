@@ -14,6 +14,8 @@ import '../../core/time_utils.dart';
 import '../../shared/widgets/common.dart';
 import 'quick_add_page.dart';
 import 'word_detail_page.dart';
+import 'word_metadata_widgets.dart';
+import '../study/study_page.dart';
 
 const Uuid _uuid = Uuid();
 
@@ -36,6 +38,9 @@ class WordManagementPage extends ConsumerStatefulWidget {
 class _WordManagementPageState extends ConsumerState<WordManagementPage> {
   final TextEditingController _search = TextEditingController();
   String? _bookId;
+  String? _tagId;
+  bool _favoritesOnly = false;
+  List<UserTag> _tags = const [];
   ManagedStageFilter _stage = ManagedStageFilter.all;
   ManagedSort _sort = ManagedSort.addedDesc;
   List<WordBook> _books = const <WordBook>[];
@@ -69,6 +74,9 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
           'learning_states',
           'word_book_entries',
           'word_books',
+          'word_favorites',
+          'user_tags',
+          'word_tags',
         }.contains(u.table),
       )) {
         return;
@@ -96,8 +104,11 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
   Future<void> _bootstrap() async {
     try {
       final books = await ref.read(wordBookRepositoryProvider).listBooks();
+      final tags = await ref.read(wordMetadataRepositoryProvider).listTags();
       if (!mounted) return;
       setState(() {
+        _tags = tags;
+        if (_tagId != null && !tags.any((t) => t.id == _tagId)) _tagId = null;
         _books = books;
         if (_bookId != null && !books.any((b) => b.id == _bookId)) {
           _bookId = null;
@@ -120,6 +131,7 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
     final int generation = ++_generation;
     final String search = _search.text;
     final String? bookId = _bookId;
+    final favoritesOnly = _favoritesOnly, tagId = _tagId;
     final ManagedStageFilter stage = _stage;
     final ManagedSort sort = _sort;
     setState(() {
@@ -134,6 +146,8 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
         () async => (
           await repository.managedWords(
             bookId: bookId,
+            favoritesOnly: favoritesOnly,
+            tagId: tagId,
             search: search,
             stage: stage,
             sort: sort,
@@ -141,6 +155,8 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
           ),
           await repository.managedCount(
             bookId: bookId,
+            favoritesOnly: favoritesOnly,
+            tagId: tagId,
             search: search,
             stage: stage,
           ),
@@ -185,6 +201,8 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
           .read(studyRepositoryProvider)
           .managedWords(
             bookId: _bookId,
+            favoritesOnly: _favoritesOnly,
+            tagId: _tagId,
             search: _search.text,
             stage: _stage,
             sort: _sort,
@@ -248,7 +266,13 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
     try {
       final ids = await ref
           .read(studyRepositoryProvider)
-          .managedWordIds(bookId: _bookId, search: _search.text, stage: _stage);
+          .managedWordIds(
+            bookId: _bookId,
+            search: _search.text,
+            stage: _stage,
+            favoritesOnly: _favoritesOnly,
+            tagId: _tagId,
+          );
       if (!mounted || generation != _generation) return;
       setState(() {
         _selected
@@ -260,6 +284,26 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  Future<void> _batchMetadata(String action) async {
+    final ids = _selected.toList(growable: false);
+    if (_busy || ids.isEmpty) return;
+    String? tagId;
+    if (action.startsWith('tag-')) {
+      tagId = await pickUserTag(context, ref);
+      if (tagId == null || !mounted) return;
+    }
+    await _runBatch(() async {
+      final repo = ref.read(wordMetadataRepositoryProvider),
+          now = ref.read(clockProvider).now();
+      if (tagId != null) {
+        await repo.setTag(ids, tagId, action == 'tag-add', now: now);
+      } else {
+        await repo.setFavorite(ids, action == 'favorite-add', now: now);
+      }
+      return '已更新 ${ids.length} 个单词';
+    });
   }
 
   Future<String> _deviceId() => ref.read(settingsRepositoryProvider).deviceId();
@@ -406,6 +450,25 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
         title: Text('词汇管理${_total > 0 ? '（$_total）' : ''}'),
         actions: <Widget>[
           IconButton(
+            tooltip: '收藏词专项学习',
+            icon: const Icon(Icons.star_border),
+            onPressed: () => Navigator.push<void>(
+              context,
+              MaterialPageRoute(
+                builder: (_) =>
+                    const StudyPage(special: SpecialReview.favorites),
+              ),
+            ),
+          ),
+          IconButton(
+            tooltip: '标签管理',
+            icon: const Icon(Icons.label_outline),
+            onPressed: () => Navigator.push<void>(
+              context,
+              MaterialPageRoute(builder: (_) => const TagsPage()),
+            ),
+          ),
+          IconButton(
             tooltip: '刷新',
             icon: const Icon(Icons.refresh),
             onPressed: _load,
@@ -498,6 +561,35 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
               scrollDirection: Axis.horizontal,
               child: Row(
                 children: <Widget>[
+                  FilterChip(
+                    label: const Text('仅收藏'),
+                    selected: _favoritesOnly,
+                    onSelected: (value) {
+                      setState(() => _favoritesOnly = value);
+                      _load();
+                    },
+                  ),
+                  AppSpacing.w8,
+                  _DropdownChip<String?>(
+                    label: '标签',
+                    value: _tagId,
+                    items: [
+                      const DropdownMenuItem<String?>(
+                        value: null,
+                        child: Text('全部标签'),
+                      ),
+                      for (final tag in _tags)
+                        DropdownMenuItem<String?>(
+                          value: tag.id,
+                          child: Text(tag.name),
+                        ),
+                    ],
+                    onChanged: (value) {
+                      setState(() => _tagId = value);
+                      _load();
+                    },
+                  ),
+                  AppSpacing.w8,
                   _DropdownChip<String?>(
                     label: '词书',
                     value: _bookId,
@@ -587,6 +679,18 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
               '已选 ${_selected.length}',
               style: theme.textTheme.bodyMedium,
             ),
+          ),
+          PopupMenuButton<String>(
+            tooltip: '收藏与标签批量操作',
+            enabled: !_busy,
+            icon: const Icon(Icons.label_outline),
+            onSelected: _batchMetadata,
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'favorite-add', child: Text('收藏所选')),
+              PopupMenuItem(value: 'favorite-remove', child: Text('取消收藏所选')),
+              PopupMenuItem(value: 'tag-add', child: Text('添加标签')),
+              PopupMenuItem(value: 'tag-remove', child: Text('移除标签')),
+            ],
           ),
           IconButton(
             tooltip: '加入词书',

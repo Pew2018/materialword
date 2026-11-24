@@ -11,6 +11,7 @@ import '../core/repositories/settings_repository.dart';
 import '../core/repositories/study_repository.dart';
 import '../core/repositories/word_repository.dart';
 import '../core/repositories/wordbook_repository.dart';
+import '../core/repositories/word_metadata_repository.dart';
 import '../core/time_utils.dart';
 import '../services/backup_service.dart';
 import '../services/dictionary_service.dart';
@@ -42,6 +43,10 @@ final Provider<WordBookRepository> wordBookRepositoryProvider =
     Provider<WordBookRepository>(
       (Ref ref) => WordBookRepository(ref.watch(databaseProvider)),
     );
+
+final wordMetadataRepositoryProvider = Provider<WordMetadataRepository>(
+  (ref) => WordMetadataRepository(ref.watch(databaseProvider)),
+);
 
 final Provider<StudyRepository> studyRepositoryProvider =
     Provider<StudyRepository>(

@@ -9,6 +9,7 @@ import '../../core/models/enums.dart';
 import '../../core/text/dictionary_text.dart';
 import '../../core/time_utils.dart';
 import '../../shared/widgets/common.dart';
+import 'word_metadata_widgets.dart';
 
 /// Edit one word: meaning, phonetic, examples, personal note — plus its current
 /// learning state and raw answer history.
@@ -209,6 +210,7 @@ class _WordDetailPageState extends ConsumerState<WordDetailPage> {
       appBar: AppBar(
         title: Text(_wordRow!.word),
         actions: <Widget>[
+          FavoriteButton(wordId: widget.wordId),
           PopupMenuButton<String>(
             onSelected: (String value) async {
               switch (value) {
@@ -294,6 +296,7 @@ class _WordDetailPageState extends ConsumerState<WordDetailPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
+                WordTagsEditor(wordId: widget.wordId),
                 _StateCard(word: _wordRow!, state: _state),
                 AppSpacing.h16,
                 SectionCard(
