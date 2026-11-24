@@ -476,39 +476,18 @@ class _AccentColorSection extends StatelessWidget {
   }
 
   Future<void> _pickCustom(BuildContext context) async {
-    final TextEditingController controller = TextEditingController(
-      text: hexOf(current),
+    final String? value = await promptForText(
+      context,
+      title: '自定义强调色',
+      label: 'HEX 颜色',
+      initialValue: hexOf(current),
+      confirmLabel: '应用',
+      inputFormatters: [
+        FilteringTextInputFormatter.allow(RegExp(r'[#0-9a-fA-F]')),
+        LengthLimitingTextInputFormatter(7),
+      ],
     );
-    final String? value = await showDialog<String>(
-      context: context,
-      builder: (BuildContext context) => AlertDialog(
-        title: const Text('自定义强调色'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(
-            labelText: 'HEX 颜色',
-            hintText: '#1565C0',
-          ),
-          inputFormatters: <TextInputFormatter>[
-            FilteringTextInputFormatter.allow(RegExp(r'[#0-9a-fA-F]')),
-            LengthLimitingTextInputFormatter(7),
-          ],
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(controller.text),
-            child: const Text('应用'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    if (value == null) return;
+    if (value == null || !context.mounted) return;
     final String raw = value.trim().replaceAll('#', '');
     if (!RegExp(r'^[0-9a-fA-F]{6}$').hasMatch(raw)) {
       if (context.mounted) {

@@ -192,7 +192,20 @@ void main() {
       await tester.tap(find.byKey(const ValueKey<String>('nav-设置')));
       await settle(tester);
 
-      await tester.tap(find.text('恢复默认'));
+      await env.settings.save(accentColor: '#00796B');
+      await settle(tester);
+      await tester.ensureVisible(find.text('自定义 HEX'));
+      await settle(tester);
+      await tester.tap(find.text('自定义 HEX').hitTestable());
+      await settle(tester);
+      await tester.enterText(find.byType(TextField).last, '#6A1B9A');
+      await tester.tap(find.text('应用'));
+      await settle(tester);
+      expect((await env.settings.load()).accentColor, '#6A1B9A');
+      expect(tester.takeException(), isNull);
+      await tester.ensureVisible(find.text('恢复默认'));
+      await settle(tester);
+      await tester.tap(find.text('恢复默认').hitTestable());
       await settle(tester);
       expect((await env.settings.load()).accentColor, '#1565C0');
       await env.dispose();

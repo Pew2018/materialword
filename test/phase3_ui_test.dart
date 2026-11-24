@@ -9,6 +9,8 @@ import 'package:materialword/app/app.dart';
 import 'package:materialword/app/navigation.dart';
 import 'package:materialword/app/providers.dart';
 import 'package:materialword/app/theme.dart';
+import 'package:materialword/core/models/enums.dart';
+import 'package:materialword/features/study/study_page.dart';
 import 'package:materialword/shared/widgets/common.dart';
 
 import 'helpers/test_dictionary.dart';
@@ -201,4 +203,45 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.byType(TextField), findsNothing);
   });
+  testWidgets(
+    'UI dashboard resumes the persisted card and skip does not fabricate an answer',
+    (tester) async {
+      final env = await TestEnv.create();
+      await env.seedBook(words: ['alpha', 'beta', 'gamma']);
+      final session = env.session();
+      await session.load(newLimit: 3, reviewLimit: 10);
+      session.reveal();
+      await session.submit(AnswerResult.unknown);
+      final current = session.current!.word.word;
+      session.dispose();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            databaseProvider.overrideWithValue(env.db),
+            clockProvider.overrideWithValue(env.clock),
+          ],
+          child: const MaterialWordApp(),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.tap(find.text('继续学习'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.byType(StudyPage), findsOneWidget);
+      expect(find.text(current), findsWidgets);
+      expect(await env.db.select(env.db.reviewEvents).get(), hasLength(1));
+      await tester.tap(find.byTooltip('跳过（不计入作答）'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(await env.db.select(env.db.reviewEvents).get(), hasLength(1));
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(milliseconds: 1));
+      await tester.pump(const Duration(milliseconds: 1));
+      await env.dispose();
+    },
+  );
 }

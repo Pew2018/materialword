@@ -33,6 +33,11 @@ class DashboardPage extends ConsumerWidget {
       bookSummariesProvider,
     );
     final AsyncValue<StudySettingsRow> settings = ref.watch(settingsProvider);
+    final resume = ref.watch(pausedSessionProvider).value;
+    final canResume =
+        resume != null &&
+        (resume.bookId == null ||
+            (books.value?.any((b) => b.book.id == resume.bookId) ?? false));
     final TodayProgress? today = progress.value;
     final ThemeData theme = Theme.of(context);
 
@@ -64,6 +69,22 @@ class DashboardPage extends ConsumerWidget {
             },
             onManage: onOpenBookTab,
           ),
+          if (canResume)
+            SettingsTile(
+              leading: const Icon(Icons.play_circle_outline),
+              title: '继续学习',
+              subtitle: '已完成 ${resume.position} / ${resume.total} 项',
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push<void>(
+                MaterialPageRoute(
+                  builder: (_) => StudyPage(
+                    reviewOnly: resume.mode == StudyMode.reviewOnly,
+                    special: resume.special,
+                    bookIdOverride: resume.bookId,
+                  ),
+                ),
+              ),
+            ),
           if (today == null)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 48),

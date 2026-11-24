@@ -1,8 +1,12 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/database/app_database.dart';
 import '../core/models/study_models.dart';
+import '../core/models/enums.dart';
+import '../services/study_session.dart';
 import '../core/repositories/settings_repository.dart';
 import '../core/repositories/study_repository.dart';
 import '../core/repositories/word_repository.dart';
@@ -187,3 +191,50 @@ List<SyncProvider> buildSyncProviders(String localFilePath) => <SyncProvider>[
   GitHubSyncProvider.placeholder(),
   WebDavSyncProvider.placeholder(),
 ];
+
+/// Read only two small metadata rows, not vocabulary or review history.
+final pausedSessionProvider = StreamProvider<PausedStudySession?>((ref) {
+  final db = ref.watch(databaseProvider);
+  final clock = ref.watch(clockProvider);
+  return (db.select(db.appMeta)..where(
+        (t) => t.key.isIn([
+          StudySession.persistenceKey,
+          SettingsRepository.sharedVersionKey,
+        ]),
+      ))
+      .watch()
+      .map((rows) {
+        final values = {for (final row in rows) row.key: row.value};
+        final raw = values[StudySession.persistenceKey];
+        if (raw == null) return null;
+        try {
+          final data = jsonDecode(raw) as Map<String, dynamic>;
+          final now = clock.now().toLocal();
+          if (data['version'] != 1 ||
+              data['day'] != '${now.year}-${now.month}-${now.day}') {
+            return null;
+          }
+          final current = jsonDecode(
+            values[SettingsRepository.sharedVersionKey] ??
+                '{"counter":0,"deviceId":""}',
+          ) as Map;
+          final planned = jsonDecode(data['planVersion'] as String) as Map;
+          if (current['counter'] != planned['counter'] ||
+              current['deviceId'] != planned['deviceId']) {
+            return null;
+          }
+          final cursor = data['cursor'] as int,
+              total = (data['queue'] as List).length;
+          if (cursor < 0 || cursor >= total) return null;
+          return PausedStudySession(
+            bookId: data['bookId'] as String?,
+            mode: StudyMode.fromCode(data['mode'] as String),
+            special: SpecialReview.fromCode(data['special'] as String),
+            position: cursor,
+            total: total,
+          );
+        } catch (_) {
+          return null;
+        }
+      });
+});

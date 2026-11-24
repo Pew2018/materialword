@@ -189,6 +189,12 @@ class _StudyPageState extends ConsumerState<StudyPage> {
               ),
             ),
             actions: <Widget>[
+              if (_session.current != null && !_session.isLoading)
+                IconButton(
+                  tooltip: '跳过（不计入作答）',
+                  icon: const Icon(Icons.skip_next),
+                  onPressed: _session.isBusy ? null : _session.skip,
+                ),
               IconButton(
                 tooltip: '撤销上一作答',
                 onPressed: _session.canUndo ? _undo : null,

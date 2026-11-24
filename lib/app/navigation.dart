@@ -191,6 +191,7 @@ class _AppShellState extends ConsumerState<AppShell>
   void _refreshDailyData() {
     if (!mounted) return;
     ref.invalidate(todayProgressProvider);
+    ref.invalidate(pausedSessionProvider);
     ref.invalidate(statisticsProvider);
     ref.invalidate(bookSummariesProvider);
   }

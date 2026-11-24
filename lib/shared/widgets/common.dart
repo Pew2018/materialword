@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show TextInputFormatter;
 
 import '../../app/theme.dart';
 
@@ -569,6 +570,7 @@ Future<String?> promptForText(
   required String label,
   String initialValue = '',
   String confirmLabel = '确定',
+  List<TextInputFormatter>? inputFormatters,
 }) async {
   return showDialog<String>(
     context: context,
@@ -577,6 +579,7 @@ Future<String?> promptForText(
       label: label,
       initialValue: initialValue,
       confirmLabel: confirmLabel,
+      inputFormatters: inputFormatters,
     ),
   );
 }
@@ -587,8 +590,10 @@ class _TextPrompt extends StatefulWidget {
     required this.label,
     required this.initialValue,
     required this.confirmLabel,
+    this.inputFormatters,
   });
   final String title, label, initialValue, confirmLabel;
+  final List<TextInputFormatter>? inputFormatters;
   @override
   State<_TextPrompt> createState() => _TextPromptState();
 }
@@ -609,6 +614,7 @@ class _TextPromptState extends State<_TextPrompt> {
     scrollable: true,
     content: TextField(
       controller: _controller,
+      inputFormatters: widget.inputFormatters,
       autofocus: true,
       textInputAction: TextInputAction.done,
       decoration: InputDecoration(labelText: widget.label),
