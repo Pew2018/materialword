@@ -73,8 +73,9 @@ void main() {
           );
         }
         if (request.method == 'GET' && path.contains('/contents/')) {
-          if (remoteJson.isEmpty)
+          if (remoteJson.isEmpty) {
             return http.Response('{"message":"Not Found"}', 404);
+          }
           return http.Response(
             jsonEncode(<String, Object?>{
               'sha': remoteSha,

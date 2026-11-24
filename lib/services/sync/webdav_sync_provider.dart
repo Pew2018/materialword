@@ -103,13 +103,19 @@ class WebDavSyncProvider implements SyncProvider {
       _directoryUri.replace(path: '${_directoryUri.path}$fileName');
 
   Future<({String? username, String? password})> _auth() async {
-    final String? username =
-        _usernameOverride ??
-        await _credentials.read(CredentialKeys.webdavUsername);
-    final String? password =
-        _passwordOverride ??
-        await _credentials.read(CredentialKeys.webdavPassword);
-    return (username: username, password: password);
+    try {
+      final String? username =
+          _usernameOverride ??
+          await _credentials.read(CredentialKeys.webdavUsername);
+      final String? password =
+          _passwordOverride ??
+          await _credentials.read(CredentialKeys.webdavPassword);
+      return (username: username, password: password);
+    } on CredentialStoreUnavailable catch (e) {
+      // Same as GitHub: the Keychain refused, so ask for the password again
+      // instead of sending an unauthenticated request.
+      throw SyncException('${e.reason}，请到「数据同步」页重新输入 WebDAV 账号密码。');
+    }
   }
 
   Future<Map<String, String>> _headers({

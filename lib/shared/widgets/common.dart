@@ -436,6 +436,40 @@ class ErrorBanner extends StatelessWidget {
   }
 }
 
+/// Neutral warning strip: something the user should know, but nothing failed.
+/// Used e.g. when the Keychain refuses access and a secret must be re-entered.
+class NoticeBanner extends StatelessWidget {
+  const NoticeBanner({super.key, required this.message, this.icon});
+
+  final String message;
+  final IconData? icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Container(
+      margin: const EdgeInsets.only(bottom: AppDimens.compactGutter),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.hazy.withValues(alpha: 0.08),
+        border: Border.all(color: AppColors.hazy.withValues(alpha: 0.4)),
+        borderRadius: BorderRadius.circular(AppDimens.radius),
+      ),
+      child: Row(
+        children: <Widget>[
+          Icon(
+            icon ?? Icons.info_outline,
+            size: AppDimens.iconSizeSmall,
+            color: AppColors.hazy,
+          ),
+          AppSpacing.w8,
+          Expanded(child: Text(message, style: theme.textTheme.bodySmall)),
+        ],
+      ),
+    );
+  }
+}
+
 /// Keyboard shortcut hint that only desktop builds show.
 class ShortcutHint extends StatelessWidget {
   const ShortcutHint(this.text, {super.key, this.alignment = Alignment.center});

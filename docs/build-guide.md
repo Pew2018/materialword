@@ -33,8 +33,11 @@ flutter build ios --release --no-codesign
 
 - **Android**：`AndroidManifest.xml` 声明 `INTERNET`；不发明文 HTTP 请求。
   Release 仍使用 debug 签名以保证既有用户可覆盖安装。**签名身份未改变**。
-- **macOS**：沙箱 + `com.apple.security.network.client` + 用户选择文件读写 +
-  `keychain-access-groups`（flutter_secure_storage 存 Token）。
+- **macOS**：沙箱 + `com.apple.security.network.client` + 用户选择文件读写。
+  **不再声明 `keychain-access-groups`**：那是受限 entitlement，只有带 provisioning
+  profile 的签名才能生效；本项目是 ad-hoc 签名，带上它会让 launchd 直接拒绝
+  spawn 应用（Finder 只会显示“应用程序无法打开”）。凭据改走传统 login keychain
+  （`usesDataProtectionKeychain: false`），不需要任何 entitlement。
 - **iOS**：HTTPS 默认允许；Keychain 由 `flutter_secure_storage` 管理；
   未配置签名，CI 只做 `--no-codesign` 编译验证。
 - 没有为了联网而放宽 TLS 校验；WebDAV 只接受 HTTPS，跨域重定向拒绝携带凭据。
@@ -50,8 +53,36 @@ flutter build ios --release --no-codesign
 
 CI 成功后从对应 Actions Run 的 Artifacts 下载：
 - `android-arm64-apk`：`app-arm64-v8a-release.apk`
-- `macos-app`：Release `.app`（打包保留符号链接与权限）
+- `macos-app`：Release `.app`（`ditto` 打包，保留符号链接与权限）+
+  `build-info-macos.txt`、`verify-*.txt`
 - `ios-unsigned-build`：编译验证产物（不可安装）
+
+## macOS 产物验收
+
+`flutter build macos --release` 成功**不代表**应用能启动。`macos` job 在打包前后各跑
+一次 `tool/verify_macos_bundle.sh`：
+
+```bash
+# 本地复验一个已构建的产物
+tool/verify_macos_bundle.sh --app build/macos/Build/Products/Release/MaterialWord.app --launch
+tool/verify_macos_bundle.sh --zip dist/MaterialWord-<sha>-macos.zip
+```
+
+检查项：Bundle 结构、Info.plist、`CFBundleExecutable` 与执行权限、Mach-O 架构、
+Framework 与 `@rpath` 依赖、符号链接、`codesign --verify --deep --strict`、
+受限 entitlement、ZIP 解压后的签名与权限，以及**真实启动**。
+
+真实启动通过 LaunchServices（`open`，与 Finder 双击同一路径）发起，要求进程存活、
+数据库被创建（说明越过了 `main()` 并跑完首个页面）、且没有新的崩溃报告。
+沙箱应用不能用 shell 直接 exec 主程序——那会让 `libsystem_secinit` 直接 trap，
+与产物质量无关。
+
+GitHub 的 macOS runner 如果没有可用的图形会话，启动项会记为
+`not-executed-no-gui-session` 并写进 `build-info-macos.txt`；**不会**计为通过。
+此时需在真机按上面的命令补做一次。
+
+未公证的 ad-hoc 产物被 Gatekeeper 拒绝属于预期的分发限制，脚本会单独标注，
+与“签名本身损坏”区分开。
 
 本地测试用词典桩见 `test/helpers/test_dictionary.dart`，不依赖 6 MB 内置数据库资源。
 词典资产旁必须有 `assets/dictionary/ecdict_core.db.meta.json`（由

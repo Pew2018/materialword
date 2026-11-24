@@ -105,8 +105,16 @@ class GitHubSyncProvider implements SyncProvider {
     if (_tokenOverride != null && _tokenOverride.isNotEmpty) {
       return _tokenOverride;
     }
-    final String? stored = await _credentials.read(CredentialKeys.githubToken);
-    return (stored == null || stored.trim().isEmpty) ? null : stored.trim();
+    try {
+      final String? stored = await _credentials.read(
+        CredentialKeys.githubToken,
+      );
+      return (stored == null || stored.trim().isEmpty) ? null : stored.trim();
+    } on CredentialStoreUnavailable catch (e) {
+      // Turn a Keychain refusal into an actionable message instead of a
+      // mysterious 401, and never fall back to a plain-text token.
+      throw SyncException('${e.reason}，请到「数据同步」页重新输入 GitHub Token。');
+    }
   }
 
   Map<String, String> _headers(String token) => <String, String>{
@@ -236,7 +244,7 @@ class GitHubSyncProvider implements SyncProvider {
 
       return SyncTestResult(
         ok: true,
-        message: '已连接 ${owner}/${repo}（$branch）',
+        message: '已连接 $owner/$repo（$branch）',
         details: details,
       );
     } on SyncException catch (e) {
@@ -342,7 +350,7 @@ class GitHubSyncProvider implements SyncProvider {
           node['content'] as Map<String, dynamic>?;
       return SyncUploadResult(
         ok: true,
-        message: '已写入 ${owner}/${repo}/${path}',
+        message: '已写入 $owner/$repo/$path',
         revision: content?['sha'] as String?,
       );
     }

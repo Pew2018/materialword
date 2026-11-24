@@ -1,2 +1,8 @@
 #include "../../Flutter/Flutter-Release.xcconfig"
 #include "Warnings.xcconfig"
+
+// Do not let Xcode inject the development base entitlements
+// (`com.apple.security.get-task-allow`) into a Release bundle. The project is
+// signed ad-hoc (`CODE_SIGN_IDENTITY = "-"`), and a shipped app must not be
+// debuggable by anyone who attaches to it. Ad-hoc signing is unaffected.
+CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO

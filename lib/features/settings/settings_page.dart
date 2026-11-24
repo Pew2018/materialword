@@ -511,8 +511,9 @@ class _AccentColorSection extends StatelessWidget {
     if (value == null) return;
     final String raw = value.trim().replaceAll('#', '');
     if (!RegExp(r'^[0-9a-fA-F]{6}$').hasMatch(raw)) {
-      if (context.mounted)
+      if (context.mounted) {
         showMessage(context, '请输入 6 位 HEX 颜色，例如 #1565C0', error: true);
+      }
       return;
     }
     onPick('#${raw.toUpperCase()}');

@@ -420,9 +420,9 @@ class BackupService {
           skipped++;
           continue;
         }
-        final String? bookId = bookIdMap[remoteBookId] ?? remoteBookId;
+        final String bookId = bookIdMap[remoteBookId] ?? remoteBookId;
         final String? wordId = wordIdMap[remoteWordId];
-        if (bookId == null || wordId == null) {
+        if (wordId == null) {
           skipped++;
           continue;
         }

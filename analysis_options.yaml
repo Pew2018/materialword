@@ -38,5 +38,13 @@ linter:
     # avoid_print: false  # Uncomment to disable the `avoid_print` rule
     # prefer_single_quotes: true  # Uncomment to enable the `prefer_single_quotes` rule
 
+    # The sync providers and the TTS service keep their collaborators in
+    # private fields (`_client`, `_tokenOverride`, `_engine`) while exposing
+    # readable public named parameters (`client:`, `tokenOverride:`,
+    # `engine:`). The lint's suggested fix — `this._client` — would rename the
+    # public parameter to `_client` and break every call site, so it is a false
+    # positive for this pattern.
+    prefer_initializing_formals: false
+
 # Additional information about this file can be found at
 # https://dart.dev/guides/language/analysis-options

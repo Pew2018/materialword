@@ -10,10 +10,22 @@
 	<!-- HTTPS URL import of word lists. -->
 	<key>com.apple.security.network.client</key>
 	<true/>
-	<!-- flutter_secure_storage stores sync tokens in the user Keychain. -->
-	<key>keychain-access-groups</key>
-	<array>
-		<string>$(AppIdentifierPrefix)com.pew2018.materialword</string>
-	</array>
+	<!--
+	  NOTE: `keychain-access-groups` is deliberately absent.
+
+	  It is a *restricted* entitlement: macOS only honours it when the code
+	  signature is backed by a provisioning profile that authorises the group,
+	  i.e. a real Apple Developer team. MaterialWord ships as an ad-hoc signed,
+	  un-notarised personal build, so the AppIdentifierPrefix build setting had
+	  no team value to expand and the bundle carried a group nothing had signed
+	  for. launchd then refused to spawn the app ("Launchd job spawn failed",
+	  errno 163) and Finder reported "应用程序 MaterialWord.app 无法打开".
+
+	  The Keychain keeps working without it: flutter_secure_storage is
+	  configured with `usesDataProtectionKeychain: false`, so it uses the
+	  classic file based login keychain, whose implicit access group is the
+	  app's own code signature. See lib/services/sync/credential_store.dart
+	  and tool/verify_macos_bundle.sh (MAC01).
+	-->
 </dict>
 </plist>

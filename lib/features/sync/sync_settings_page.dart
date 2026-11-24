@@ -60,6 +60,11 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
   bool _allowSecretEdit = false;
   String? _status;
   String? _error;
+
+  /// Shown when the Keychain exists but could not be read (re-signed build, new
+  /// Keychain class, locked keychain). The user is asked to type the secret
+  /// again; nothing is ever stored in plain text as a fallback.
+  String? _credentialNotice;
   DateTime? _lastSyncAt;
   String? _lastResult;
   bool? _pendingChanges;
@@ -86,10 +91,20 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
     final DateTime? lastAt = await settings.lastSyncAt();
     final String? lastResult = await settings.lastSyncResult();
     final CredentialStore credentials = ref.read(credentialStoreProvider);
-    final String? token = await credentials.read(CredentialKeys.githubToken);
-    final String? user = await credentials.read(CredentialKeys.webdavUsername);
-    final bool hasPassword =
-        (await credentials.read(CredentialKeys.webdavPassword)) != null;
+    String? token;
+    String? user;
+    bool hasPassword = false;
+    String? credentialNotice;
+    try {
+      token = await credentials.read(CredentialKeys.githubToken);
+      user = await credentials.read(CredentialKeys.webdavUsername);
+      hasPassword =
+          (await credentials.read(CredentialKeys.webdavPassword)) != null;
+    } on CredentialStoreUnavailable catch (e) {
+      // The stored secrets are unreadable, not absent: ask the user to type
+      // them again instead of pretending nothing was saved.
+      credentialNotice = '${e.reason}。已保存的同步凭据无法读取，请重新输入；离线学习不受影响。';
+    }
     bool pending = false;
     try {
       pending = await ref.read(syncCoordinatorProvider).hasLocalChanges();
@@ -99,6 +114,17 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
     if (!mounted) return;
     setState(() {
       _provider = (config?['provider'] as String?) ?? 'none';
+      // A provider is configured but its secret came back empty: the item was
+      // written under a different signature / Keychain class, or the Keychain
+      // denied access. Either way the fix is the same — type it again.
+      if (credentialNotice == null) {
+        if (_provider == 'github' && (token == null || token.isEmpty)) {
+          credentialNotice = '未读取到已保存的 GitHub Token，请重新输入后再同步。';
+        } else if (_provider == 'webdav' && !hasPassword) {
+          credentialNotice = '未读取到已保存的 WebDAV 密码，请重新输入后再同步。';
+        }
+      }
+      _credentialNotice = credentialNotice;
       _fields
         ..clear()
         ..addAll(<String, String>{
@@ -142,29 +168,45 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
     }
   }
 
-  Future<void> _saveConfig({bool persistSecrets = true}) async {
+  /// Persists the non-secret config, and the secrets when asked.
+  ///
+  /// Returns `false` when a secret could not be written to the Keychain. The
+  /// caller must not continue with a connection test in that case: the test
+  /// would silently run without the token the user just typed.
+  Future<bool> _saveConfig({bool persistSecrets = true}) async {
     final CredentialStore credentials = ref.read(credentialStoreProvider);
     if (persistSecrets) {
-      if (_provider == 'github' && _githubToken.text.trim().isNotEmpty) {
-        await credentials.write(
-          CredentialKeys.githubToken,
-          _githubToken.text.trim(),
-        );
-      }
-      if (_provider == 'webdav') {
-        if (_webdavUser.text.trim().isNotEmpty) {
+      try {
+        if (_provider == 'github' && _githubToken.text.trim().isNotEmpty) {
           await credentials.write(
-            CredentialKeys.webdavUsername,
-            _webdavUser.text.trim(),
+            CredentialKeys.githubToken,
+            _githubToken.text.trim(),
           );
         }
-        if (_webdavPassword.text.isNotEmpty &&
-            _webdavPassword.text != '••••••••') {
-          await credentials.write(
-            CredentialKeys.webdavPassword,
-            _webdavPassword.text,
-          );
+        if (_provider == 'webdav') {
+          if (_webdavUser.text.trim().isNotEmpty) {
+            await credentials.write(
+              CredentialKeys.webdavUsername,
+              _webdavUser.text.trim(),
+            );
+          }
+          if (_webdavPassword.text.isNotEmpty &&
+              _webdavPassword.text != '••••••••') {
+            await credentials.write(
+              CredentialKeys.webdavPassword,
+              _webdavPassword.text,
+            );
+          }
         }
+      } on CredentialStoreUnavailable catch (e) {
+        if (mounted) {
+          setState(() {
+            _credentialNotice =
+                '${e.reason}。凭据没有保存（也不会以明文保存），'
+                '请在系统钥匙串可用后重新输入；离线学习不受影响。';
+          });
+        }
+        return false;
       }
     }
 
@@ -191,6 +233,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
     await ref
         .read(settingsRepositoryProvider)
         .setSyncConfig(_provider == 'none' ? null : config);
+    return true;
   }
 
   Future<void> _runTest() async {
@@ -202,7 +245,10 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       _status = null;
       _testResult = null;
     });
-    await _saveConfig(persistSecrets: true);
+    if (!await _saveConfig(persistSecrets: true)) {
+      if (mounted) setState(() => _busy = false);
+      return;
+    }
     try {
       final SyncTestResult result = await provider.testConnection();
       if (!mounted) return;
@@ -253,7 +299,10 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       _status = null;
       _syncNotes = const <String>[];
     });
-    await _saveConfig();
+    if (!await _saveConfig()) {
+      if (mounted) setState(() => _busy = false);
+      return;
+    }
     try {
       final SyncReport report = await coordinator.sync(
         provider,
@@ -369,6 +418,11 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
               child: ErrorBanner(message: _error!),
+            ),
+          if (_credentialNotice != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: NoticeBanner(message: _credentialNotice!),
             ),
           if (_busy)
             const Padding(
@@ -619,8 +673,9 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
                 controller: _githubToken,
                 obscureText: true,
                 onChanged: (_) {
-                  if (!_allowSecretEdit)
+                  if (!_allowSecretEdit) {
                     setState(() => _allowSecretEdit = true);
+                  }
                 },
                 decoration: const InputDecoration(
                   labelText: 'Fine-grained Personal Access Token',
@@ -664,8 +719,9 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
                   helperText: '保存在系统安全存储；留空表示保持不变',
                 ),
                 onChanged: (_) {
-                  if (!_allowSecretEdit)
+                  if (!_allowSecretEdit) {
                     setState(() => _allowSecretEdit = true);
+                  }
                 },
               ),
             ),

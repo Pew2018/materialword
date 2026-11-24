@@ -109,7 +109,7 @@ jobs:
   macos:
     name: macOS .app
     runs-on: macos-latest
-    timeout-minutes: 40
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v7
 
@@ -123,23 +123,99 @@ jobs:
       - run: flutter pub get
       - run: dart run build_runner build
 
+      - name: Toolchain report
+        run: |
+          mkdir -p dist
+          {
+            echo "commit: $GITHUB_SHA"
+            echo "ref: $GITHUB_REF"
+            echo "run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            flutter --version | head -2
+            xcodebuild -version 2>/dev/null | head -2 || echo "xcode: $(xcode-select -p)"
+            echo "host: $(sw_vers -productVersion) $(uname -m)"
+          } > dist/build-info-macos.txt
+
       - name: Build macOS release
         run: flutter build macos --release
 
-      - name: Package .app (keeps symlinks and permissions)
+      # The build succeeding proves nothing about the bundle starting. These two
+      # steps are the regression gate for the Phase 2 launch failure: a
+      # restricted entitlement (`keychain-access-groups`) with no provisioning
+      # profile made launchd refuse to spawn the app.
+      - name: Verify bundle (structure, signature, entitlements)
+        env:
+          APP: build/macos/Build/Products/Release/MaterialWord.app
         run: |
-          mkdir -p dist
+          tool/verify_macos_bundle.sh --app "$APP" --expect-arch universal \
+            --report dist/build-info-macos.txt | tee dist/verify-bundle.txt
+
+      - name: Package .app (ditto keeps symlinks and permissions)
+        run: |
           APP="build/macos/Build/Products/Release/MaterialWord.app"
-          lipo -info "$APP/Contents/MacOS/MaterialWord" || true
           ditto -c -k --sequesterRsrc --keepParent "$APP" \
             "dist/MaterialWord-${GITHUB_SHA::7}-macos.zip"
+
+      # A user unzips with Archive Utility, which is ditto. Re-extract the
+      # artifact we are about to publish and check it all over again.
+      - name: Verify ZIP round trip
+        run: |
+          tool/verify_macos_bundle.sh \
+            --zip "dist/MaterialWord-${GITHUB_SHA::7}-macos.zip" \
+            --expect-arch universal | tee dist/verify-zip.txt
+
+      # MAC02/MAC03 live in the test suite but need a real bundle and zip, so
+      # they run here rather than in the Ubuntu validate job.
+      - name: macOS packaging regressions (MAC02 / MAC03)
+        run: flutter test test/macos_packaging_test.dart --reporter expanded
+
+      # The real acceptance test: start the app the way Finder does and require
+      # it to stay up and reach its first screen. A skipped run is reported as
+      # skipped — never as passed.
+      - name: Real launch verification
+        id: launch
+        continue-on-error: true
+        env:
+          APP: build/macos/Build/Products/Release/MaterialWord.app
+        run: |
+          tool/verify_macos_bundle.sh --app "$APP" --expect-arch universal \
+            --launch --launch-timeout 20 2>&1 | tee dist/verify-launch.txt
+
+      - name: Classify launch result
+        run: |
+          if grep -q 'RESULT: PASS' dist/verify-launch.txt; then
+            status="executed-pass"
+          elif grep -q 'no GUI session' dist/verify-launch.txt; then
+            # GitHub's macOS runners may have no usable WindowServer session.
+            # Record the limitation instead of pretending the test ran.
+            status="not-executed-no-gui-session"
+          else
+            echo "Launch verification failed:"
+            cat dist/verify-launch.txt
+            exit 1
+          fi
+          echo "LAUNCH_STATUS=$status" >> "$GITHUB_ENV"
+          {
+            echo "launch-verification: $status"
+            echo "--- verify-launch.txt ---"
+            cat dist/verify-launch.txt
+          } >> dist/build-info-macos.txt
+
+      - name: Finalise build info
+        run: |
+          APP="build/macos/Build/Products/Release/MaterialWord.app"
+          EXE="$APP/Contents/MacOS/MaterialWord"
           {
             echo "artifact: MaterialWord-${GITHUB_SHA::7}-macos.zip"
-            echo "commit: $GITHUB_SHA"
-            echo "flutter: ${FLUTTER_VERSION}"
-            echo "arch: $(lipo -archs "$APP/Contents/MacOS/MaterialWord" 2>/dev/null || echo unknown)"
-            echo "signing: ad-hoc / unsigned — not notarised, no Developer ID"
-          } > dist/build-info-macos.txt
+            echo "arch: $(lipo -archs "$EXE" 2>/dev/null || echo unknown)"
+            echo "min-macos: $(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$APP/Contents/Info.plist" 2>/dev/null || echo unknown)"
+            echo "bundle-id: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist")"
+            echo "signing: $(codesign -dv "$APP" 2>&1 | awk -F= '/^Signature/{print $2}') (no Developer ID, no provisioning profile)"
+            echo "notarised: no (ad-hoc signature; Gatekeeper asks the user to allow the first launch)"
+            echo "launch-verification: ${LAUNCH_STATUS:-unknown}"
+          } >> dist/build-info-macos.txt
+
+      - name: Show build info
+        run: cat dist/build-info-macos.txt
 
       - uses: actions/upload-artifact@v7
         with:
