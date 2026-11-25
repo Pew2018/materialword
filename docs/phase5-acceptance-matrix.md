@@ -124,3 +124,34 @@
 | macOS `.app` | ✔ | — | 见交付报告 | ✘ |
 | iOS 无签名构建 | ✔ | — | 见交付报告 | ✘ |
 | 三平台真机交互验收 | ✔ | — | — | ✘（外部阻塞） |
+
+## Phase 5.1 收口（UI 精修前功能冻结）
+
+图例同上；细节见 [phase5-1-verification.md](phase5-1-verification.md)。
+
+| 编号 | 要求 | 源 | 自 | 构 | 证据 |
+|---|---|---|---|---|---|
+| C-R01 | 释义冲突恢复后再次收敛 | ✔ | ✔ | — | CONFLICT-R01 |
+| C-R02 | 词条重命名冲突恢复保持身份 | ✔ | ✔ | — | CONFLICT-R02 |
+| C-R03 | `deletedAt` 丢弃"未删除" → 真正 revive | ✔ | ✔ | — | CONFLICT-R03 |
+| C-R04 | `deletedAt` 丢弃"已删除" → 真正 soft-delete | ✔ | ✔ | — | CONFLICT-R04 |
+| C-R05 | `examTags` 可恢复 | ✔ | ✔ | — | CONFLICT-R05 |
+| C-R06 | `bncRank` 可恢复 | ✔ | ✔ | — | CONFLICT-R06 |
+| C-R07 | `frqRank` 可恢复 | ✔ | ✔ | — | CONFLICT-R07 |
+| C-R08 | 词书名称可恢复 | ✔ | ✔ | — | CONFLICT-R08 |
+| C-R09 | 词书描述可恢复 | ✔ | ✔ | — | CONFLICT-R09 |
+| C-R10 | 词书 `deletedAt` 可恢复 | ✔ | ✔ | — | CONFLICT-R10 |
+| C-R11 | 不可恢复字段明确拒绝且保留记录 | ✔ | ✔ | — | CONFLICT-R11 |
+| A-R01 | 真实保存配置后前台探测启用 | ✔ | ✔ | — | AUTO-R01 / R01b / R01c |
+| A-R02 | 无本机修改时取回远端修改 | ✔ | ✔ | — | AUTO-R02 |
+| A-R03 | 远端删除被探测到并报 `remoteMissing` | ✔ | ✔ | — | AUTO-R03 |
+| A-R04 | 远端缺失后不自动重建 | ✔ | ✔ | — | AUTO-R04 |
+| A-R05 | 显式"重新创建远端"后恢复 | ✔ | ✔ | — | AUTO-R05 |
+| B-R01 | 快照恢复含共享设置与版本 | ✔ | ✔ | — | BAK-R01 |
+| B-R02 | 合并恢复不覆盖更新设置 | ✔ | ✔ | — | BAK-R02 |
+| B-R03 | `currentWordBookId` 悬空清理 | ✔ | ✔ | — | BAK-R03 / R03b |
+| B-R04 | `sprintPlan.bookId` 安全降级 | ✔ | ✔ | — | BAK-R04 |
+| B-R05 | 恢复中途失败设置与数据一起回滚 | ✔ | ✔ | — | BAK-R05 |
+| I-R01…R06 | metadata-only 导入写库、不覆盖、可传播、无变化不写 | ✔ | ✔ | — | INTAKE-R01…R06 |
+| 全量回归 | 472 通过 / 2 跳过 | ✔ | ✔ | ✔ | run 45577997099 |
+| 三平台构建 | Android / macOS / iOS | ✔ | — | ✔ | run 45577997099 |

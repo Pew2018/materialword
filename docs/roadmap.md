@@ -44,6 +44,28 @@
 - [x] `flutter analyze` 通过；`dart format` 已应用
 - [x] Android ARM64、macOS、iOS 构建由 GitHub Actions 执行（本机无 Xcode / Gradle 依赖下载受限）
 
+## Phase 5.1（核心数据功能收口 → 功能冻结）
+
+证据见 [phase5-1-verification.md](phase5-1-verification.md)。只对实际测试项标记通过。
+
+- [x] 冲突"一键恢复"修复：`deletedAt` 恢复方向、可恢复字段覆盖到全部
+      `wordFields`/`bookFields`、词书冲突真正写入冲突日志、失败不 dismiss；
+      CONFLICT-R01…R11。
+- [x] 前台远端探测真正接通真实配置（删除幽灵键 `autoOnForeground`）；
+      远端删除区分 `missing` 与"无法判断"，进入 `remoteMissing` 且不自动重传；
+      AUTO-R01…R05。
+- [x] 指定版本恢复强制恢复共享设置与版本；`currentWordBookId` 悬空清理；
+      `sprintPlan.bookId` 按既有语义安全降级；恢复中途失败时设置与数据一起回滚；
+      BAK-R01…R05。
+- [x] `WordIntakeService` 按整行语义 diff 决定写库，metadata-only 导入不再丢失；
+      INTAKE-R01…R06。
+- [x] 本地 472 项测试通过、2 项平台跳过；`flutter analyze` / 格式 / 时区重放 /
+      `git diff --check` 全部通过；Phase 5 性能基准无回退（批量合并 1.55x）。
+- [x] GitHub Actions run 45577997099：Validate、Android ARM64 APK、macOS `.app`、
+      iOS unsigned build 全部 success。
+- [ ] 最终 UI 精修（下一阶段，功能层已冻结）。
+- [ ] 真实 GitHub PAT / 真实 WebDAV / 三平台真机验收；发布签名与公证。
+
 ## Phase 5（已完成核心数据功能）
 
 范围与证据见 [phase5-audit.md](phase5-audit.md)、[phase5-verification.md](phase5-verification.md)

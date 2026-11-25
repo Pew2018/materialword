@@ -14,13 +14,13 @@
 
 | 项 | 值 |
 | --- | --- |
-| 版本 | 1.2.0 (Phase 5) |
+| 版本 | 1.2.0 (Phase 5 + 5.1 数据收口) |
 | Flutter | **3.50.1** stable（Dart 3.14.0） |
 | 关键依赖 | drift 2.35.4 / flutter_riverpod 3.5.0 / flutter_tts 4.2.5 / flutter_secure_storage 11.2.0 / http 1.6.0 / crypto 3.0.8 / wakelock_plus 1.8.2 |
 | 应用 ID | `com.pew2018.materialword` |
 | 数据库 schemaVersion | 3（用户库，Phase 5 未升级）、1（词典库） |
 | 备份协议 | schemaVersion 4（备份文件可含设备设置；同步数据集仍为 3；兼容导入 1/2/3） |
-| 自动化检查 | 442 项测试通过 / 2 项平台条件跳过；`flutter analyze` 无问题；格式检查通过 |
+| 自动化检查 | 472 项测试通过 / 2 项平台条件跳过；`flutter analyze` 无问题；格式检查通过 |
 
 ## 快速开始
 
@@ -37,6 +37,29 @@ flutter test
 或点「载入示例词书」先用 30 个词体验学习闭环。右上角「＋」或 `⌘N` 快速添加。
 
 原生平台完整构建仅在 GitHub Actions 运行；本机禁止安装 Xcode、Apple SDK、CLT 或新模拟器。
+
+## Phase 5.1：核心数据功能收口（UI 精修前功能冻结）
+
+在进入最终 UI 精修之前，对"新增 / 导入 / 导出 / 备份 / 同步"再做一次正确性收口，
+修掉四处"界面说成功、数据没变"的缺陷：
+
+- **冲突一键恢复**：`deletedAt` 的恢复方向原来是反的（丢弃值是"未删除"却执行删除）；
+  恢复逻辑只覆盖 9 个文本字段，`examTags` / `bncRank` / `frqRank` / `source` 与词书的
+  `sourceType` / `sourceUrl` / `deletedAt` 会被报"已恢复"却没有写库，词书冲突甚至没有被
+  记录。现在由 `SyncConflictResolutionService` 统一处理全部可冲突字段，未知字段明确拒绝，
+  写入走正常 repository（新的字段版本、下一轮同步传播），失败不移除记录。
+- **前台远端探测**：探测曾经依赖一个从未被写入的配置键 `autoOnForeground`，真实用户路径下
+  永远不执行；现在它是"启用自动同步后的内部机制"，不再有幽灵配置项。
+- **远端删除**：`remoteRevision()` 对"文件不存在"和"无法判断"都返回 null，导致远端被删除
+  被当成"没有变化"；现在区分 revision / missing / unsupported，远端缺失会进入
+  `remoteMissing`（不自动重传、需用户显式重建）。
+- **指定版本恢复**：快照恢复原本仍按版本规则处理共享设置，旧快照会输给当前设置，得到
+  "历史词条 + 当前每日目标"的混合状态；现在快照设置与共享版本强制恢复，
+  `currentWordBookId` 悬空引用在同一事务内清理。
+- **导入元数据**：只有 `examTags` / `bncRank` / `frqRank` 变化的导入曾整条丢失
+  （写库判断只看文本字段）；现在按整行 before/after 语义 diff 决定是否写库。
+
+验证与证据见 [Phase 5.1 验证记录](docs/phase5-1-verification.md)。
 
 ## Phase 5：核心数据功能闭环
 
@@ -132,13 +155,14 @@ lib/
                            备份管理器、TTS、常亮、诊断、同步
   shared/widgets/          经典 Material 2 列表与通用控件
 assets/dictionary/          ECDICT SQLite + 内容哈希元数据 + MIT 许可证
-test/                      442 项测试（Phase 1–5 回归 + 性能基准 + golden）
+test/                      472 项测试（Phase 1–5 回归 + 5.1 收口 + 性能基准 + golden）
 ```
 
 ## 文档
 
 - [架构](docs/architecture.md) · [同步协议](docs/sync-protocol.md) · [学习算法](docs/study-scheduler.md)
 - [构建指南](docs/build-guide.md) · [路线图](docs/roadmap.md)
+- Phase 5.1：[验证记录](docs/phase5-1-verification.md)（数据功能收口）
 - Phase 5：[审计](docs/phase5-audit.md) · [验证](docs/phase5-verification.md) · [验收矩阵](docs/phase5-acceptance-matrix.md) · [交付](docs/phase5-delivery.md) · [词书交换格式](docs/wordbook-exchange-format.md) · [备份与恢复](docs/backup-and-recovery.md)
 - Phase 4：[审计](docs/phase4-audit.md) · [验证](docs/phase4-verification.md) · [验收矩阵](docs/phase4-acceptance-matrix.md) · [交付](docs/phase4-delivery.md)
 
