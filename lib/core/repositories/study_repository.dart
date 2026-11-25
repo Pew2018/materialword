@@ -1103,10 +1103,14 @@ SELECT COALESCE(SUM(CASE WHEN re.result = 2 THEN 1 ELSE 0 END), 0) AS correct,
         )
         .getSingle();
 
-    // Real answers split by source: normal sessions, the explicit special
-    // queues, the practice drills and same-round repeats. Management events and
-    // undone answers are excluded by `_realAnswer`.
-    final List<QueryRow> modeRows = await db
+    // One pass over the last 30 days of real answers, grouped by source *and*
+    // local day: the breakdown, the 7/30 day trend and today's numbers all come
+    // out of this single scan instead of three.
+    final List<Variable<Object>> windowVariables = <Variable<Object>>[
+      Variable<String>(_dayKey(now.subtract(const Duration(days: 29)))),
+      ...variables,
+    ];
+    final List<QueryRow> windowRows = await db
         .customSelect(
           '''
 SELECT CASE
@@ -1116,13 +1120,16 @@ SELECT CASE
          ELSE 'normal'
        END AS bucket,
        re.mode AS mode,
-       COUNT(*) AS total
+       re.local_day AS day,
+       COUNT(*) AS total,
+       COALESCE(SUM(CASE WHEN re.result = 2 THEN 1 ELSE 0 END), 0) AS correct
   FROM words w
   JOIN review_events re ON re.word_id = w.id
  WHERE w.deleted_at IS NULL AND ${_realAnswer('re')}
+   AND re.local_day >= ?
  $bookClause
- GROUP BY bucket, re.mode''',
-          variables: variables,
+ GROUP BY bucket, re.mode, re.local_day''',
+          variables: windowVariables,
           readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
             db.words,
             db.reviewEvents,
@@ -1130,9 +1137,20 @@ SELECT CASE
         )
         .get();
     int normal = 0, special = 0, practice = 0, repeat = 0;
+    int todayAnswers = 0, todayCorrect = 0;
+    final String todayKey = _dayKey(now);
     final Map<PracticeKind, int> practiceByKind = <PracticeKind, int>{};
-    for (final QueryRow row in modeRows) {
+    final Map<String, int> dayAnswers = <String, int>{};
+    final Map<String, int> dayCorrect = <String, int>{};
+    for (final QueryRow row in windowRows) {
       final int total = row.read<int>('total');
+      final String day = row.read<String>('day');
+      dayAnswers[day] = (dayAnswers[day] ?? 0) + total;
+      dayCorrect[day] = (dayCorrect[day] ?? 0) + row.read<int>('correct');
+      if (day == todayKey) {
+        todayAnswers += total;
+        todayCorrect += row.read<int>('correct');
+      }
       switch (row.read<String>('bucket')) {
         case 'practice':
           practice += total;
@@ -1182,65 +1200,17 @@ SELECT COUNT(*) AS c
         )
         .getSingle();
 
-    final List<Variable<Object>> trendVariables = <Variable<Object>>[
-      ...variables,
-    ];
-    trendVariables.insert(
-      0,
-      Variable<String>(_dayKey(now.subtract(const Duration(days: 29)))),
-    );
-    final List<QueryRow> trendRows = await db
-        .customSelect(
-          '''
-SELECT re.local_day AS day,
-       COUNT(*) AS answers,
-       COALESCE(SUM(CASE WHEN re.result = 2 THEN 1 ELSE 0 END), 0) AS correct
-  FROM words w
-  JOIN review_events re ON re.word_id = w.id
- WHERE w.deleted_at IS NULL AND ${_realAnswer('re')}
-   AND re.local_day >= ?
- $bookClause
- GROUP BY re.local_day
- ORDER BY re.local_day''',
-          variables: trendVariables,
-          readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
-            db.words,
-            db.reviewEvents,
-          },
-        )
-        .get();
     final List<DailyAnswers> trend30 = <DailyAnswers>[
-      for (final QueryRow row in trendRows)
+      for (final String day in dayAnswers.keys.toList()..sort())
         DailyAnswers(
-          day: row.read<String>('day'),
-          answers: row.read<int>('answers'),
-          correct: row.read<int>('correct'),
+          day: day,
+          answers: dayAnswers[day] ?? 0,
+          correct: dayCorrect[day] ?? 0,
         ),
     ];
     final Set<String> lastSeven = <String>{
       for (int i = 0; i < 7; i++) _dayKey(now.subtract(Duration(days: 6 - i))),
     };
-
-    final QueryRow todayRow = await db
-        .customSelect(
-          '''
-SELECT COUNT(*) AS answers,
-       COALESCE(SUM(CASE WHEN re.result = 2 THEN 1 ELSE 0 END), 0) AS correct
-  FROM words w
-  JOIN review_events re ON re.word_id = w.id
- WHERE w.deleted_at IS NULL AND ${_realAnswer('re')}
-   AND re.local_day = ?
- $bookClause''',
-          variables: <Variable<Object>>[
-            Variable<String>(_dayKey(now)),
-            ...variables,
-          ],
-          readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
-            db.words,
-            db.reviewEvents,
-          },
-        )
-        .getSingle();
 
     return StudyStatistics(
       totalWords: await totalCount(bookId: bookId),
@@ -1253,8 +1223,8 @@ SELECT COUNT(*) AS answers,
       hardWords: await hardWords(bookId: bookId, limit: 30),
       lastStudyDay: lastDay.readNullable<String>('day'),
       scopedToBook: bookId != null,
-      todayAnswers: todayRow.read<int>('answers'),
-      todayCorrect: todayRow.read<int>('correct'),
+      todayAnswers: todayAnswers,
+      todayCorrect: todayCorrect,
       distinctAnsweredWords: distinctRow.read<int>('c'),
       undoneAnswers: undoRow.read<int>('c'),
       breakdown: AnswerBreakdown(
@@ -1279,7 +1249,14 @@ SELECT COUNT(*) AS answers,
     required DateTime now,
     String? bookId,
   }) async {
-    final List<Variable<Object>> variables = <Variable<Object>>[];
+    final DateTime start = startOfLocalDay(now);
+    final DateTime end = start.add(const Duration(days: 7));
+    // The range filter keeps this to one week of rows instead of scanning the
+    // whole learning-state table every time the statistics page opens.
+    final List<Variable<Object>> variables = <Variable<Object>>[
+      Variable<int>(start.millisecondsSinceEpoch),
+      Variable<int>(end.millisecondsSinceEpoch),
+    ];
     if (bookId != null) variables.add(Variable<String>(bookId));
     final List<QueryRow> rows = await db
         .customSelect(
@@ -1288,6 +1265,7 @@ SELECT ls.next_review_at AS due
   FROM words w
   JOIN learning_states ls ON ls.word_id = w.id
  WHERE w.deleted_at IS NULL AND ls.stage != 0 AND ls.next_review_at IS NOT NULL
+   AND ls.next_review_at >= ? AND ls.next_review_at < ?
  ${_bookFilter(active: bookId != null)}''',
           variables: variables,
           readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
@@ -1297,7 +1275,6 @@ SELECT ls.next_review_at AS due
           },
         )
         .get();
-    final DateTime start = startOfLocalDay(now);
     final List<DueForecastDay> forecast = <DueForecastDay>[
       for (int i = 0; i < 7; i++)
         DueForecastDay(day: _dayKey(start.add(Duration(days: i))), count: 0),
