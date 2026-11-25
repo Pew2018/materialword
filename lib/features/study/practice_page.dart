@@ -7,6 +7,7 @@ import '../../core/database/app_database.dart';
 import '../../core/models/enums.dart';
 import '../../shared/widgets/common.dart';
 import '../../services/practice_session.dart';
+import '../../services/tts_service.dart';
 
 /// Practice drills: spelling, dictation, multiple choice and cloze.
 ///
@@ -32,6 +33,8 @@ class PracticePage extends ConsumerStatefulWidget {
 
 class _PracticePageState extends ConsumerState<PracticePage> {
   late final PracticeSession _session;
+  // Resolved eagerly: `ref` must not be touched in dispose().
+  late final TtsService _tts;
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focus = FocusNode(debugLabel: 'practice-answer');
   String? _lastQuestionId;
@@ -42,6 +45,7 @@ class _PracticePageState extends ConsumerState<PracticePage> {
   @override
   void initState() {
     super.initState();
+    _tts = ref.read(ttsServiceProvider);
     _session = PracticeSession(
       ref.read(studyRepositoryProvider),
       ref.read(settingsRepositoryProvider),
@@ -57,7 +61,7 @@ class _PracticePageState extends ConsumerState<PracticePage> {
     _controller.dispose();
     _focus.dispose();
     // Stop any pronunciation started for the previous card.
-    ref.read(ttsServiceProvider).stop();
+    _tts.stop();
     super.dispose();
   }
 
@@ -101,9 +105,7 @@ class _PracticePageState extends ConsumerState<PracticePage> {
 
   Future<void> _speak(String text, {bool announceFailure = false}) async {
     final StudySettingsRow? settings = ref.read(settingsProvider).value;
-    final bool ok = await ref
-        .read(ttsServiceProvider)
-        .speak(
+    final bool ok = await _tts.speak(
           text,
           voiceName: (settings?.ttsVoice.isEmpty ?? true)
               ? null

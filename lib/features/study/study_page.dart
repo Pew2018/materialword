@@ -52,6 +52,8 @@ class _StudyPageState extends ConsumerState<StudyPage> {
   bool _started = false;
   String? _lastCardId;
   StudySettingsRow? _settings;
+  bool _randomOrder = false;
+  static const String _randomOrderKey = 'study_random_order';
   late final TtsService _tts;
   Future<StudyRoundSummary>? _summaryFuture;
 
@@ -141,6 +143,10 @@ class _StudyPageState extends ConsumerState<StudyPage> {
       settings.dailyReviewLimit,
     );
     final bool isSpecial = widget.special != SpecialReview.none;
+    // Device-local preference (not synced): it only changes the order cards are
+    // presented in, never which cards are in the queue.
+    _randomOrder =
+        await ref.read(databaseProvider).readMeta(_randomOrderKey) == '1';
     await _session.load(
       newLimit: isSpecial ? 0 : newAllowance,
       // A special pass still consumes the review allowance, but we always allow
@@ -156,6 +162,7 @@ class _StudyPageState extends ConsumerState<StudyPage> {
           ? StudyMode.reviewOnly
           : StudyMode.fromCode(settings.studyMode),
       special: widget.special,
+      shuffle: _randomOrder && !isSpecial,
     );
     if (!mounted) return;
     setState(() {});
@@ -288,26 +295,35 @@ class _StudyPageState extends ConsumerState<StudyPage> {
             },
             child: Focus(
               autofocus: true,
-              child: Column(
-                children: <Widget>[
-                  if (_session.notice != null)
-                    Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Text(
-                        _session.notice!,
-                        textAlign: TextAlign.center,
+              child: GestureDetector(
+                // Swipe up on the word to reveal the meaning — the same action
+                // as the button, never a shortcut around the confirmation.
+                onVerticalDragEnd: (DragEndDetails details) {
+                  if (_session.isRevealed || _session.isBusy) return;
+                  if ((details.primaryVelocity ?? 0) < -250) _session.reveal();
+                },
+                behavior: HitTestBehavior.opaque,
+                child: Column(
+                  children: <Widget>[
+                    if (_session.notice != null)
+                      Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Text(
+                          _session.notice!,
+                          textAlign: TextAlign.center,
+                        ),
                       ),
-                    ),
-                  Expanded(child: _buildContent(context, desktop)),
-                  if (_session.current != null && !_session.isFinished)
-                    _AnswerBar(
-                      revealed: _session.isRevealed,
-                      busy: _session.isBusy,
-                      desktop: desktop,
-                      onReveal: _session.reveal,
-                      onAnswer: _answer,
-                    ),
-                ],
+                    Expanded(child: _buildContent(context, desktop)),
+                    if (_session.current != null && !_session.isFinished)
+                      _AnswerBar(
+                        revealed: _session.isRevealed,
+                        busy: _session.isBusy,
+                        desktop: desktop,
+                        onReveal: _session.reveal,
+                        onAnswer: _answer,
+                      ),
+                  ],
+                ),
               ),
             ),
           ),

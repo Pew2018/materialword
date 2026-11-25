@@ -33,20 +33,6 @@ class SettingsPage extends ConsumerStatefulWidget {
 }
 
 class _SettingsPageState extends ConsumerState<SettingsPage> {
-  String? _deviceId;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadDeviceId();
-  }
-
-  Future<void> _loadDeviceId() async {
-    final String id = await ref.read(settingsRepositoryProvider).deviceId();
-    if (!mounted) return;
-    setState(() => _deviceId = id);
-  }
-
   Future<void> _save({
     int? newTarget,
     int? reviewLimit,
@@ -169,6 +155,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 ),
               ),
             ),
+            const _RandomOrderSetting(),
           ],
         ),
         SectionHeader(title: '外观'),
@@ -225,18 +212,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   builder: (BuildContext context) => const BackupPage(),
                 ),
               ),
-            ),
-            SettingsTile(
-              leading: const Icon(Icons.memory_outlined),
-              title: '设备 ID',
-              subtitle: _deviceId ?? '读取中…',
-              onTap: _deviceId == null
-                  ? null
-                  : () async {
-                      await Clipboard.setData(ClipboardData(text: _deviceId!));
-                      if (!context.mounted) return;
-                      showMessage(context, '已复制设备 ID');
-                    },
             ),
           ],
         ),
@@ -788,6 +763,18 @@ class _DiagnosticsSection extends ConsumerStatefulWidget {
 class _DiagnosticsSectionState extends ConsumerState<_DiagnosticsSection> {
   bool _enabled = DiagnosticsService.instance.enabled;
   bool _busy = false;
+  String? _deviceId;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDeviceId();
+  }
+
+  Future<void> _loadDeviceId() async {
+    final String id = await ref.read(settingsRepositoryProvider).deviceId();
+    if (mounted) setState(() => _deviceId = id);
+  }
 
   Future<void> _export() async {
     if (_busy) return;
@@ -861,6 +848,18 @@ class _DiagnosticsSectionState extends ConsumerState<_DiagnosticsSection> {
             showMessage(context, '已清除诊断日志');
           },
         ),
+        SettingsTile(
+          leading: const Icon(Icons.memory_outlined),
+          title: '本机设备标识',
+          subtitle: _deviceId ?? '读取中…',
+          onTap: _deviceId == null
+              ? null
+              : () async {
+                  await Clipboard.setData(ClipboardData(text: _deviceId!));
+                  if (!context.mounted) return;
+                  showMessage(context, '已复制设备标识（仅用于排查同步问题）');
+                },
+        ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
           child: Text(
@@ -870,6 +869,49 @@ class _DiagnosticsSectionState extends ConsumerState<_DiagnosticsSection> {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Device-local study order preference. Stored in `app_meta`, so it is never
+/// synced and never changes *which* cards a session contains.
+class _RandomOrderSetting extends ConsumerStatefulWidget {
+  const _RandomOrderSetting();
+
+  @override
+  ConsumerState<_RandomOrderSetting> createState() =>
+      _RandomOrderSettingState();
+}
+
+class _RandomOrderSettingState extends ConsumerState<_RandomOrderSetting> {
+  static const String key = 'study_random_order';
+  bool? _value;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final String? raw = await ref.read(databaseProvider).readMeta(key);
+    if (mounted) setState(() => _value = raw == '1');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SwitchListTile(
+      value: _value ?? false,
+      title: const Text('随机学习顺序'),
+      subtitle: const Text('只改变呈现顺序，不会遗漏或重复；专项练习与冲刺不受影响'),
+      onChanged: _value == null
+          ? null
+          : (bool value) async {
+              await ref
+                  .read(databaseProvider)
+                  .writeMeta(key, value ? '1' : '0');
+              if (mounted) setState(() => _value = value);
+            },
     );
   }
 }

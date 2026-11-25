@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:drift/drift.dart';
 
@@ -124,6 +125,7 @@ class StudySession extends ChangeNotifier {
     StudyMode mode = StudyMode.mixed,
     SpecialReview special = SpecialReview.none,
     List<String>? focusedWordIds,
+    bool shuffle = false,
   }) async {
     _loading = true;
     _error = null;
@@ -148,9 +150,16 @@ class StudySession extends ChangeNotifier {
                 mode: special == SpecialReview.none ? mode : StudyMode.special,
                 special: special,
               );
+        final List<StudyCard> cards = List<StudyCard>.of(queue.cards);
+        if (shuffle && cards.length > 1) {
+          // Random order only changes the order: the queue still contains every
+          // card exactly once, and the persisted session stores the shuffled
+          // order so a resume continues where the user stopped.
+          cards.shuffle(Random());
+        }
         _queue
           ..clear()
-          ..addAll(queue.cards);
+          ..addAll(cards);
         _observedEventCounts
           ..clear()
           ..addAll(await _eventCounts(_queue.map((c) => c.word.id)));
