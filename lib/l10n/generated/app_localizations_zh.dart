@@ -2272,7 +2272,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get unsafeServerBody =>
-      '正常情况下这里会用条件请求写入，确保两台设备同时修改时不会互相覆盖。这台服务器做不到，所以自动合并和「立即同步」都不会执行。\n\n可以改用「导出备份」，或用其他支持条件请求的 WebDAV 服务。';
+      '本次测试未能确认两台设备更新同一个文件时可以防止相互覆盖，同步已暂停。可以重新测试连接，或导出备份。';
 
   @override
   String get retestConnection => '重新测试连接';
@@ -2485,11 +2485,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get testConnection => '测试连接';
 
   @override
-  String get autoSyncNotEnabled => '自动同步尚未启用：请先「测试连接」完成安全写入验证。';
+  String get autoSyncNotEnabled => '自动同步已暂停。请先通过「测试连接」验证安全写入。';
 
   @override
   String autoSyncNotEnabledReason(String reason) {
-    return '自动同步尚未启用：$reason。';
+    return '自动同步已暂停。$reason。';
   }
 
   @override
@@ -3104,6 +3104,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get syncStageFailed => '失败';
 
   @override
+  String get webDavServerResponded => '服务器已响应。';
+
+  @override
+  String get webDavFolderBrowsable => '文件夹可访问，也可浏览。';
+
+  @override
+  String get webDavFolderAccessible => '文件夹可访问。';
+
+  @override
+  String get webDavProbeReadWrite => '临时测试文件已成功写入并读回。';
+
+  @override
   String get syncCapabilityUnknown => '尚未验证连接';
 
   @override
@@ -3122,7 +3134,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get syncCapabilityReadOnly => '已连接，但只能读取，无法写入';
 
   @override
-  String get syncCapabilityUnsafe => '此服务器暂不支持安全同步';
+  String get syncCapabilityUnsafe => '基础读写可用，未能验证安全同步';
 
   @override
   String get syncCapabilitySafe => '连接成功，可以同步';

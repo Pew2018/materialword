@@ -2523,7 +2523,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get unsafeServerBody =>
-      'This is normally written with a conditional request, so two devices editing at once can\'t overwrite each other. This server can\'t do that, so automatic merge and Sync Now won\'t run.\n\nUse Export Backup, or a WebDAV service that supports conditional requests.';
+      'MaterialWord paused syncing because this check could not confirm that two devices can update the same file without overwriting each other. You can test the connection again or export a backup.';
 
   @override
   String get retestConnection => 'Test Again';
@@ -2748,11 +2748,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get autoSyncNotEnabled =>
-      'Automatic sync is off: run Test Connection to verify safe writes first.';
+      'Automatic sync is paused until Test Connection verifies safe writes.';
 
   @override
   String autoSyncNotEnabledReason(String reason) {
-    return 'Automatic sync is off: $reason.';
+    return 'Automatic sync is paused. $reason.';
   }
 
   @override
@@ -3387,6 +3387,19 @@ class AppLocalizationsEn extends AppLocalizations {
   String get syncStageFailed => 'Failed';
 
   @override
+  String get webDavServerResponded => 'The server responded.';
+
+  @override
+  String get webDavFolderBrowsable =>
+      'The folder is accessible and can be browsed.';
+
+  @override
+  String get webDavFolderAccessible => 'The folder is accessible.';
+
+  @override
+  String get webDavProbeReadWrite => 'The test file was written and read back.';
+
+  @override
   String get syncCapabilityUnknown => 'Connection not verified';
 
   @override
@@ -3409,7 +3422,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get syncCapabilityUnsafe =>
-      'This server doesn\'t support safe syncing';
+      'Basic file access works, but safe syncing could not be verified';
 
   @override
   String get syncCapabilitySafe => 'Connected. Ready to sync.';

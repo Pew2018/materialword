@@ -9,6 +9,8 @@
 /// path=/dav/ status=403`).
 library;
 
+import 'package:uuid/uuid.dart';
+
 import '../diagnostics_service.dart';
 
 /// Ordered pipeline stages. The wire names are what appears in a log file and
@@ -38,6 +40,7 @@ enum WebDavStage {
 class WebDavTraceEntry {
   const WebDavTraceEntry({
     required this.requestId,
+    this.roundId,
     required this.stage,
     required this.method,
     required this.host,
@@ -52,12 +55,18 @@ class WebDavTraceEntry {
     required this.durationMs,
     this.redirects = 0,
     this.conditional,
+    this.etagSource,
+    this.selfMatch,
+    this.getetagPropstat,
+    this.conditionOutcome,
+    this.etagChanged,
     this.etagKind,
     this.responseContentType,
     this.result = 'ok',
   });
 
   final String requestId;
+  final String? roundId;
   final WebDavStage stage;
   final String method;
 
@@ -77,6 +86,11 @@ class WebDavTraceEntry {
   /// `If-Match` / `If-None-Match` / null. The *value* is never recorded beyond
   /// the fact that a stale-test tag was synthetic.
   final String? conditional;
+  final String? etagSource;
+  final String? selfMatch;
+  final String? getetagPropstat;
+  final String? conditionOutcome;
+  final bool? etagChanged;
   final String? etagKind;
   final String? responseContentType;
   final String result;
@@ -89,12 +103,14 @@ class WebDavTraceEntry {
       ..write('method=$method ')
       ..write('host=$host ')
       ..write('path=$path ');
+    if (roundId != null) out.write('round=$roundId ');
     if (hasQuery) out.write('has_query=true ');
     if (hasFragment) out.write('has_fragment=true ');
     if (depth != null) out.write('depth=$depth ');
     if (propfindProfile != null) out.write('profile=$propfindProfile ');
-    if (compatibilityMode != null)
+    if (compatibilityMode != null) {
       out.write('compatibility=$compatibilityMode ');
+    }
     if (serverErrorCode != null) {
       out.write(
         'server_error=${serverErrorCode!.replaceAll(RegExp(r'[\\r\\n\\s]+'), ' ')} ',
@@ -103,6 +119,15 @@ class WebDavTraceEntry {
     if (status != null) out.write('status=$status ');
     if (redirects > 0) out.write('redirects=$redirects ');
     if (conditional != null) out.write('conditional=$conditional ');
+    if (etagSource != null) out.write('etag_source=$etagSource ');
+    if (selfMatch != null) out.write('self_match=$selfMatch ');
+    if (getetagPropstat != null) {
+      out.write('getetag_propstat=$getetagPropstat ');
+    }
+    if (conditionOutcome != null) {
+      out.write('condition_outcome=$conditionOutcome ');
+    }
+    if (etagChanged != null) out.write('etag_changed=$etagChanged ');
     if (etagKind != null) out.write('etag=$etagKind ');
     if (responseContentType != null) {
       out.write('content_type=$responseContentType ');
@@ -122,6 +147,7 @@ class WebDavTrace {
   /// [entries] only.
   final bool mirror;
   final int capacity;
+  final String roundId = const Uuid().v4().substring(0, 12);
 
   final List<WebDavTraceEntry> entries = <WebDavTraceEntry>[];
   int _seq = 0;

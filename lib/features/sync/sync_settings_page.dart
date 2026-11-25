@@ -469,14 +469,12 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       return;
     }
 
-    // A server that is known *not* to support conditional writes must not offer
-    // context.l10n.syncNow: that would be an unconditional overwrite wearing a safe name.
-    final SyncCapability? capability = _provider == 'webdav'
-        ? _capability
-        : null;
-    if (capability != null && !capability.safeBidirectionalSync) {
-      await _explainUnsafeTarget(capability);
-      return;
+    if (provider is WebDavSyncProvider) {
+      final SyncCapability? capability = _capability;
+      if (capability != null && !capability.safeBidirectionalSync) {
+        await _explainUnsafeTarget(capability);
+        return;
+      }
     }
 
     if (!await coordinator.hasSyncedTarget(provider)) {
@@ -500,10 +498,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       builder: (BuildContext dialogContext) => AlertDialog(
         title: Text(syncCapabilitySummary(context.l10n, capability)),
         scrollable: true,
-        content: Text(
-          '${capability.detail ?? context.l10n.serverNoConditionalWrite}\n\n'
-          '${context.l10n.unsafeServerBody}',
-        ),
+        content: Text(context.l10n.unsafeServerBody),
         actions: <Widget>[
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop('test'),
@@ -791,6 +786,9 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
   /// diagnostics and never shown, so the interface stays accurate in both
   /// languages and a partial run is never reported as a clean success.
   String _describeSyncError(Object error) {
+    if (error is SyncCapabilityException) {
+      return syncCapabilitySummary(context.l10n, error.capability);
+    }
     if (error is SyncRemoteMissingException) {
       _remoteMissing = true;
       return context.l10n.remoteFileMissingNotice;
@@ -1234,7 +1232,19 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
         ? AppColors.textSecondaryDark
         : AppColors.textSecondaryLight;
     final SyncCapability? capability = _testResult?.capability ?? _capability;
-    final List<String> details = _testResult?.details ?? const <String>[];
+    final List<String> details = capability == null
+        ? _testResult?.details ?? const <String>[]
+        : <String>[
+            if (capability.reachable) context.l10n.webDavServerResponded,
+            if (capability.directoryAccessible)
+              capability.directoryListingSupported
+                  ? context.l10n.webDavFolderBrowsable
+                  : context.l10n.webDavFolderAccessible,
+            if (capability.canCreate &&
+                capability.canRead &&
+                capability.canUpdate)
+              context.l10n.webDavProbeReadWrite,
+          ];
 
     if (capability == null) {
       if (_testResult != null) {
@@ -1294,9 +1304,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       icon: visual.$1,
       color: visual.$2,
       text: syncCapabilitySummary(context.l10n, capability),
-      hint: capability.status == SyncCapabilityStatus.requestRejected
-          ? null
-          : capability.detail,
+      hint: null,
       details: details,
     );
   }

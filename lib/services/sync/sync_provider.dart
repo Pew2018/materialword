@@ -82,6 +82,7 @@ class SyncCapability {
     this.canUpdate = false,
     this.canDelete = false,
     this.supportsStrongEtag = false,
+    this.supportsConditionalRead = false,
     this.supportsIfMatch = false,
     this.supportsIfNoneMatch = false,
     this.probeCleanedUp = true,
@@ -102,6 +103,7 @@ class SyncCapability {
   final bool canUpdate;
   final bool canDelete;
   final bool supportsStrongEtag;
+  final bool supportsConditionalRead;
   final bool supportsIfMatch;
   final bool supportsIfNoneMatch;
 
@@ -146,6 +148,7 @@ class SyncCapability {
     bool? canUpdate,
     bool? canDelete,
     bool? supportsStrongEtag,
+    bool? supportsConditionalRead,
     bool? supportsIfMatch,
     bool? supportsIfNoneMatch,
     bool? probeCleanedUp,
@@ -163,6 +166,8 @@ class SyncCapability {
     canUpdate: canUpdate ?? this.canUpdate,
     canDelete: canDelete ?? this.canDelete,
     supportsStrongEtag: supportsStrongEtag ?? this.supportsStrongEtag,
+    supportsConditionalRead:
+        supportsConditionalRead ?? this.supportsConditionalRead,
     supportsIfMatch: supportsIfMatch ?? this.supportsIfMatch,
     supportsIfNoneMatch: supportsIfNoneMatch ?? this.supportsIfNoneMatch,
     probeCleanedUp: probeCleanedUp ?? this.probeCleanedUp,
@@ -184,6 +189,7 @@ class SyncCapability {
     'canUpdate': canUpdate,
     'canDelete': canDelete,
     'supportsStrongEtag': supportsStrongEtag,
+    'supportsConditionalRead': supportsConditionalRead,
     'supportsIfMatch': supportsIfMatch,
     'supportsIfNoneMatch': supportsIfNoneMatch,
     'probeCleanedUp': probeCleanedUp,
@@ -215,6 +221,7 @@ class SyncCapability {
       canUpdate: flag('canUpdate'),
       canDelete: flag('canDelete'),
       supportsStrongEtag: flag('supportsStrongEtag'),
+      supportsConditionalRead: flag('supportsConditionalRead'),
       supportsIfMatch: flag('supportsIfMatch'),
       supportsIfNoneMatch: flag('supportsIfNoneMatch'),
       probeCleanedUp: raw['probeCleanedUp'] != false,
@@ -335,6 +342,15 @@ enum SyncOutcome {
 
   /// Written by a build that stored a sentence; shown verbatim.
   legacy,
+}
+
+class SyncCapabilityException extends SyncException {
+  SyncCapabilityException(this.capability)
+    : super(
+        'WebDAV capability ${capability.status.name}: ${capability.detail ?? ''}',
+      );
+
+  final SyncCapability capability;
 }
 
 class SyncException implements Exception {

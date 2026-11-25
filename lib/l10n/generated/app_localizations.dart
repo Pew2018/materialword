@@ -4121,7 +4121,7 @@ abstract class AppLocalizations {
   /// No description provided for @unsafeServerBody.
   ///
   /// In en, this message translates to:
-  /// **'This is normally written with a conditional request, so two devices editing at once can\'t overwrite each other. This server can\'t do that, so automatic merge and Sync Now won\'t run.\n\nUse Export Backup, or a WebDAV service that supports conditional requests.'**
+  /// **'MaterialWord paused syncing because this check could not confirm that two devices can update the same file without overwriting each other. You can test the connection again or export a backup.'**
   String get unsafeServerBody;
 
   /// No description provided for @retestConnection.
@@ -4529,13 +4529,13 @@ abstract class AppLocalizations {
   /// No description provided for @autoSyncNotEnabled.
   ///
   /// In en, this message translates to:
-  /// **'Automatic sync is off: run Test Connection to verify safe writes first.'**
+  /// **'Automatic sync is paused until Test Connection verifies safe writes.'**
   String get autoSyncNotEnabled;
 
   /// No description provided for @autoSyncNotEnabledReason.
   ///
   /// In en, this message translates to:
-  /// **'Automatic sync is off: {reason}.'**
+  /// **'Automatic sync is paused. {reason}.'**
   String autoSyncNotEnabledReason(String reason);
 
   /// No description provided for @syncConflicts.
@@ -5570,6 +5570,30 @@ abstract class AppLocalizations {
   /// **'Failed'**
   String get syncStageFailed;
 
+  /// No description provided for @webDavServerResponded.
+  ///
+  /// In en, this message translates to:
+  /// **'The server responded.'**
+  String get webDavServerResponded;
+
+  /// No description provided for @webDavFolderBrowsable.
+  ///
+  /// In en, this message translates to:
+  /// **'The folder is accessible and can be browsed.'**
+  String get webDavFolderBrowsable;
+
+  /// No description provided for @webDavFolderAccessible.
+  ///
+  /// In en, this message translates to:
+  /// **'The folder is accessible.'**
+  String get webDavFolderAccessible;
+
+  /// No description provided for @webDavProbeReadWrite.
+  ///
+  /// In en, this message translates to:
+  /// **'The test file was written and read back.'**
+  String get webDavProbeReadWrite;
+
   /// No description provided for @syncCapabilityUnknown.
   ///
   /// In en, this message translates to:
@@ -5609,7 +5633,7 @@ abstract class AppLocalizations {
   /// No description provided for @syncCapabilityUnsafe.
   ///
   /// In en, this message translates to:
-  /// **'This server doesn\'t support safe syncing'**
+  /// **'Basic file access works, but safe syncing could not be verified'**
   String get syncCapabilityUnsafe;
 
   /// No description provided for @syncCapabilitySafe.

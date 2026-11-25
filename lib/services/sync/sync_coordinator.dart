@@ -197,11 +197,7 @@ class SyncCoordinator {
         // only thing that opens the gate.
         final SyncCapability capability = await ensureCapability(provider);
         if (!capability.safeBidirectionalSync) {
-          // Diagnostic only: the page shows the localised capability verdict.
-          throw SyncException(
-            'capability ${capability.status.name}: '
-            '${capability.detail ?? 'no detail'}',
-          );
+          throw SyncCapabilityException(capability);
         }
       } else if (!skipConnectionTest) {
         final SyncTestResult test = await provider.testConnection();
@@ -538,9 +534,13 @@ class SyncCoordinator {
         fingerprint: fingerprint,
         now: clock.now(),
       );
-      if (cached != null) return cached;
+      if (cached != null) {
+        provider.lastCapability = cached;
+        return cached;
+      }
     }
     final SyncCapability capability = await provider.probeCapability();
+    provider.lastCapability = capability;
     await rememberCapability(provider, capability, fingerprint: fingerprint);
     return capability;
   }

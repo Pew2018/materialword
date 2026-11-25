@@ -198,6 +198,27 @@ class WebDavPaths {
     return candidate.skip(baseSegments.length).join('/');
   }
 
+  static bool matchesFileHref(String raw, Uri requested) {
+    if (raw.isEmpty ||
+        raw.startsWith('//') ||
+        RegExp(r'%(?![0-9a-fA-F]{2})|[\x00-\x1F\x7F\\]').hasMatch(raw)) {
+      return false;
+    }
+    try {
+      // Validates even escapes which Uri.resolve might otherwise preserve.
+      Uri.decodeComponent(raw);
+      final Uri href = requested.resolve(raw);
+      return !href.hasQuery &&
+          !href.hasFragment &&
+          href.userInfo.isEmpty &&
+          href == requested;
+    } on FormatException {
+      return false;
+    } on ArgumentError {
+      return false;
+    }
+  }
+
   /// Resolves `href` from a response body against the request that produced it.
   Uri? resolveHref(String href, Uri requested) {
     final String trimmed = href.trim();

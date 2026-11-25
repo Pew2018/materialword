@@ -118,12 +118,13 @@ class WebDavSyncProvider implements SyncProvider {
   SyncCapability? lastCapability;
 
   Future<void> captureCredentials() => CredentialStore.exclusive(() async {
-    _capturedAuth = null;
+    clearCapturedCredentials();
     _capturedAuth = await _auth();
   });
 
   void clearCapturedCredentials() {
     _capturedAuth = null;
+    lastCapability = null;
     _propfindModes.clear();
     _collectionDepthOne = false;
   }
@@ -188,7 +189,7 @@ class WebDavSyncProvider implements SyncProvider {
         .toString()
         .substring(0, 16);
     final String identity = jsonEncode(<Object?>[
-      'webdav-cap-1',
+      'webdav-cap-2',
       p?.base.toString() ?? baseUrl.trim(),
       p?.segments ?? const <String>[],
       p?.fileName ?? fileName,
@@ -255,6 +256,8 @@ class WebDavSyncProvider implements SyncProvider {
     String? propfindProfile,
     String? compatibilityMode,
   }) async {
+    final String probeName = uri.pathSegments.lastOrNull ?? '';
+    final bool probeResource = probeName.startsWith('materialword-probe-');
     final String requestId = trace.nextRequestId();
     final String? conditional = _conditionalOf(headers);
     final Stopwatch watch = Stopwatch()..start();
@@ -265,6 +268,7 @@ class WebDavSyncProvider implements SyncProvider {
       trace.add(
         WebDavTraceEntry(
           requestId: requestId,
+          roundId: trace.roundId,
           stage: stage,
           method: method,
           host: current.host,
@@ -283,11 +287,12 @@ class WebDavSyncProvider implements SyncProvider {
           conditional: conditional,
           etagKind: response == null
               ? null
-              : strongEtag(response.headers['etag']) != null
-              ? 'strong'
-              : response.headers['etag'] != null
-              ? 'weak'
-              : null,
+              : etagKind(response.headers['etag']),
+          etagSource: switch (method) {
+            'PUT' => 'put_header',
+            'GET' => 'get_header',
+            _ => null,
+          },
           responseContentType: response?.headers['content-type'],
           result: result,
         ),
@@ -331,6 +336,13 @@ class WebDavSyncProvider implements SyncProvider {
           record(response, 'cross_origin_redirect');
           throw const SyncException('WebDAV 服务器重定向到其他主机，已拒绝携带认证信息继续请求');
         }
+        if (probeResource &&
+            (next.pathSegments.lastOrNull != probeName ||
+                next.hasQuery ||
+                next.hasFragment)) {
+          record(response, 'probe_redirect_rejected');
+          throw const SyncException('WebDAV 重定向改变了临时探测文件的目标');
+        }
         record(response, 'redirect');
         watch
           ..reset()
@@ -340,7 +352,13 @@ class WebDavSyncProvider implements SyncProvider {
         continue;
       }
       record(response, response.statusCode >= 400 ? 'http_error' : 'ok');
-      return response;
+      return http.Response.bytes(
+        response.bodyBytes,
+        response.statusCode,
+        headers: response.headers,
+        request: request,
+        reasonPhrase: response.reasonPhrase,
+      );
     }
     record(null, 'too_many_redirects');
     throw const SyncException('WebDAV 重定向次数过多');
@@ -409,7 +427,7 @@ class WebDavSyncProvider implements SyncProvider {
   }) async {
     final String? preferred = _propfindModes[profile];
     final Set<String> modes = <String>{
-      if (preferred != null) preferred,
+      ?preferred,
       'application/xml',
       'text/xml',
       'no_body',
@@ -440,13 +458,20 @@ class WebDavSyncProvider implements SyncProvider {
     throw StateError('Unreachable PROPFIND mode');
   }
 
-  /// Extracts the ETag from a header or PROPFIND response.
-  static String? strongEtag(String? value) {
-    if (value == null) return null;
+  // RFC 9110 entity-tag. A comma is legal inside the quoted opaque value.
+  static final RegExp _entityTag = RegExp(
+    r'^(?:W/)?"[\x21\x23-\x7E\x80-\xFF]*"$',
+  );
+
+  static String etagKind(String? value) {
+    if (value == null) return 'absent';
     final String tag = value.trim();
-    // RFC 9110 entity-tag: retain the quotes; weak validators cannot protect PUT.
-    return RegExp(r'^"[\x21\x23-\x7E\x80-\xFF]*"$').hasMatch(tag) ? tag : null;
+    if (!_entityTag.hasMatch(tag)) return 'malformed';
+    return tag.startsWith('W/') ? 'weak' : 'strong';
   }
+
+  static String? strongEtag(String? value) =>
+      etagKind(value) == 'strong' ? value!.trim() : null;
 
   static String? _serverErrorCode(String body) {
     if (!body.trimLeft().startsWith('<')) return null;
@@ -547,8 +572,83 @@ class WebDavSyncProvider implements SyncProvider {
     return entries;
   }
 
+  ({String? tag, String kind, String match, String propstat}) _fileEtag(
+    String body,
+    Uri requested,
+  ) {
+    final XmlElement root = XmlDocument.parse(body).rootElement;
+    Iterable<XmlElement> davChildren(XmlElement parent, String name) => parent
+        .childElements
+        .where((e) => e.name.local == name && e.namespaceUri == 'DAV:');
+    const missing = (
+      tag: null,
+      kind: 'absent',
+      match: 'missing',
+      propstat: 'missing',
+    );
+    const ambiguous = (
+      tag: null,
+      kind: 'absent',
+      match: 'ambiguous',
+      propstat: 'missing',
+    );
+    if (root.name.local != 'multistatus' || root.namespaceUri != 'DAV:') {
+      return missing;
+    }
+    final matches = <XmlElement>[];
+    for (final element in davChildren(root, 'response')) {
+      final hrefs = davChildren(element, 'href').toList();
+      final int matched = hrefs.where((href) {
+        final String raw = href.innerText.trim();
+        return WebDavPaths.matchesFileHref(raw, requested);
+      }).length;
+      if (matched == 0) continue;
+      if (hrefs.length != 1) return ambiguous;
+      matches.add(element);
+    }
+    if (matches.isEmpty) return missing;
+    if (matches.length != 1) return ambiguous;
+    final properties = <({int? status, String value})>[];
+    for (final propstat in davChildren(matches.single, 'propstat')) {
+      final statuses = davChildren(propstat, 'status').toList();
+      final int? status = statuses.length == 1
+          ? int.tryParse(
+              RegExp(r'^HTTP/\d+(?:\.\d+)?\s+(\d{3})(?:\s|$)')
+                      .firstMatch(statuses.single.innerText.trim())
+                      ?.group(1) ??
+                  '',
+            )
+          : null;
+      for (final prop in davChildren(propstat, 'prop')) {
+        for (final etag in davChildren(prop, 'getetag')) {
+          properties.add((status: status, value: etag.innerText));
+        }
+      }
+    }
+    if (properties.isEmpty) {
+      return (tag: null, kind: 'absent', match: 'matched', propstat: 'missing');
+    }
+    if (properties.length != 1) return ambiguous;
+    final property = properties.single;
+    final int? code = property.status;
+    return (
+      tag: code != null && code >= 200 && code < 300
+          ? strongEtag(property.value)
+          : null,
+      kind: etagKind(property.value),
+      match: 'matched',
+      propstat: switch (code) {
+        200 => '200',
+        404 => '404',
+        null => 'missing',
+        _ => 'other',
+      },
+    );
+  }
+
   /// `Depth: 0` by default; `Depth: 1` for browsing.
-  Future<({int status, String? etag, int? length, String body})> _propfind(
+  Future<({int status, Uri uri, String? etag, int? length, String body})>
+  _propfind(
     Uri uri, {
     String depth = '0',
     WebDavStage stage = WebDavStage.targetDirectoryProbe,
@@ -582,29 +682,42 @@ class WebDavSyncProvider implements SyncProvider {
       _collectionDepthOne =
           response.statusCode == 200 || response.statusCode == 207;
     }
+    final Uri requested = response.request?.url ?? uri;
     WebDavDirectoryEntry? self;
+    String? fileTag;
     if (response.statusCode == 207 || response.statusCode == 200) {
-      final Uri requested = response.request?.url ?? uri;
       self = _parseMultistatus(
         response.body,
         requested,
       ).where((WebDavDirectoryEntry e) => e.uri == requested).firstOrNull;
+      if (resolvedProfile == WebDavPropfindProfile.fileMetadata) {
+        final evidence = _fileEtag(response.body, requested);
+        fileTag = evidence.tag;
+        trace.add(
+          WebDavTraceEntry(
+            requestId: trace.nextRequestId(),
+            roundId: trace.roundId,
+            stage: stage,
+            method: 'PROPFIND',
+            host: requested.host,
+            path: WebDavTrace.maskNonce(requested.path),
+            status: response.statusCode,
+            durationMs: 0,
+            etagSource: 'propfind_self_xml',
+            etagKind: evidence.kind,
+            selfMatch: evidence.match,
+            getetagPropstat: evidence.propstat,
+          ),
+        );
+      }
     }
     return (
       status: response.statusCode,
-      etag: self?.etag,
+      uri: requested,
+      etag: fileTag,
       length: self?.size,
       body: response.body,
     );
-  }
-
-  /// Reads the ETag of [uri] via PROPFIND (used when PUT does not echo one).
-  Future<String?> _etagViaPropfind(Uri uri, WebDavStage stage) async {
-    final probe = await _propfind(uri, stage: stage);
-    if (probe.status == 404 || probe.status == 401 || probe.status == 403) {
-      return null;
-    }
-    return probe.etag;
   }
 
   static bool _isSuccess(int status) =>
@@ -855,6 +968,7 @@ class WebDavSyncProvider implements SyncProvider {
       // 4 + 5. Write probes on a resource we own.
       final _WriteProbe probe = await _probeWrites(p);
       final bool conditionalOk =
+          probe.cleanedUp &&
           probe.supportsStrongEtag &&
           probe.supportsIfMatch &&
           probe.supportsIfNoneMatch;
@@ -873,6 +987,7 @@ class WebDavSyncProvider implements SyncProvider {
         canUpdate: probe.canUpdate,
         canDelete: probe.canDelete,
         supportsStrongEtag: probe.supportsStrongEtag,
+        supportsConditionalRead: probe.supportsConditionalRead && conditionalOk,
         supportsIfMatch: probe.supportsIfMatch,
         supportsIfNoneMatch: probe.supportsIfNoneMatch,
         probeCleanedUp: probe.cleanedUp,
@@ -936,254 +1051,346 @@ class WebDavSyncProvider implements SyncProvider {
 
     final _WriteProbe result = _WriteProbe();
     bool owned = false;
+    Uri? ownedTarget;
     String? tag;
 
-    Future<void> cleanup() async {
-      final String? deleteTag =
-          tag ?? await _etagViaPropfind(uri, WebDavStage.probeCleanup);
-      final http.Response removed = await _send(
-        'DELETE',
-        uri,
-        headers: <String, String>{...common, 'If-Match': deleteTag ?? '*'},
-        stage: WebDavStage.probeCleanup,
+    Future<http.Response> get(WebDavStage stage, {String? match}) => _send(
+      'GET',
+      uri,
+      headers: <String, String>{...common, 'If-Match': ?match},
+      stage: stage,
+    );
+
+    Future<http.Response> put(
+      WebDavStage stage,
+      List<int> bytes,
+      Map<String, String> condition,
+    ) => _send(
+      'PUT',
+      uri,
+      headers: <String, String>{...common, ...condition},
+      body: bytes,
+      stage: stage,
+    );
+
+    void outcome(
+      WebDavStage stage,
+      String method,
+      String status, {
+      bool? etagChanged,
+    }) {
+      trace.add(
+        WebDavTraceEntry(
+          requestId: trace.nextRequestId(),
+          roundId: trace.roundId,
+          stage: stage,
+          method: method,
+          host: uri.host,
+          path: WebDavTrace.maskNonce(uri.path),
+          status: null,
+          durationMs: 0,
+          conditionOutcome: status,
+          etagChanged: etagChanged,
+        ),
       );
-      if (removed.statusCode == 200 ||
-          removed.statusCode == 204 ||
-          removed.statusCode == 404 ||
-          removed.statusCode == 412) {
-        // 412 on cleanup means somebody else changed our probe; a second plain
-        // DELETE would be safe, but the resource is not the user's data either
-        // way and we prefer not to force it.
-        result.cleanedUp = true;
-        return;
-      }
-      result.cleanedUp = false;
-      result.cleanupIssue =
-          '临时探测文件清理失败（HTTP ${removed.statusCode}，probe_cleanup）：'
-          '请手动删除 ${p.directoryPath} 下以 materialword-probe- 开头的文件';
+    }
+
+    bool matches(http.Response response, String expected) =>
+        response.statusCode == 200 && response.body == expected;
+
+    final String bogus = '"materialword-stale-$nonce"';
+    Future<String?> boundTag(
+      WebDavStage stage,
+      http.Response read,
+      http.Response write,
+      String expected,
+      ({int status, Uri uri, String? etag, int? length, String body}) metadata,
+    ) async {
+      if (!matches(read, expected)) return null;
+      final String? header = strongEtag(read.headers['etag']);
+      if (header != null) return header;
+
+      final Uri? target = read.request?.url;
+      final String? candidate =
+          (metadata.uri == target ? metadata.etag : null) ??
+          (write.request?.url == target
+              ? strongEtag(write.headers['etag'])
+              : null);
+      if (candidate == null || candidate == bogus) return null;
+
+      final http.Response stale = await get(stage, match: bogus);
+      final http.Response paired = await get(stage, match: candidate);
+      final bool verified =
+          stale.statusCode == 412 &&
+          stale.request?.url == target &&
+          paired.request?.url == target &&
+          matches(paired, expected) &&
+          _consistentWithTag(paired, candidate);
+      outcome(stage, 'GET', verified ? 'passed' : 'rejected');
+      if (!verified) return null;
+      result.supportsConditionalRead = true;
+      return candidate;
     }
 
     try {
-      // --- conditional create -------------------------------------------------
-      final http.Response created = await _send(
-        'PUT',
-        uri,
-        headers: <String, String>{...common, 'If-None-Match': '*'},
-        body: initialBytes,
-        stage: WebDavStage.conditionalCreateProbe,
+      final http.Response created = await put(
+        WebDavStage.conditionalCreateProbe,
+        initialBytes,
+        const <String, String>{'If-None-Match': '*'},
       );
       if (created.statusCode == 401) {
         throw const SyncException('WebDAV 认证失败：用户名或密码错误');
       }
-      if (_isSuccess(created.statusCode)) {
-        owned = true;
-        result.canCreate = true;
-        tag =
-            strongEtag(created.headers['etag']) ??
-            await _etagViaPropfind(uri, WebDavStage.conditionalCreateProbe);
-        result.supportsStrongEtag = tag != null;
-        if (tag == null) {
-          result.issue = _etagIssue;
-        }
-      } else if (created.statusCode == 412) {
-        result.issue = '服务器拒绝了 If-None-Match 创建（HTTP 412），无法保证并发安全';
-        result.issueMethod = 'PUT';
-        result.issueStatus = 412;
-      } else if (created.statusCode == 403) {
-        result.issue = '服务器拒绝在该文件夹创建文件（HTTP 403）';
-        result.issueMethod = 'PUT';
-        result.issueStatus = 403;
-      } else if (created.statusCode == 404) {
-        result.issue = '服务器拒绝在该文件夹创建文件（HTTP 404）：路径不存在或该目录不允许写入文件';
-        result.issueMethod = 'PUT';
-        result.issueStatus = 404;
-      } else {
-        result.issue = '条件创建失败（HTTP ${created.statusCode}），无法保证并发安全';
-        result.issueMethod = 'PUT';
-        result.issueStatus = created.statusCode;
+      if (!_isSuccess(created.statusCode)) {
+        return result
+          ..issue = '无法创建临时测试文件（HTTP ${created.statusCode}）'
+          ..issueMethod = 'PUT'
+          ..issueStatus = created.statusCode;
       }
 
-      // --- plain write fallback ----------------------------------------------
-      // Only ever on this throwaway resource: it distinguishes "cannot write"
-      // from "cannot write conditionally", which is the difference between
-      // "unsupported server" and "permission problem".
+      final http.Response read = await get(WebDavStage.basicWriteProbe);
+      owned =
+          matches(read, initial) && read.request?.url == created.request?.url;
       if (!owned) {
-        final http.Response plain = await _send(
-          'PUT',
-          uri,
-          headers: common,
-          body: initialBytes,
-          stage: WebDavStage.basicWriteProbe,
-        );
-        if (plain.statusCode == 401) {
-          throw const SyncException('WebDAV 认证失败：用户名或密码错误');
-        }
-        if (_isSuccess(plain.statusCode)) {
-          owned = true;
-          result.canCreate = true;
-          tag =
-              strongEtag(plain.headers['etag']) ??
-              await _etagViaPropfind(uri, WebDavStage.basicWriteProbe);
-          result.supportsStrongEtag = tag != null;
-        } else if (plain.statusCode == 403) {
-          result.issue ??= '服务器拒绝写入该文件夹（HTTP 403），账号可能只有只读权限';
-          result.issueMethod = 'PUT';
-          result.issueStatus = 403;
-        } else if (plain.statusCode == 404) {
-          result.issue ??= '服务器拒绝在该文件夹创建文件（HTTP 404）：路径不存在或该目录不允许写入文件';
-          result.issueMethod = 'PUT';
-          result.issueStatus = 404;
-        } else {
-          result.issue ??= '无法创建临时测试文件（HTTP ${plain.statusCode}）';
-          result.issueMethod = 'PUT';
-          result.issueStatus = plain.statusCode;
-        }
+        return result..issue = '写入后无法确认临时测试文件的内容与归属';
       }
-
-      if (!owned) return result;
-
-      // --- read back ---------------------------------------------------------
-      final http.Response read = await _send(
-        'GET',
-        uri,
-        headers: common,
-        stage: WebDavStage.basicWriteProbe,
+      ownedTarget = read.request?.url;
+      result
+        ..canCreate = true
+        ..canRead = true;
+      final metadata = await _propfind(uri, stage: WebDavStage.basicWriteProbe);
+      tag = await boundTag(
+        WebDavStage.basicWriteProbe,
+        read,
+        created,
+        initial,
+        metadata,
       );
-      if (read.statusCode == 200) {
-        result.canRead = true;
-        if (read.body != initial) {
-          result.issue ??= '写入后读回的内容不一致，服务器可能未保存文件内容';
+      result.supportsStrongEtag = tag != null;
+
+      final http.Response duplicate = await put(
+        WebDavStage.conditionalExistingCreateProbe,
+        changedBytes,
+        const <String, String>{'If-None-Match': '*'},
+      );
+      final http.Response afterDuplicate = await get(
+        WebDavStage.conditionalExistingCreateProbe,
+      );
+      final bool duplicateUnchanged =
+          matches(afterDuplicate, initial) &&
+          afterDuplicate.request?.url == ownedTarget &&
+          duplicate.request?.url == ownedTarget;
+      result.supportsIfNoneMatch =
+          duplicate.statusCode == 412 && duplicateUnchanged;
+      outcome(
+        WebDavStage.conditionalExistingCreateProbe,
+        'PUT',
+        result.supportsIfNoneMatch
+            ? 'passed'
+            : _isSuccess(duplicate.statusCode) || !duplicateUnchanged
+            ? 'ignored'
+            : 'rejected',
+      );
+      String beforeUpdate = initial;
+      String afterUpdate = changed;
+      List<int> updateBytes = changedBytes;
+      if (!result.supportsIfNoneMatch) {
+        result
+          ..issue = '服务器未通过已有文件防覆盖验证'
+          ..issueMethod = 'PUT'
+          ..issueStatus = duplicate.statusCode;
+        final bool duplicateOverwroteProbe =
+            afterDuplicate.request?.url == ownedTarget &&
+            duplicate.request?.url == ownedTarget &&
+            matches(afterDuplicate, changed);
+        if (duplicateOverwroteProbe) {
+          // The overwrite itself demonstrated basic I/O. Independently test
+          // If-Match against the version now present on our own probe.
+          result.canUpdate = true;
+          beforeUpdate = changed;
+          afterUpdate = initial;
+          updateBytes = initialBytes;
+          final currentMetadata =
+              strongEtag(afterDuplicate.headers['etag']) == null
+              ? await _propfind(
+                  uri,
+                  stage: WebDavStage.conditionalExistingCreateProbe,
+                )
+              : metadata;
+          tag = await boundTag(
+            WebDavStage.conditionalExistingCreateProbe,
+            afterDuplicate,
+            duplicate,
+            beforeUpdate,
+            currentMetadata,
+          );
+          result.supportsStrongEtag = tag != null;
+        } else if (!duplicateUnchanged) {
+          outcome(WebDavStage.conditionalStaleUpdateProbe, 'PUT', 'skipped');
+          outcome(WebDavStage.conditionalValidUpdateProbe, 'PUT', 'skipped');
+          return result;
         }
-      } else {
-        result.issue ??= '写入后无法读回文件（HTTP ${read.statusCode}）';
       }
 
-      // --- conditional semantics --------------------------------------------
-      if (tag != null) {
-        final http.Response stale = await _send(
-          'PUT',
-          uri,
-          headers: <String, String>{
-            ...common,
-            'If-Match': '"materialword-stale-$nonce"',
-          },
-          body: changedBytes,
-          stage: WebDavStage.conditionalStaleUpdateProbe,
+      if (tag == null || tag == bogus) {
+        outcome(WebDavStage.conditionalStaleUpdateProbe, 'PUT', 'skipped');
+        outcome(WebDavStage.conditionalValidUpdateProbe, 'PUT', 'skipped');
+        result.issue ??= _etagIssue;
+        if (result.canUpdate) return result;
+        // Only our own verified file is used to confirm basic update support.
+        final http.Response updated = await put(
+          WebDavStage.basicWriteProbe,
+          updateBytes,
+          const <String, String>{},
         );
-        result.supportsIfMatch = stale.statusCode == 412;
-        if (!result.supportsIfMatch) {
-          result.issue ??=
-              '服务器未拒绝过期的 If-Match（HTTP ${stale.statusCode}），无法检测并发修改';
-          result.issueMethod = 'PUT';
-          result.issueStatus = stale.statusCode;
-        }
+        final http.Response after = await get(WebDavStage.basicWriteProbe);
+        result.canUpdate =
+            _isSuccess(updated.statusCode) &&
+            matches(after, afterUpdate) &&
+            updated.request?.url == ownedTarget &&
+            after.request?.url == ownedTarget;
+        return result;
+      }
 
-        // Read the bytes back *before* the next experiment: the If-None-Match
-        // test is expected to be rejected, yet a server that ignores it will
-        // overwrite the probe, which would look like "If-Match did not hold".
-        final http.Response unchanged = await _send(
+      final http.Response stale = await put(
+        WebDavStage.conditionalStaleUpdateProbe,
+        updateBytes,
+        <String, String>{'If-Match': bogus},
+      );
+      final http.Response afterStale = await get(
+        WebDavStage.conditionalStaleUpdateProbe,
+      );
+      final bool staleUnchanged =
+          matches(afterStale, beforeUpdate) &&
+          afterStale.request?.url == ownedTarget &&
+          stale.request?.url == ownedTarget &&
+          _consistentWithTag(afterStale, tag);
+      result.supportsIfMatch = stale.statusCode == 412 && staleUnchanged;
+      outcome(
+        WebDavStage.conditionalStaleUpdateProbe,
+        'PUT',
+        result.supportsIfMatch
+            ? 'passed'
+            : _isSuccess(stale.statusCode) || !staleUnchanged
+            ? 'ignored'
+            : 'rejected',
+      );
+      if (!result.supportsIfMatch) {
+        outcome(WebDavStage.conditionalValidUpdateProbe, 'PUT', 'skipped');
+        return result
+          ..canUpdate = matches(afterStale, afterUpdate)
+          ..issue ??= '服务器未通过过期版本防覆盖验证'
+          ..issueMethod = 'PUT'
+          ..issueStatus = stale.statusCode;
+      }
+
+      final http.Response update = await put(
+        WebDavStage.conditionalValidUpdateProbe,
+        updateBytes,
+        <String, String>{'If-Match': tag},
+      );
+      final http.Response after = await get(
+        WebDavStage.conditionalValidUpdateProbe,
+      );
+      result.canUpdate =
+          _isSuccess(update.statusCode) &&
+          matches(after, afterUpdate) &&
+          after.request?.url == update.request?.url &&
+          after.request?.url == read.request?.url;
+      final nextMetadata =
+          (result.canUpdate && strongEtag(after.headers['etag']) == null)
+          ? await _propfind(uri, stage: WebDavStage.conditionalValidUpdateProbe)
+          : metadata;
+      final String? nextTag = result.canUpdate
+          ? await boundTag(
+              WebDavStage.conditionalValidUpdateProbe,
+              after,
+              update,
+              afterUpdate,
+              nextMetadata,
+            )
+          : null;
+      final bool tagChanged = nextTag != null && nextTag != tag;
+      if (tagChanged && result.supportsConditionalRead) {
+        final http.Response previous = await get(
+          WebDavStage.conditionalValidUpdateProbe,
+          match: tag,
+        );
+        result.supportsConditionalRead =
+            previous.statusCode == 412 &&
+            previous.request?.url == read.request?.url;
+        outcome(
+          WebDavStage.conditionalValidUpdateProbe,
           'GET',
-          uri,
-          headers: common,
-          stage: WebDavStage.conditionalStaleUpdateProbe,
+          result.supportsConditionalRead ? 'passed' : 'ignored',
         );
-        if (unchanged.statusCode != 200 ||
-            unchanged.body != initial ||
-            strongEtag(unchanged.headers['etag']) != tag) {
-          result.issue ??= '条件请求失败后探测文件仍被修改，服务器未真正执行条件写入';
-          result.supportsIfMatch = false;
-        }
-
-        final http.Response exists = await _send(
-          'PUT',
-          uri,
-          headers: <String, String>{...common, 'If-None-Match': '*'},
-          body: changedBytes,
-          stage: WebDavStage.conditionalExistingCreateProbe,
-        );
-        result.supportsIfNoneMatch = exists.statusCode == 412;
-        if (!result.supportsIfNoneMatch) {
-          result.issue ??=
-              '服务器未拒绝已存在文件的 If-None-Match（HTTP ${exists.statusCode}），首次写入无法防止覆盖';
-          result.issueMethod = 'PUT';
-          result.issueStatus = exists.statusCode;
-        }
-
-        final http.Response update = await _send(
-          'PUT',
-          uri,
-          headers: <String, String>{...common, 'If-Match': tag},
-          body: changedBytes,
-          stage: WebDavStage.conditionalValidUpdateProbe,
-        );
-        if (_isSuccess(update.statusCode)) {
-          final http.Response after = await _send(
-            'GET',
-            uri,
-            headers: common,
-            stage: WebDavStage.conditionalValidUpdateProbe,
-          );
-          final String? nextTag = strongEtag(after.headers['etag']);
-          if (after.statusCode == 200 &&
-              after.body == changed &&
-              nextTag != null &&
-              nextTag != tag) {
-            result.canUpdate = true;
-            tag = nextTag;
-          } else {
-            result.issue ??= result.endlesslySameEtag(nextTag, tag)
-                ? '更新后 ETag 没有变化，服务器未维护版本标识'
-                : '更新内容或强 ETag 校验失败';
-            result.supportsStrongEtag =
-                result.supportsStrongEtag && nextTag != null;
-          }
-        } else {
-          result.issue ??= '服务器拒绝有效的 If-Match 更新（HTTP ${update.statusCode}）';
-          result.issueMethod = 'PUT';
-          result.issueStatus = update.statusCode;
-        }
-      } else {
-        // No usable validator: at least prove that plain updates work, so the
-        // report can say "read/write works, concurrency does not".
-        final http.Response plainUpdate = await _send(
-          'PUT',
-          uri,
-          headers: common,
-          body: changedBytes,
-          stage: WebDavStage.basicWriteProbe,
-        );
-        if (_isSuccess(plainUpdate.statusCode)) {
-          final http.Response after = await _send(
-            'GET',
-            uri,
-            headers: common,
-            stage: WebDavStage.basicWriteProbe,
-          );
-          result.canUpdate = after.statusCode == 200 && after.body == changed;
-          tag = strongEtag(after.headers['etag']) ?? tag;
-        }
+        if (!result.supportsConditionalRead) result.supportsStrongEtag = false;
+      }
+      outcome(
+        WebDavStage.conditionalValidUpdateProbe,
+        'PUT',
+        tagChanged ? 'passed' : 'rejected',
+        etagChanged: tagChanged,
+      );
+      if (!tagChanged) {
+        result
+          ..supportsStrongEtag = false
+          ..issue = '更新后的内容无法关联到不同的强 ETag'
+          ..issueMethod = 'PUT'
+          ..issueStatus = update.statusCode;
+      } else if (strongEtag(after.headers['etag']) == null &&
+          nextMetadata.etag != nextTag) {
+        result.supportsStrongEtag = false;
+        result.issue ??= '只能在写入响应取得强 ETag，无法安全读取远程版本';
+      } else if (!result.supportsStrongEtag) {
+        result.issue = '服务器未通过过期版本的条件读取验证';
       }
     } finally {
       if (owned) {
+        result.cleanedUp = false;
         try {
-          await cleanup();
-        } catch (e) {
-          result.cleanedUp = false;
-          result.cleanupIssue ??= '临时探测文件清理失败：$e';
+          final http.Response current = await get(WebDavStage.probeCleanup);
+          if (current.request?.url == ownedTarget &&
+              current.statusCode == 404) {
+            result.cleanedUp = true;
+          } else if (current.request?.url == ownedTarget &&
+              (matches(current, initial) || matches(current, changed))) {
+            final http.Response removed = await _send(
+              'DELETE',
+              ownedTarget!,
+              headers: <String, String>{
+                ...common,
+                'If-Match': strongEtag(current.headers['etag']) ?? '*',
+              },
+              stage: WebDavStage.probeCleanup,
+            );
+            result.cleanedUp =
+                removed.request?.url == ownedTarget &&
+                (_isSuccess(removed.statusCode) || removed.statusCode == 404);
+          }
+        } catch (_) {
+          // The trace keeps the request outcome without embedding response data.
+        }
+        outcome(
+          WebDavStage.probeCleanup,
+          'DELETE',
+          result.cleanedUp ? 'passed' : 'rejected',
+        );
+        result.canDelete = result.cleanedUp;
+        if (!result.cleanedUp) {
+          result.issue ??= '未能确认临时探测文件已清理';
         }
       }
-    }
-
-    if (owned) result.canDelete = result.cleanedUp;
-    if (result.cleanupIssue != null) {
-      result.issue = result.issue == null
-          ? result.cleanupIssue
-          : '${result.issue}；${result.cleanupIssue}';
     }
     return result;
   }
 
-  String get _etagIssue => '服务器没有返回强 ETag（只会返回弱 ETag 或不返回），无法检测并发修改';
+  static bool _consistentWithTag(http.Response response, String tag) {
+    final String? header = strongEtag(response.headers['etag']);
+    return header == null || header == tag;
+  }
+
+  String get _etagIssue => '无法确认与文件内容对应的强 ETag，无法安全同步';
 
   @override
   Future<SyncTestResult> testConnection() async {
@@ -1437,16 +1644,16 @@ class WebDavSyncProvider implements SyncProvider {
       );
     }
     String? etag = strongEtag(response.headers['etag']);
-    if (etag == null) {
+    if (etag == null && lastCapability?.supportsConditionalRead == true) {
       final probe = await _propfind(
         p.fileUri,
         stage: WebDavStage.datasetDownload,
       );
-      etag = probe.etag;
+      etag = probe.uri == response.request?.url ? probe.etag : null;
       if (etag != null) {
         // Pair the bytes with this validator. A PROPFIND after an unconditional
         // GET may describe a newer document we have never read.
-        response = await _send(
+        final http.Response paired = await _send(
           'GET',
           p.fileUri,
           headers: await _headers(
@@ -1457,14 +1664,19 @@ class WebDavSyncProvider implements SyncProvider {
           ),
           stage: WebDavStage.datasetDownload,
         );
-        if (response.statusCode != 200) {
+        if (paired.statusCode != 200) {
           _raise(
-            response,
+            paired,
             '读取数据',
             stage: WebDavStage.datasetDownload,
             method: 'GET',
           );
         }
+        if (paired.request?.url != probe.uri ||
+            !_consistentWithTag(paired, etag)) {
+          throw const SyncConflictException('无法确认远程内容对应的版本');
+        }
+        response = paired;
       }
     }
     final List<int> bytes = response.bodyBytes;
@@ -1552,14 +1764,7 @@ class WebDavSyncProvider implements SyncProvider {
       throw const SyncConflictException('远程文件已被其他设备修改');
     }
     if (_isSuccess(response.statusCode)) {
-      String? etag = strongEtag(response.headers['etag']);
-      if (etag == null || etag.isEmpty) {
-        final probe = await _propfind(
-          p.fileUri,
-          stage: WebDavStage.datasetVerification,
-        );
-        etag = probe.etag;
-      }
+      final String? etag = strongEtag(response.headers['etag']);
       return SyncUploadResult(
         ok: true,
         message: '已写入 ${p.fileUri.path}',
@@ -1579,16 +1784,11 @@ class _WriteProbe {
   bool canUpdate = false;
   bool canDelete = false;
   bool supportsStrongEtag = false;
+  bool supportsConditionalRead = false;
   bool supportsIfMatch = false;
   bool supportsIfNoneMatch = false;
   bool cleanedUp = true;
   String? issue;
   String? issueMethod;
   int? issueStatus;
-  String? cleanupIssue;
-
-  /// True when the update produced a *new* strong ETag — i.e. the server really
-  /// tracks versions instead of echoing the old validator.
-  bool endlesslySameEtag(String? next, String? current) =>
-      next != null && current != null && next == current;
 }
