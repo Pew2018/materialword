@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:materialword/app/app.dart';
 import 'package:materialword/app/navigation.dart';
 import 'package:materialword/app/providers.dart';
+import 'package:materialword/app/theme.dart';
 import 'package:materialword/core/database/app_database.dart';
 
 import 'helpers/test_env.dart';
@@ -72,10 +73,18 @@ void main() {
   });
 
   group('T18 不同窗口宽度下无严重布局溢出', () {
+    // The responsive matrix from the design system: phone, small tablet, the
+    // 720–900 icon-rail band that a narrow desktop window lands in, and wide
+    // desktop.
     for (final Size size in <Size>[
       const Size(360, 740),
+      const Size(412, 860),
+      const Size(520, 820),
       const Size(600, 900),
+      const Size(720, 900),
+      const Size(840, 900),
       const Size(1024, 768),
+      const Size(1280, 900),
       const Size(1600, 1000),
     ]) {
       testWidgets('宽度 ${size.width.toInt()} 不溢出', (WidgetTester tester) async {
@@ -91,7 +100,7 @@ void main() {
         // `ClassicBottomNavigationBar` (fixed item widths, item-scoped ripple,
         // separate hover/focus/pressed feedback). The assertion follows the new
         // widget but keeps exactly the same intent.
-        final bool narrow = size.width < 900;
+        final bool narrow = size.width < AppDimens.railCollapseBreakpoint;
         expect(
           find.byType(ClassicBottomNavigationBar),
           narrow ? findsOneWidget : findsNothing,

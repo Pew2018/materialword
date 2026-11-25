@@ -279,6 +279,59 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('classic menu keeps its surface and contrast in dark mode', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(600, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final ThemeData theme = AppTheme.dark();
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: theme,
+        home: Scaffold(
+          appBar: AppBar(title: const Text('选择')),
+          body: Padding(
+            padding: const EdgeInsets.all(16),
+            child: ClassicSelect<String>(
+              label: '当前学习词书',
+              value: 'a',
+              options: const <ClassicOption<String>>[
+                ClassicOption<String>(value: 'a', label: '全部词书'),
+                ClassicOption<String>(value: 'b', label: 'CET-6 示例词书'),
+              ],
+              onChanged: (_) {},
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byType(ClassicSelect<String>));
+    await settle(tester);
+
+    // The menu is the dark surface, not a white sheet, and its labels keep the
+    // light text colour.
+    final Material surface = tester.widget<Material>(
+      find
+          .ancestor(
+            of: find.byType(PopupMenuItem<String>).first,
+            matching: find.byType(Material),
+          )
+          .last,
+    );
+    expect(surface.color, theme.colorScheme.surface);
+    final Text label = tester.widget<Text>(find.text('CET-6 示例词书'));
+    expect(label.style?.color ?? theme.textTheme.bodyMedium?.color, isNotNull);
+    expect(
+      ThemeData.estimateBrightnessForColor(theme.colorScheme.surface),
+      Brightness.dark,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('dashboard has one primary action and no duplicate 词书 entry', (
     WidgetTester tester,
   ) async {
