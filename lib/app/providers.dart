@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
 
 import '../core/database/app_database.dart';
 import '../core/models/study_models.dart';
@@ -81,6 +82,15 @@ final Provider<BackupService> backupServiceProvider = Provider<BackupService>(
     words: ref.watch(wordRepositoryProvider),
     settings: ref.watch(settingsRepositoryProvider),
   ),
+);
+
+/// Transport used by sync providers built from the settings page.
+///
+/// `null` means "let the provider create its own client", which is the shipping
+/// path. Tests override it with an in-memory or loopback client so the *page* —
+/// not only the provider — can be driven end to end.
+final Provider<http.Client?> syncHttpClientProvider = Provider<http.Client?>(
+  (Ref ref) => null,
 );
 
 /// Recovery copies: creation, retention, automatic scheduling, protective

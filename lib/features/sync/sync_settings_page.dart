@@ -15,6 +15,8 @@ import '../../services/sync/sync_coordinator.dart';
 import '../../services/sync/sync_provider.dart';
 import '../../services/sync/webdav_sync_provider.dart';
 import '../../shared/widgets/common.dart';
+import '../settings/diagnostics_page.dart';
+import 'webdav_directory_picker.dart';
 
 /// One place for every sync option: pick exactly one provider, fill in its
 /// connection data, test it, sync manually, and see what happened last time.
@@ -52,12 +54,20 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
   final TextEditingController _githubToken = TextEditingController();
   final TextEditingController _webdavUser = TextEditingController();
   final TextEditingController _webdavPassword = TextEditingController();
+  // Driven by a controller because the folder picker writes into it: an
+  // uncontrolled field would keep showing the old path after a selection.
+  final TextEditingController _webdavDir = TextEditingController();
 
   bool _loaded = false;
   bool _busy = false;
   bool _allowSecretEdit = false;
   String? _status;
   String? _error;
+
+  /// Last proven capability for the configured WebDAV target. Comes either from
+  /// an explicit 测试连接 in this session or from the per-target cache; it is
+  /// what the status icon, the automatic-sync gate and 立即同步 consult.
+  SyncCapability? _capability;
 
   /// Shown when the Keychain exists but could not be read (re-signed build, new
   /// Keychain class, locked keychain). The user is asked to type the secret
@@ -83,6 +93,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
     _githubToken.dispose();
     _webdavUser.dispose();
     _webdavPassword.dispose();
+    _webdavDir.dispose();
     super.dispose();
   }
 
@@ -143,8 +154,14 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
         });
       _savedToken = token ?? '';
       _savedUser = user ?? '';
+      // Suggested default for a brand-new WebDAV configuration. An explicitly
+      // emptied field stays empty, which means "the base collection itself".
+      if (_provider == 'webdav' && _fields['dir'] == null) {
+        _fields['dir'] = 'materialword';
+      }
       _githubToken.text = token ?? '';
       _webdavUser.text = user ?? '';
+      _webdavDir.text = _field('dir');
       _webdavPassword.text = hasPassword ? '••••••••' : '';
       _lastSyncAt = lastAt;
       _lastResult = lastResult;
@@ -154,6 +171,30 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       _conflicts = conflicts;
       _loaded = true;
     });
+    await _refreshCapability();
+  }
+
+  /// Reads the remembered capability for the *saved* target.
+  ///
+  /// Nothing is probed here: opening the page must not cost a dozen HTTP
+  /// requests. A verified result from an earlier session is enough to keep the
+  /// status icon honest until something invalidates it.
+  Future<void> _refreshCapability() async {
+    if (_provider != 'webdav') {
+      if (mounted && _capability != null) setState(() => _capability = null);
+      return;
+    }
+    final SyncProvider? provider = _buildProvider();
+    if (provider is! WebDavSyncProvider) return;
+    try {
+      final SyncCapability? cached = await ref
+          .read(syncCoordinatorProvider)
+          .cachedCapability(provider);
+      if (!mounted) return;
+      setState(() => _capability = cached);
+    } catch (_) {
+      // A capability lookup must never stop the page from loading.
+    }
   }
 
   String _field(String key, {String fallback = ''}) => _fields[key] ?? fallback;
@@ -195,6 +236,14 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       );
       if (!saved && mounted) {
         showMessage(context, '连接配置已改变，请重新打开同步页后设置', error: true);
+      } else if (saved &&
+          value &&
+          mounted &&
+          _provider == 'webdav' &&
+          !(_capability?.safeBidirectionalSync ?? false)) {
+        // The preference is kept, but the promise is not: automatic sync will
+        // not run until the server passes the safety verification.
+        showMessage(context, '已保存偏好。自动同步需要先通过「测试连接」验证安全写入，在此之前不会运行。');
       }
     } catch (_) {
       if (mounted) showMessage(context, '自动同步选项保存失败，请重试', error: true);
@@ -213,6 +262,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
           path: _field('path', fallback: 'materialword-data.json'),
           identityEpoch: _field('credentialEpoch'),
           credentials: ref.read(credentialStoreProvider),
+          client: ref.read(syncHttpClientProvider),
           tokenOverride: draft && _githubToken.text.trim().isNotEmpty
               ? _githubToken.text.trim()
               : null,
@@ -220,10 +270,11 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       case 'webdav':
         return WebDavSyncProvider(
           baseUrl: _field('url'),
-          remoteDir: _field('dir', fallback: 'materialword'),
+          remoteDir: _field('dir'),
           fileName: _field('file', fallback: 'materialword-data.json'),
           identityEpoch: _field('credentialEpoch'),
           credentials: ref.read(credentialStoreProvider),
+          client: ref.read(syncHttpClientProvider),
           usernameOverride: draft && _webdavUser.text.trim().isNotEmpty
               ? _webdavUser.text.trim()
               : null,
@@ -301,7 +352,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       case 'webdav':
         config
           ..['url'] = _field('url')
-          ..['dir'] = _field('dir', fallback: 'materialword')
+          ..['dir'] = _field('dir')
           ..['file'] = _field('file', fallback: 'materialword-data.json');
     }
     await ref
@@ -323,9 +374,18 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       if (provider is GitHubSyncProvider) await provider.captureCredentials();
       if (provider is WebDavSyncProvider) await provider.captureCredentials();
       final SyncTestResult result = await provider.testConnection();
+      final SyncCapability? capability = result.capability;
+      if (capability != null && provider is WebDavSyncProvider) {
+        // Remember what was just proven, so automatic sync can trust it and the
+        // next page load does not have to probe again.
+        await ref
+            .read(syncCoordinatorProvider)
+            .rememberCapability(provider, capability);
+      }
       if (!mounted) return;
       setState(() {
         _testResult = result;
+        if (capability != null) _capability = capability;
         _busy = false;
       });
     } on SyncException catch (e) {
@@ -352,6 +412,41 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
     }
   }
 
+  /// Browses the server instead of guessing a path.
+  ///
+  /// On 坚果云 the folder shown in Finder and the WebDAV path are not the same
+  /// string; letting the user pick the real folder removes that guesswork.
+  Future<void> _pickRemoteDirectory() async {
+    final SyncProvider? provider = _buildProvider(draft: true);
+    if (provider is! WebDavSyncProvider) return;
+    setState(() => _busy = true);
+    try {
+      await provider.captureCredentials();
+      if (!mounted) return;
+      final String? chosen = await showWebDavDirectoryPicker(
+        context: context,
+        provider: provider,
+        initialPath: _field('dir'),
+      );
+      if (chosen == null || !mounted) return;
+      setState(() {
+        _fields['dir'] = chosen;
+        _webdavDir.text = chosen;
+        _testResult = null;
+        _capability = null;
+        _status = '已选择远程目录：${chosen.isEmpty ? '服务器基础目录' : chosen}';
+      });
+    } on SyncException catch (e) {
+      if (mounted) showMessage(context, e.message, error: true);
+    } catch (e) {
+      if (mounted) showMessage(context, '无法浏览远程目录：$e', error: true);
+    } finally {
+      provider.clearCapturedCredentials();
+      provider.close();
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _syncNow() async {
     if (_draftCredentialsChanged) {
       _fields['credentialEpoch'] = const Uuid().v4();
@@ -361,6 +456,16 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
     final SyncCoordinator coordinator = ref.read(syncCoordinatorProvider);
     if (coordinator.isRunning) {
       setState(() => _error = '同步正在进行中');
+      return;
+    }
+
+    // A server that is known *not* to support conditional writes must not offer
+    // "立即同步": that would be an unconditional overwrite wearing a safe name.
+    final SyncCapability? capability = _provider == 'webdav'
+        ? _capability
+        : null;
+    if (capability != null && !capability.safeBidirectionalSync) {
+      await _explainUnsafeTarget(capability);
       return;
     }
 
@@ -377,6 +482,52 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       if (!ok) return;
     }
 
+    await _runSync(provider);
+  }
+
+  /// What to do when the server cannot protect concurrent writes.
+  Future<void> _explainUnsafeTarget(SyncCapability capability) async {
+    final String? choice = await showDialog<String>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        title: Text(capability.summary),
+        scrollable: true,
+        content: Text(
+          '${capability.detail ?? '服务器没有通过条件写入验证。'}\n\n'
+          '正常情况下这里会用条件请求写入，确保两台设备同时修改时不会互相覆盖。'
+          '这台服务器做不到，所以自动合并和「立即同步」都不会执行。\n\n'
+          '可以改用「导出备份」，或用其他支持 WebDAV 条件请求的服务。',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop('test'),
+            child: const Text('重新测试连接'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop('export'),
+            child: const Text('导出备份'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('取消'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (choice == 'test') {
+      await _runTest();
+    } else if (choice == 'export') {
+      await _exportBackup();
+    }
+  }
+
+  Future<void> _runSync(
+    SyncProvider provider, {
+    bool initializeEmptyRemote = false,
+    bool allowRemoteRecreate = false,
+  }) async {
+    final SyncCoordinator coordinator = ref.read(syncCoordinatorProvider);
     setState(() {
       _busy = true;
       _error = null;
@@ -390,6 +541,8 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
     try {
       final SyncReport report = await coordinator.sync(
         provider,
+        initializeEmptyRemote: initializeEmptyRemote,
+        allowRemoteRecreate: allowRemoteRecreate,
         onProgress: (SyncStage stage, String detail) {
           if (!mounted) return;
           setState(() => _status = '${stage.label}：$detail');
@@ -406,6 +559,14 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
         _error = report.ok ? null : report.message;
       });
       await _load();
+    } on SyncEmptyRemoteException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _status = null;
+        _error = e.message;
+      });
+      await _offerEmptyRemoteInitialization(e, provider);
     } on SyncException catch (e) {
       if (!mounted) return;
       setState(() {
@@ -421,6 +582,34 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
         _error = '同步失败：$e';
       });
     }
+  }
+
+  /// The remote document exists but holds 0 bytes.
+  ///
+  /// Initializing is a *write to an existing file*, so it needs a confirmation
+  /// and the file's own ETag (`If-Match`). The wording differs for a file that
+  /// was synced before: that is data loss, not a first run.
+  Future<void> _offerEmptyRemoteInitialization(
+    SyncEmptyRemoteException error,
+    SyncProvider provider,
+  ) async {
+    if (!mounted) return;
+    final bool ok = await confirmDialog(
+      context,
+      title: error.previouslySynced ? '远程文件变成空文件' : '远程文件为空',
+      message: error.previouslySynced
+          ? '这个同步目标之前成功同步过，但远程文件现在是 0 字节。\n\n'
+                '继续会用本机数据重新初始化它，远端原本的内容将被替换。'
+                '只有在你确认远端数据已经不需要时才继续。'
+          : '远程同步文件为空。\n\n'
+                '是否使用本机学习数据初始化这个文件？\n\n'
+                '初始化会带上该文件当前的版本标识；如果其他设备在此期间写入，'
+                '本次初始化会被拒绝，不会覆盖对方的数据。',
+      confirmLabel: '初始化并同步',
+      destructive: error.previouslySynced,
+    );
+    if (!ok || !mounted) return;
+    await _runSync(provider, initializeEmptyRemote: true);
   }
 
   /// Explicit user decision after a point-in-time restore: merge the remote into
@@ -500,25 +689,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       destructive: true,
     );
     if (!ok || !mounted) return;
-    setState(() => _busy = true);
-    try {
-      final report = await ref
-          .read(syncCoordinatorProvider)
-          .sync(provider, allowRemoteRecreate: true);
-      if (!mounted) return;
-      setState(() {
-        _busy = false;
-        _status = report.message;
-        _error = null;
-      });
-      await _load();
-    } on SyncException catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _busy = false;
-        _error = e.message;
-      });
-    }
+    await _runSync(provider, allowRemoteRecreate: true);
   }
 
   /// Restoring the discarded value is a **new normal edit**, so the existing
@@ -829,48 +1000,28 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
                       ],
                     ),
                   ),
-                  if (_testResult != null)
+                  if (_provider == 'webdav' &&
+                      !(_capability?.safeBidirectionalSync ?? false) &&
+                      (autoStart ||
+                          autoResume ||
+                          _fields['autoOnChange'] == 'true' ||
+                          _fields['autoAfterSession'] == 'true'))
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          Row(
-                            children: <Widget>[
-                              Icon(
-                                _testResult!.ok
-                                    ? Icons.check_circle
-                                    : Icons.error_outline,
-                                size: AppDimens.iconSizeSmall,
-                                color: _testResult!.ok
-                                    ? AppColors.known
-                                    : AppColors.unknown,
-                              ),
-                              AppSpacing.w8,
-                              Expanded(
-                                child: Text(
-                                  _testResult!.message,
-                                  style: theme.textTheme.bodyMedium,
-                                ),
-                              ),
-                            ],
-                          ),
-                          for (final String detail in _testResult!.details)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 4),
-                              child: Text(
-                                detail.startsWith('NO_CONDITIONAL_WRITE')
-                                    ? detail.replaceFirst(
-                                        'NO_CONDITIONAL_WRITE:',
-                                        '注意：',
-                                      )
-                                    : '· $detail',
-                                style: theme.textTheme.bodySmall,
-                              ),
-                            ),
-                        ],
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                      child: Text(
+                        _capability == null
+                            ? '自动同步尚未启用：请先「测试连接」完成安全写入验证。'
+                            : '自动同步尚未启用：${_capability!.summary}。',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: AppColors.hazy,
+                        ),
                       ),
                     ),
+                  // Status, capability and the technical detail in one block.
+                  // It is built from the structured capability rather than from
+                  // a single bool, so a green tick can never sit next to
+                  // "cannot sync safely".
+                  _statusBlock(theme),
                 ],
               ),
               if (_conflicts.isNotEmpty) ...<Widget>[
@@ -977,6 +1128,19 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                       child: Text('· $note', style: theme.textTheme.bodySmall),
                     ),
+                  // One tap from a failed sync to the request log. The log itself
+                  // stays behind the diagnostics switch and is redacted.
+                  SettingsTile(
+                    leading: const Icon(Icons.bug_report_outlined),
+                    title: '同步诊断信息',
+                    subtitle: '查看并导出最近的同步请求记录（不含密码与学习内容）',
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const DiagnosticsPage(),
+                      ),
+                    ),
+                  ),
                 ],
               ),
               // Everything below is deliberately collapsed: the main page has
@@ -1026,6 +1190,146 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
     );
   }
 
+  /// Icon, colour and wording for the current state.
+  ///
+  /// A single `ok` bool is not enough to describe a sync target: "connected" and
+  /// "safe for two devices" are different facts, and showing a green tick for a
+  /// server that cannot do conditional writes was actively misleading.
+  _StatusVisual _statusVisual(ThemeData theme) {
+    final Color neutral = theme.brightness == Brightness.dark
+        ? AppColors.textSecondaryDark
+        : AppColors.textSecondaryLight;
+    final SyncCapability? capability = _testResult?.capability ?? _capability;
+    final List<String> details = _testResult?.details ?? const <String>[];
+
+    if (capability == null) {
+      if (_testResult != null) {
+        // Providers without a capability report (GitHub, local file) keep their
+        // own message; there is no conditional-write question to answer.
+        return _StatusVisual(
+          icon: _testResult!.ok ? Icons.check_circle : Icons.error_outline,
+          color: _testResult!.ok ? AppColors.known : AppColors.unknown,
+          text: _testResult!.message,
+          hint: null,
+          details: details,
+        );
+      }
+      return _StatusVisual(
+        icon: Icons.help_outline,
+        color: neutral,
+        text: '尚未验证连接',
+        hint: _provider == 'webdav' ? '填写地址与账号后点「测试连接」。同步前必须先验证安全写入能力。' : null,
+        details: const <String>[],
+      );
+    }
+
+    final (IconData, Color) visual = switch (capability.status) {
+      SyncCapabilityStatus.safeConditionalWrite => (
+        Icons.check_circle,
+        AppColors.known,
+      ),
+      SyncCapabilityStatus.basicReadWrite => (
+        Icons.warning_amber_outlined,
+        AppColors.hazy,
+      ),
+      SyncCapabilityStatus.readOnly => (
+        Icons.warning_amber_outlined,
+        AppColors.hazy,
+      ),
+      SyncCapabilityStatus.directoryUnavailable => (
+        Icons.folder_off_outlined,
+        AppColors.unknown,
+      ),
+      SyncCapabilityStatus.authenticationFailed => (
+        Icons.lock_outline,
+        AppColors.unknown,
+      ),
+      SyncCapabilityStatus.connectionFailed => (
+        Icons.cloud_off_outlined,
+        AppColors.unknown,
+      ),
+      SyncCapabilityStatus.unknown => (Icons.help_outline, neutral),
+    };
+    return _StatusVisual(
+      icon: visual.$1,
+      color: visual.$2,
+      text: capability.summary,
+      hint: capability.detail,
+      details: details,
+    );
+  }
+
+  Widget _statusBlock(ThemeData theme) {
+    final _StatusVisual visual = _statusVisual(theme);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Icon(
+                visual.icon,
+                size: AppDimens.iconSizeSmall,
+                color: visual.color,
+              ),
+              AppSpacing.w8,
+              Expanded(
+                child: Text(visual.text, style: theme.textTheme.bodyMedium),
+              ),
+            ],
+          ),
+          if (visual.hint != null && visual.hint!.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(visual.hint!, style: theme.textTheme.bodySmall),
+            ),
+          if (visual.details.isNotEmpty)
+            ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              childrenPadding: const EdgeInsets.only(bottom: 4),
+              title: Text('技术详情', style: theme.textTheme.bodySmall),
+              children: <Widget>[
+                for (final String detail in visual.details)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Text(
+                        detail.startsWith('NO_CONDITIONAL_WRITE')
+                            ? detail.replaceFirst(
+                                'NO_CONDITIONAL_WRITE:',
+                                '注意：',
+                              )
+                            : '· $detail',
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// Any edit to the connection data invalidates what was proven for the *old*
+  /// configuration: a capability result belongs to one address + directory +
+  /// account, and must never be inherited by the next one.
+  void _invalidateVerification() {
+    if (_capability == null && _testResult == null) return;
+    if (mounted) {
+      setState(() {
+        _capability = null;
+        _testResult = null;
+      });
+    } else {
+      _capability = null;
+      _testResult = null;
+    }
+  }
+
   Widget _configGroup() {
     final ThemeData theme = Theme.of(context);
 
@@ -1039,10 +1343,14 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       String fallback = '',
     }) {
       return _SyncTextField(
+        key: ValueKey<String>('sync_field_$key'),
         label: label,
         hint: hint,
         initialValue: _field(key, fallback: fallback),
-        onChanged: (String value) => _fields[key] = value,
+        onChanged: (String value) {
+          _fields[key] = value;
+          _invalidateVerification();
+        },
       );
     }
 
@@ -1110,25 +1418,59 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
             field(
               'url',
               '服务器地址（HTTPS）',
-              hint: 'https://dav.example.com/remote.php/dav/files/me/',
+              hint: 'https://dav.jianguoyun.com/dav/',
             ),
             _SyncTextField(
               label: '用户名',
               controller: _webdavUser,
-              onChanged: (String value) => _fields['user'] = value,
+              onChanged: (String value) {
+                _fields['user'] = value;
+                _invalidateVerification();
+              },
             ),
             secretField(
               '密码 / 服务专用密码',
               controller: _webdavPassword,
               helper: '留空表示保持不变',
+              onChanged: (String _) => _invalidateVerification(),
             ),
-            field('dir', '远程目录', fallback: 'materialword'),
+            _SyncTextField(
+              key: const ValueKey<String>('sync_field_dir'),
+              label: '远程目录',
+              hint: 'MaterialWord',
+              controller: _webdavDir,
+              onChanged: (String value) {
+                _fields['dir'] = value;
+                _invalidateVerification();
+              },
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: OutlinedButton.icon(
+                  onPressed: _busy ? null : _pickRemoteDirectory,
+                  icon: const Icon(Icons.folder_open),
+                  label: const Text('选择远程文件夹'),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+              child: Text(
+                '留空表示使用服务器地址本身。'
+                '不确定真实路径时，用上面的按钮浏览服务器文件夹，'
+                '不要照抄网盘客户端里显示的名称。',
+                style: theme.textTheme.bodySmall,
+              ),
+            ),
             field('file', '数据文件名', fallback: 'materialword-data.json'),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
               child: Text(
                 '只使用 HTTPS，不会关闭证书校验。'
-                '如果服务器无法可靠地处理多设备同时修改，可以用「立即同步」手动合并。',
+                '同步使用条件请求（ETag）保护多设备同时修改；'
+                '服务器不支持时，本页不会启用自动同步。',
                 style: theme.textTheme.bodySmall,
               ),
             ),
@@ -1140,6 +1482,24 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
   }
 }
 
+/// What the status row shows: icon, colour, headline, one-line explanation and
+/// the technical details hidden behind a disclosure.
+class _StatusVisual {
+  const _StatusVisual({
+    required this.icon,
+    required this.color,
+    required this.text,
+    required this.details,
+    this.hint,
+  });
+
+  final IconData icon;
+  final Color color;
+  final String text;
+  final String? hint;
+  final List<String> details;
+}
+
 /// One visual shell for every connection field on this page.
 ///
 /// The four inputs used to be a mix of `TextFormField` and `TextField` with
@@ -1149,6 +1509,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
 /// controllers and the save logic stay exactly where they were.
 class _SyncTextField extends StatelessWidget {
   const _SyncTextField({
+    super.key,
     required this.label,
     this.initialValue,
     this.controller,

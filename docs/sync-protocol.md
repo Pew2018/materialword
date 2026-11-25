@@ -32,6 +32,11 @@ JSON 包含 `kind=materialword-backup`、`schemaVersion=3`、datasetId、作者 
 - 更新用 If-Match，首次创建用 If-None-Match:*；412 重新读取合并，最多三次。
 - 每次 WebDAV 同步（包括自动同步）在 UUID 临时资源上实测过期 If-Match/重复 If-None-Match 必须返回 412，失败请求不能改内容，有效更新必须读回新内容与强 ETag；最后条件删除临时文件。探测失败不写正式数据。
 - 7 项本机真实 HTTPS 测试覆盖忽略条件、弱/无 ETag、412 重试、上传期间作答及 TLS 不受信任证书拒绝。测试信任运行时生成的根，不关闭证书校验。用户真实 WebDAV 服务及真机联网仍未验收。
+- Phase 6.2 起，路径模型把「服务器基础集合」「用户目录」「数据文件」分开：`/dav/` 只探测，永不 `MKCOL`；`''`、`/`、`X`、`/X`、`/X/` 解析一致；百分号只编码一次；`..`、控制字符、含 `/` 的文件名在配置阶段拒绝（见 `docs/phase6.2-webdav-compatibility.md`）。
+- 能力探测拆成「连接 → 基础读写 → 条件写入」：探测文件改为普通 `materialword-probe-<uuid>.json`（不再是隐藏 `.txt`），条件创建失败时才在同一临时资源上做普通 PUT 以区分「不能写」与「不能条件写」。能力以结构化 `SyncCapability` 表达，只有 `safeConditionalWrite` 允许自动同步；`ok == true` 不再等于可以同步。
+- 远程文档状态区分 `missing / empty / valid`：0 字节文件用其自身 ETag 作 `If-Match` 初始化，需要用户明确确认；曾同步成功的目标突然变空、损坏 JSON、`{}` 都视为异常，不自动覆盖。
+- 已验证的能力按目标指纹（规范化地址、目录、文件名、凭据 epoch、用户名摘要）缓存 7 天，自动同步不再每次重新探测；正式上传仍保留条件请求。失败结果不缓存。
+- 每个请求按阶段记入脱敏诊断（`stage` / `method` / `path` / `status`），403 与 404 可在「同步诊断信息」中定位到具体请求。
 
 ## GitHub
 

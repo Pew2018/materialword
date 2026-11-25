@@ -13,6 +13,7 @@ import 'conflict_store.dart';
 import 'credential_store.dart';
 import 'github_sync_provider.dart';
 import 'local_file_sync_provider.dart';
+import 'sync_capability_cache.dart';
 import 'sync_provider.dart';
 import 'webdav_sync_provider.dart';
 
@@ -109,6 +110,9 @@ class SyncCoordinator {
   final CredentialStore credentials;
   final Clock clock;
 
+  /// Verified capabilities, keyed by sync target and bound to a fingerprint.
+  late final SyncCapabilityCache capabilityCache = SyncCapabilityCache(db);
+
   static const String lastLocalHashKey = 'last_sync_local_hash';
   static const String lastRemoteRevisionKey = 'last_sync_remote_revision';
   static const int maxAttempts = 3;
@@ -159,6 +163,7 @@ class SyncCoordinator {
     bool skipConnectionTest = false,
     bool allowRemoteRecreate = false,
     bool resumeAfterRestore = false,
+    bool initializeEmptyRemote = false,
   }) async {
     if (_running) {
       throw const SyncException('已有同步正在进行，请稍后再试');
@@ -182,7 +187,18 @@ class SyncCoordinator {
       if (provider is GitHubSyncProvider) await provider.captureCredentials();
       if (provider is WebDavSyncProvider) await provider.captureCredentials();
       onProgress?.call(SyncStage.validating, '检查配置');
-      if (!skipConnectionTest || provider is WebDavSyncProvider) {
+      if (provider is WebDavSyncProvider) {
+        // Capability is remembered per target: a server that already passed the
+        // full probe is not probed again on every automatic run. An unverified
+        // server is never treated as verified — `safeBidirectionalSync` is the
+        // only thing that opens the gate.
+        final SyncCapability capability = await ensureCapability(provider);
+        if (!capability.safeBidirectionalSync) {
+          throw SyncException(
+            '${capability.summary}：${capability.detail ?? '请重新测试连接'}',
+          );
+        }
+      } else if (!skipConnectionTest) {
         final SyncTestResult test = await provider.testConnection();
         if (!test.ok) {
           throw SyncException('连接测试未通过：${test.message}');
@@ -193,9 +209,6 @@ class SyncCoordinator {
           ),
         );
         if (!test.supportsConditionalWrites) {
-          if (provider is WebDavSyncProvider) {
-            throw const SyncException('服务器未通过条件写入验证，请使用手动文件备份');
-          }
           notes.add('该目标仅适合手动备份，不保证自动双向同步');
         }
       }
@@ -209,14 +222,27 @@ class SyncCoordinator {
         attempts = attempt + 1;
         try {
           onProgress?.call(SyncStage.downloading, '读取远程数据');
-          final SyncPayload? remote = await provider.download();
+          final RemoteDataset fetched = await provider.fetchRemote();
+          final bool syncedBefore = await hasSyncedTarget(provider);
 
-          if (remote == null &&
-              !allowRemoteRecreate &&
-              await hasSyncedTarget(provider)) {
+          if (fetched.isMissing && !allowRemoteRecreate && syncedBefore) {
             onProgress?.call(SyncStage.remoteMissing, '远程数据文件不存在');
             throw const SyncRemoteMissingException();
           }
+          if (fetched.isEmpty) {
+            // A 0-byte file is not "no file": it has a revision, and the only
+            // safe move is an `If-Match` write authorized by the user.
+            return await _initializeEmptyRemote(
+              provider,
+              fetched,
+              notes: notes,
+              attempts: attempts,
+              allowed: initializeEmptyRemote,
+              previouslySynced: syncedBefore,
+              onProgress: onProgress,
+            );
+          }
+          final SyncPayload? remote = fetched.payload;
           if (provider is WebDavSyncProvider &&
               remote != null &&
               remote.revision == null) {
@@ -333,6 +359,10 @@ class SyncCoordinator {
         } on SyncConflictException catch (e) {
           notes.add('第 $attempts 次上传冲突：${e.message}，正在重新拉取并合并');
           if (attempt == maxAttempts - 1) {
+            // Repeated conflicts may mean the server stopped honouring the
+            // conditional request; drop the cached capability so the next run
+            // re-proves it instead of trusting a stale verdict.
+            await invalidateCapability(provider);
             if (merge?.hasChanges ?? false) {
               throw SyncPartialException(
                 '本机已合并远程数据，但上传未能完成（多次并发冲突）。'
@@ -400,6 +430,124 @@ class SyncCoordinator {
       _activeConfigRevision = null;
     }
   }
+
+  /// Initializes a remote document that exists but holds no data.
+  ///
+  /// Safety rules (see `docs/phase6.2-webdav-compatibility.md`):
+  ///  * never automatic — [allowed] comes from an explicit user confirmation;
+  ///  * never unconditional — the empty file's own ETag is sent as `If-Match`,
+  ///    so a device that wrote in the meantime wins and we get a 412;
+  ///  * never a silent repair of an *anomalous* empty file: [previouslySynced]
+  ///    is reported so the caller can warn that this target had data before.
+  Future<SyncReport> _initializeEmptyRemote(
+    SyncProvider provider,
+    RemoteDataset remote, {
+    required List<String> notes,
+    required int attempts,
+    required bool allowed,
+    required bool previouslySynced,
+    void Function(SyncStage stage, String detail)? onProgress,
+  }) async {
+    if (!allowed) {
+      throw SyncEmptyRemoteException(
+        previouslySynced
+            ? '远程同步文件变成了空文件（0 字节）。为保护数据已停止同步，请确认后重新初始化'
+            : '远程同步文件为空（0 字节）',
+        previouslySynced,
+      );
+    }
+    final String? revision = remote.revision;
+    if (revision == null) {
+      throw const SyncDataException(
+        '远程同步文件为空，但服务器没有返回 ETag，无法保证初始化时不覆盖其他设备的数据',
+      );
+    }
+    final Map<String, Object?> local = await backup.buildDataset(
+      now: clock.now(),
+    );
+    final String hash = await BackupService.contentHashOfAsync(local);
+    onProgress?.call(SyncStage.uploading, '初始化远程文件');
+    final SyncUploadResult result = await provider.upload(
+      local,
+      ifRevision: revision,
+    );
+    if (!result.ok) throw SyncException('初始化失败：${result.message}');
+    onProgress?.call(SyncStage.verifying, '校验初始化结果');
+    await _verifyUpload(provider, hash);
+    await _persistState(
+      now: clock.now(),
+      hash: hash,
+      revision: result.revision ?? revision,
+      message: '已用本机数据初始化远程文件',
+    );
+    return SyncReport(
+      ok: true,
+      message: previouslySynced
+          ? '已按你的确认，用本机数据重新初始化了远程文件（${_formatCount(local)}）'
+          : '已用本机数据初始化远程文件（${_formatCount(local)}）',
+      at: clock.now(),
+      uploaded: true,
+      attempts: attempts,
+      notes: notes,
+      stage: SyncStage.done,
+    );
+  }
+
+  /// Returns a verified capability, re-probing only when the cache is unusable.
+  ///
+  /// The full probe costs about a dozen requests, so it runs on first
+  /// configuration, after any change to address/directory/credentials, after the
+  /// TTL expires, or when [force] is set (the user pressed 测试连接).
+  Future<SyncCapability> ensureCapability(
+    WebDavSyncProvider provider, {
+    bool force = false,
+  }) async {
+    final String target = targetKey(provider);
+    final String fingerprint = await provider.capabilityFingerprint();
+    if (!force) {
+      final SyncCapability? cached = await capabilityCache.read(
+        targetKey: target,
+        fingerprint: fingerprint,
+        now: clock.now(),
+      );
+      if (cached != null) return cached;
+    }
+    final SyncCapability capability = await provider.probeCapability();
+    await rememberCapability(provider, capability, fingerprint: fingerprint);
+    return capability;
+  }
+
+  Future<SyncCapability?> cachedCapability(SyncProvider provider) async {
+    if (provider is! WebDavSyncProvider) return null;
+    return capabilityCache.read(
+      targetKey: targetKey(provider),
+      fingerprint: await provider.capabilityFingerprint(),
+      now: clock.now(),
+    );
+  }
+
+  Future<void> rememberCapability(
+    SyncProvider provider,
+    SyncCapability capability, {
+    String? fingerprint,
+  }) async {
+    if (provider is! WebDavSyncProvider) return;
+    final String target = targetKey(provider);
+    if (!capability.safeBidirectionalSync) {
+      // A failure is never cached: the next run must re-probe.
+      await capabilityCache.clear(target);
+      return;
+    }
+    await capabilityCache.write(
+      targetKey: target,
+      fingerprint: fingerprint ?? await provider.capabilityFingerprint(),
+      capability: capability,
+      now: clock.now(),
+    );
+  }
+
+  Future<void> invalidateCapability(SyncProvider provider) =>
+      capabilityCache.clear(targetKey(provider));
 
   Future<int> _recordConflicts(MergeReport? merge) async {
     if (merge == null || merge.conflictDetails.isEmpty) return 0;
@@ -497,6 +645,9 @@ class SyncCoordinator {
         !await hasSyncedTarget(provider)) {
       return null;
     }
+    if (provider is WebDavSyncProvider && !(await _verifiedForAuto(provider))) {
+      return null;
+    }
     final state = await _autoState(provider),
         now = clock.now().millisecondsSinceEpoch;
     if (now < (state['attempt'] ?? 0)) return Duration.zero;
@@ -521,6 +672,12 @@ class SyncCoordinator {
       if (provider == null ||
           !provider.supportsConditionalWrites ||
           !await hasSyncedTarget(provider)) {
+        return null;
+      }
+      // A WebDAV target only runs automatically once its capability has been
+      // *proven and remembered*. An unverified server is not "probably fine".
+      if (provider is WebDavSyncProvider &&
+          !(await _verifiedForAuto(provider))) {
         return null;
       }
       final revision = await db.readMeta(
@@ -584,6 +741,14 @@ class SyncCoordinator {
     } finally {
       _preparingAuto = false;
     }
+  }
+
+  /// True only for a WebDAV target whose capability was verified and is still
+  /// inside the cache TTL. Unknown is false: automatic sync must not start on a
+  /// hope.
+  Future<bool> _verifiedForAuto(WebDavSyncProvider provider) async {
+    final SyncCapability? capability = await cachedCapability(provider);
+    return capability?.safeBidirectionalSync ?? false;
   }
 
   Future<void> _verifyUpload(SyncProvider provider, String expectedHash) async {
@@ -820,6 +985,14 @@ class ScriptedSyncProvider implements SyncProvider {
 
   @override
   bool get supportsConditionalWrites => true;
+
+  @override
+  Future<RemoteDataset> fetchRemote() async {
+    final SyncPayload? payload = await download();
+    return payload == null
+        ? const RemoteDataset.missing()
+        : RemoteDataset.valid(payload);
+  }
 
   @override
   Future<SyncPayload?> download() async {

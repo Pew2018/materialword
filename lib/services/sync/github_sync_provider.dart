@@ -362,6 +362,14 @@ class GitHubSyncProvider implements SyncProvider {
   Future<String?> remoteRevision() async => (await probeRemote()).revision;
 
   @override
+  Future<RemoteDataset> fetchRemote() async {
+    final SyncPayload? payload = await download();
+    return payload == null
+        ? const RemoteDataset.missing()
+        : RemoteDataset.valid(payload);
+  }
+
+  @override
   Future<SyncPayload?> download() async {
     if (!isConfigured) {
       throw const SyncException('GitHub 同步尚未配置完整');

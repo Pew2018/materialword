@@ -272,8 +272,10 @@ void main() {
             headers: <String, String>{'location': redirectTo},
           );
         }
-        // Probe resources are separate from the actual data file.
-        if (request.url.path.contains('.materialword-probe-')) {
+        // Probe resources are separate from the actual data file. They are
+        // ordinary `.json` names (no leading dot): several commercial services
+        // reject hidden or `.txt` files for reasons unrelated to WebDAV.
+        if (request.url.path.contains('materialword-probe-')) {
           final key = request.url.path;
           final current = probeFiles[key];
           final ifMatch = request.headers['if-match'];

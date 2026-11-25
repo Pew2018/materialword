@@ -109,6 +109,14 @@ class LocalFileSyncProvider implements SyncProvider {
   Future<String?> remoteRevision() async => (await probeRemote()).revision;
 
   @override
+  Future<RemoteDataset> fetchRemote() async {
+    final SyncPayload? payload = await download();
+    return payload == null
+        ? const RemoteDataset.missing()
+        : RemoteDataset.valid(payload);
+  }
+
+  @override
   Future<SyncPayload?> download() async {
     _validatePath();
     final File file = File(filePath);
