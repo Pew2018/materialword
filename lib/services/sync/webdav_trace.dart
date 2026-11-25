@@ -93,9 +93,12 @@ class WebDavTraceEntry {
     if (hasFragment) out.write('has_fragment=true ');
     if (depth != null) out.write('depth=$depth ');
     if (propfindProfile != null) out.write('profile=$propfindProfile ');
-    if (compatibilityMode != null) out.write('compatibility=$compatibilityMode ');
+    if (compatibilityMode != null)
+      out.write('compatibility=$compatibilityMode ');
     if (serverErrorCode != null) {
-      out.write('server_error=${serverErrorCode!.replaceAll(RegExp(r'[\\r\\n\\s]+'), ' ')} ');
+      out.write(
+        'server_error=${serverErrorCode!.replaceAll(RegExp(r'[\\r\\n\\s]+'), ' ')} ',
+      );
     }
     if (status != null) out.write('status=$status ');
     if (redirects > 0) out.write('redirects=$redirects ');

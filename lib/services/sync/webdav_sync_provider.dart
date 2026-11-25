@@ -270,7 +270,9 @@ class WebDavSyncProvider implements SyncProvider {
           depth: depth,
           propfindProfile: propfindProfile,
           compatibilityMode: compatibilityMode,
-          serverErrorCode: response == null ? null : _serverErrorCode(response.body),
+          serverErrorCode: response == null
+              ? null
+              : _serverErrorCode(response.body),
           status: response?.statusCode,
           durationMs: watch.elapsedMilliseconds,
           redirects: redirects,
@@ -391,14 +393,20 @@ class WebDavSyncProvider implements SyncProvider {
     required WebDavPropfindProfile profile,
     required WebDavStage stage,
   }) async {
-    for (final String mode in <String>['application/xml', 'text/xml', 'no_body']) {
+    for (final String mode in <String>[
+      'application/xml',
+      'text/xml',
+      'no_body',
+    ]) {
       final http.Response response = await _send(
         'PROPFIND',
         uri,
-        headers: await _headers(extra: <String, String>{
-          'Depth': depth,
-          if (mode != 'no_body') 'Content-Type': '$mode; charset=utf-8',
-        }),
+        headers: await _headers(
+          extra: <String, String>{
+            'Depth': depth,
+            if (mode != 'no_body') 'Content-Type': '$mode; charset=utf-8',
+          },
+        ),
         body: mode == 'no_body' ? null : utf8.encode(_propfindBody(profile)),
         stage: stage,
         depth: depth,
@@ -425,13 +433,19 @@ class WebDavSyncProvider implements SyncProvider {
     if (!body.trimLeft().startsWith('<')) return null;
     try {
       final XmlDocument xml = XmlDocument.parse(body);
-      for (final String name in <String>['exception', 'message', 'responsedescription']) {
-        final String? value = xml.descendants.whereType<XmlElement>()
+      for (final String name in <String>[
+        'exception',
+        'message',
+        'responsedescription',
+      ]) {
+        final String? value = xml.descendants
+            .whereType<XmlElement>()
             .where((XmlElement e) => e.name.local == name)
             .map((XmlElement e) => e.innerText.trim())
             .where((String value) => value.isNotEmpty)
             .firstOrNull;
-        if (value != null) return value.length > 100 ? value.substring(0, 100) : value;
+        if (value != null)
+          return value.length > 100 ? value.substring(0, 100) : value;
       }
     } on XmlException {
       return null;
@@ -515,11 +529,13 @@ class WebDavSyncProvider implements SyncProvider {
     final http.Response response = await _sendPropfind(
       uri,
       depth: depth,
-      profile: profile ?? (stage == WebDavStage.baseCollectionProbe ||
-              stage == WebDavStage.targetDirectoryProbe ||
-              stage == WebDavStage.directoryCreation
-          ? WebDavPropfindProfile.collectionProbe
-          : stage == WebDavStage.directoryListing
+      profile:
+          profile ??
+          (stage == WebDavStage.baseCollectionProbe ||
+                  stage == WebDavStage.targetDirectoryProbe ||
+                  stage == WebDavStage.directoryCreation
+              ? WebDavPropfindProfile.collectionProbe
+              : stage == WebDavStage.directoryListing
               ? WebDavPropfindProfile.directoryListing
               : WebDavPropfindProfile.fileMetadata),
       stage: stage,
@@ -532,7 +548,13 @@ class WebDavSyncProvider implements SyncProvider {
         uri,
       );
       etag = strongEtag(_etagOfXml(response.body));
-      length = entries.where((WebDavDirectoryEntry e) => e.uri.path == uri.path && e.uri.origin == uri.origin).firstOrNull?.size;
+      length = entries
+          .where(
+            (WebDavDirectoryEntry e) =>
+                e.uri.path == uri.path && e.uri.origin == uri.origin,
+          )
+          .firstOrNull
+          ?.size;
     }
     return (
       status: response.statusCode,
@@ -777,7 +799,10 @@ class WebDavSyncProvider implements SyncProvider {
         }
         if (target.status != 200 && target.status != 207) {
           return SyncCapability(
-            status: target.status == 400 || target.status == 405 || target.status == 415
+            status:
+                target.status == 400 ||
+                    target.status == 405 ||
+                    target.status == 415
                 ? SyncCapabilityStatus.requestRejected
                 : SyncCapabilityStatus.directoryUnavailable,
             reachable: true,
