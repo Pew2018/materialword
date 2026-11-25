@@ -99,7 +99,6 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
 
   Future<void> _load() async {
     // Captured before the first await: every notice below is built after it.
-    final AppLocalizations l10n = context.l10n;
     final settings = ref.read(settingsRepositoryProvider);
     final Map<String, Object?>? config = await settings.syncConfig();
     final DateTime? lastAt = await settings.lastSyncAt();
@@ -108,7 +107,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
     String? token;
     String? user;
     bool hasPassword = false;
-    String? credentialNotice;
+    bool credentialsUnavailable = false;
     try {
       await CredentialStore.exclusive(() async {
         token = await credentials.read(CredentialKeys.githubToken);
@@ -119,7 +118,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
     } on CredentialStoreUnavailable {
       // The stored secrets are unreadable, not absent: ask the user to type
       // them again instead of pretending nothing was saved.
-      credentialNotice = l10n.credentialsUnavailable;
+      credentialsUnavailable = true;
     }
     bool pending = false;
     try {
@@ -138,7 +137,10 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       // A provider is configured but its secret came back empty: the item was
       // written under a different signature / Keychain class, or the Keychain
       // denied access. Either way the fix is the same — type it again.
-      if (credentialNotice == null) {
+      String? credentialNotice;
+      if (credentialsUnavailable) {
+        credentialNotice = context.l10n.credentialsUnavailable;
+      } else {
         if (_provider == 'github' && (token?.isEmpty ?? true)) {
           credentialNotice = context.l10n.tokenMissing;
         } else if (_provider == 'webdav' && !hasPassword) {

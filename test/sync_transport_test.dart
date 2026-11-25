@@ -404,7 +404,10 @@ void main() {
       final unauthorised = provider(buildClient(forcedStatus: 401));
       final result = await unauthorised.testConnection();
       expect(result.ok, isFalse);
-      expect(result.message, contains('认证'));
+      expect(
+        result.capability?.status,
+        SyncCapabilityStatus.authenticationFailed,
+      );
 
       final redirected = provider(
         buildClient(redirectTo: 'https://evil.example.com/steal'),

@@ -64,7 +64,7 @@ void main() {
       expect(paths.directoryUri.hasFragment, isFalse);
       expect(paths.directoryUri.path, startsWith('/dav/'));
       expect(paths.directoryUri.toString(), isNot(contains('%2520')));
-      expect(paths.directoryUri.toString(), isNot(contains('//dav')));
+      expect(paths.directoryUri.path, isNot(contains('//')));
     }
   });
 

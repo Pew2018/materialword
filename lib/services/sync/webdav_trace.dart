@@ -113,7 +113,7 @@ class WebDavTraceEntry {
     }
     if (serverErrorCode != null) {
       out.write(
-        'server_error=${serverErrorCode!.replaceAll(RegExp(r'[\\r\\n\\s]+'), ' ')} ',
+        'server_error=${serverErrorCode!.replaceAll(RegExp(r'[\r\n\s]+'), ' ')} ',
       );
     }
     if (status != null) out.write('status=$status ');

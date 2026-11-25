@@ -154,7 +154,8 @@ void main() {
       MockClient((request) async {
         if (request.method == 'PROPFIND') {
           return http.Response(
-            '<x:multistatus xmlns:x="DAV:"><x:response><x:propstat><x:prop>'
+            '<x:multistatus xmlns:x="DAV:"><x:response>'
+            '<x:href>${request.url.path}</x:href><x:propstat><x:prop>'
             '<x:getetag>&quot;a&amp;b&quot;</x:getetag></x:prop><x:status>HTTP/1.1 200 OK</x:status>'
             '</x:propstat></x:response></x:multistatus>',
             207,
@@ -164,6 +165,12 @@ void main() {
         if (gets == 2) expect(request.headers['if-match'], '"a&b"');
         return http.Response(jsonEncode({'generation': gets}), 200);
       }),
+    );
+    // The version-binding checks are exercised by the actual capability probe
+    // in phase6_2_1_webdav_etag_test.dart.
+    p.lastCapability = const SyncCapability(
+      status: SyncCapabilityStatus.safeConditionalWrite,
+      supportsConditionalRead: true,
     );
     final result = (await p.download())!;
     expect(gets, 2);
