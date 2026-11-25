@@ -217,7 +217,7 @@ class _SprintPageState extends ConsumerState<SprintPage>
         _plan.enabled &&
         (days ?? -1) >= 0;
     return Scaffold(
-      appBar: AppBar(
+      appBar: ClassicAppBar(
         title: const Text('考前冲刺'),
         actions: [
           IconButton(

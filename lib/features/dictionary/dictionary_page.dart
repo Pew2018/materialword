@@ -290,20 +290,21 @@ class _DictionaryPageState extends ConsumerState<DictionaryPage> {
                 icon: Icons.menu_book_outlined,
                 title: '离线词典',
                 message:
-                    '内置 ECDICT 精简词库（约 2.6 万词，覆盖中高考、四六级、考研、'
-                    '雅思托福 GRE）。输入单词开始查询，可直接加入当前词书。',
+                    '内置约 2.6 万词的离线词典，'
+                    '覆盖中高考、四六级、考研、雅思、托福和 GRE。'
+                    '输入单词即可查询，并可直接加入当前词书。',
               ),
             ),
           ] else ...<Widget>[
             if (_forms.isNotEmpty) ...<Widget>[
-              SectionHeader(title: '原型词候选'),
+              SectionHeader(title: '你可能想查'),
               SettingsGroup(
                 children: <Widget>[
                   for (final WordFormCandidate candidate in _forms)
                     SettingsTile(
                       leading: const Icon(Icons.subdirectory_arrow_right),
                       title: candidate.lemma,
-                      subtitle: '可能是该词的${candidate.relation}形式；两个词条不会被合并',
+                      subtitle: '可能是该词的${candidate.relation}形式',
                       onTap: () {
                         _query.text = candidate.lemma;
                         _onChanged(candidate.lemma);

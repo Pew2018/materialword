@@ -339,7 +339,7 @@ class _BackupPageState extends ConsumerState<BackupPage> {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('备份与恢复')),
+      appBar: ClassicAppBar(title: const Text('备份与恢复')),
       body: RefreshIndicator(
         onRefresh: _reload,
         child: ContentColumn(

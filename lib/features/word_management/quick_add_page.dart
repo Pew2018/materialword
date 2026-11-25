@@ -479,7 +479,7 @@ class _QuickAddPageState extends ConsumerState<QuickAddPage> {
         },
       },
       child: Scaffold(
-        appBar: AppBar(
+        appBar: ClassicAppBar(
           title: const Text('快速添加单词'),
           actions: <Widget>[
             IconButton(

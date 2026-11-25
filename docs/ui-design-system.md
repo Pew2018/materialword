@@ -25,13 +25,15 @@ MaterialWord 的最终视觉目标是“统一、克制、清晰、稳定的经�
 
 ## 响应式
 
-导航只由**窗口宽度**决定，与平台无关：
+导航只由**窗口宽度**决定，与平台无关，且只有两种状态：
 
 | 宽度 | 布局 |
 | --- | --- |
-| ≥ 900 | 完整侧栏（图标 + 文字） |
-| 720–899 | 图标侧栏 |
+| ≥ 720 | 完整侧栏（品牌区 + 图标 + 文字） |
 | < 720 | 底部导航（手机布局） |
+
+不存在“只留图标”的中间态：76dp 图标侧栏既不像手机也不像桌面，还会吃掉内容宽度，
+已彻底删除（`ShellLayout` 只有 `bottomBar` / `rail` 两个值）。
 
 `< 720` 的 macOS 窗口是手机布局，不是“压扁的桌面”：页面必须回到单列、可换行、
 可滚动，而不是隐藏功能。内容列最大宽度 880dp，页面 gutter 16dp。
@@ -46,8 +48,27 @@ MaterialWord 的最终视觉目标是“统一、克制、清晰、稳定的经�
 
 ## 侧栏
 
+- 固定 220dp；品牌区（`MaterialWord`）+ 五项一级导航 + 「词汇」入口 + 底部说明。
 - 选中态：极浅矩形着色（primary 6%，2dp 圆角）+ 强调色图标/文字。
-- 不允许 16dp 圆角选中块，不允许整行卡片。
+- 不允许 16dp 圆角选中块，不允许整行卡片，不允许退回只留图标的窄侧栏。
+
+## 顶栏与 Ripple
+
+- 每个页面的顶栏都用 `ClassicAppBar`（`lib/shared/widgets/common.dart`），
+  不得直接使用裸 `AppBar`：全局 ripple 是强调色，而浅色顶栏背景也是强调色，
+  两者重合就等于“没有反馈”。
+- `ClassicAppBar` 在顶栏子树内覆写交互色为**前景色**：
+  splash 20% / highlight 12% / hover 8% / focus 16%，统一 `InkRipple`。
+- 这样自动生成的 `BackButton` 与每个 `IconButton` 同时获得可见反馈；静止态无底板、
+  无 pill、无 M3 filled 图标按钮；图标 24dp，命中区 ≥48dp。
+- 页面内部搜索框是唯一搜索入口：顶栏不再放第二个搜索按钮，⌘F / Ctrl+F 仍然
+  跳转并聚焦该输入框。
+
+## 开关行
+
+- 所有 `SwitchListTile` 走 `SettingsSwitchTile`：16dp 左右内边距、24dp leading 图标、
+  `bodyLarge` 标题、`bodySmall` 说明、Switch 右对齐、行高随文字自然展开。
+- 禁止同一组里混用 `dense: true` 与默认高度。
 
 ## 菜单 / Select
 
@@ -88,10 +109,20 @@ Tertiary 用 `TextButton`；破坏性操作使用红色 `TextButton`。
 - 长列表使用 builder/sliver；不在 build 中排序或过滤大集合。
 - 只加有证据支持的 `RepaintBoundary` / `const` / 缓存。
 
+## 滚动
+
+- 全局使用 `ClassicScrollBehavior`（`lib/app/app.dart`）：macOS 上强制
+  `ClampingScrollPhysics(parent: RangeMaintainingScrollPhysics())`，去掉桌面端的
+  bouncing 惯性，让页面位置直接跟随手势/滚轮；iOS / Android 保持各自原生物理。
+- `Slider` 不使用 `divisions`：连续跟手，数值显示取整，只在松手时写库。
+- 不把 `PointerDeviceKind.mouse` 加进全局 drag devices（会破坏文本选择）。
+
 ## 测试
 
 - `test/phase6_classic_ui_test.dart`：形状标尺、底栏矩形与无着色、学习页操作区、
   菜单宽度约束、Dashboard 控件减法。
+- `test/phase6_1_polish_test.dart`：两态导航、设置页图标/开关/滑杆、macOS 滚动物理、
+  作答构成行样式、词典搜索入口、同步页统一、顶栏 ripple。
 - `test/phase3_golden_test.dart`：按钮/输入框/开关的浅色与深色基准图（逐像素）。
 - `test/widget_test.dart`：360 / 412 / 520 / 600 / 720 / 840 / 1024 / 1280 / 1600
   宽度下无溢出，且导航形态符合上表。

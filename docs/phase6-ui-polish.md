@@ -7,16 +7,16 @@ metadata-only import、大数据 merge、三平台 CI）。
 
 ## 1. 响应式外壳
 
-`layoutFor()` 只看窗口宽度：
+`layoutFor()` 只看窗口宽度，且只有两种状态：
 
 | 宽度 | 布局 |
 | --- | --- |
-| ≥ 900 | 完整侧栏 |
-| 720–899 | 图标侧栏 |
+| ≥ 720 | 完整侧栏 |
 | < 720 | 底部导航 |
 
 此前桌面平台在任意窄窗口都保留 76dp 图标侧栏，550dp 的 macOS 窗口因此只剩
-474dp 内容区，数字与按钮被挤到换行。现在窄窗口直接用手机布局。
+474dp 内容区，数字与按钮被挤到换行。现在窄窗口直接用手机布局，720dp 及以上直接
+给完整侧栏 —— 中间那档“只有图标”的侧栏在 Phase 6.1 中已彻底删除。
 
 内容列最大宽度 880dp（`ContentColumn`），Dashboard / Statistics / Settings /
 WordBooks / Dictionary / Backup / Sync 在宽窗口下不再把一行文字拉满 1600dp。
@@ -117,3 +117,73 @@ Token、schema 版本等。示例：
   （Linux 参考图由 Ubuntu runner 生成，逐像素比较不变）。
 - 本地：`flutter analyze` 0 issue，`flutter test` 485 通过，时区回放脚本通过，
   `git diff --check` 干净。
+
+---
+
+# Phase 6.1 — 交互收尾
+
+本轮只动外观、交互与文案：数据、同步、备份、调度一行未改，可用
+`git diff --stat` 核对（只涉及 `lib/app`、`lib/features/*/…_page.dart` 的 UI 部分、
+`lib/shared/widgets/common.dart` 与测试）。
+
+## 1. 导航只有两态
+
+`enum ShellLayout { bottomBar, rail }`。`layoutFor()` 在
+`AppDimens.sideNavigationBreakpoint`（720dp）处分流；`railCollapseBreakpoint`、
+`desktopBreakpoint`、`navRailCompactWidth` 以及 `_SideNavigation` / `_RailItem` 里
+所有 `compact` 分支全部删除。720 / 840 / 900 / 1024 都是完整侧栏，`< 720` 是底栏。
+
+## 2. 设置页
+
+- 「随机学习顺序」补上 `Icons.shuffle`，与「学习时保持屏幕常亮」一致。
+- 新增 `SettingsSwitchTile`，三处开关统一为：16dp 左右内边距、24dp leading、
+  `bodyLarge` 标题、`bodySmall` 说明、非 dense。
+- 发音速度 `Slider` 去掉 `divisions: 18`：连续跟手，拖动只更新本地 draft，
+  松手（`onChangeEnd`）才写一次库。
+
+## 3. macOS 滚动
+
+`ClassicScrollBehavior.getScrollPhysics` 在 macOS 上返回
+`ClampingScrollPhysics(parent: RangeMaintainingScrollPhysics())`，去掉桌面端的
+bouncing 惯性；iOS / Android / 桌面其余平台的物理不变。
+没有把 `PointerDeviceKind.mouse` 加进全局 drag devices。
+
+## 4. 统计「作答构成」
+
+`_LineRow` 的左右两侧现在共用同一个 `TextStyle`（`subtle` 时都是 `bodySmall`，
+否则都是 `bodyMedium`），数字只额外带 `tabularFigures`。子项不再用全角空格排版，
+改为 `indent: 16` 的真实布局缩进，前缀用 `•`。
+
+## 5. 词典
+
+删除顶栏里与页面内搜索框重复的 `IconButton`；`⌘F` / `Ctrl+F` 保留，且切换一级
+页面后会把键盘焦点交回外壳（`_shellFocus`），快捷键不会再“按一次就失效”。
+
+## 6. 同步页
+
+- 四个自动同步开关统一走 `SettingsSwitchTile`（同高、同内边距、同图标位）。
+- 连接配置抽出 `_SyncTextField`：统一外边距、label/helper 字号与边框。
+- 按钮层级：`测试连接`（Outlined）/ `立即同步`（Elevated，唯一 Primary）/
+  `导出备份`（Outlined）。
+- 合并规则、ID 去重、删除标记、钥匙串等实现细节移入默认收起的
+  「同步与合并说明」；主页面只剩功能说明。
+
+## 7. 顶栏 Ripple
+
+新增 `ClassicAppBar`：在顶栏子树内把 splash/highlight/hover/focus 覆写为**前景色**
+（20% / 12% / 8% / 16%），仍然使用 `InkRipple`。这样自动生成的 `BackButton` 与
+所有 `IconButton` 同时可见，静止态没有底板/pill。全部 14 处 `AppBar(` 已替换。
+
+## 8. 文案
+
+设置项副标题、统计脚注、词典空状态与词形提示、同步页说明/开关/输入/按钮/状态
+全部改为面向普通用户：不出现 ECDICT、去重、退避、条件写入、钥匙串等术语。
+`解除同步配置` → `关闭同步`，`本地待同步修改` → `待同步的更改`。
+
+## 9. 测试
+
+- 更新：`phase3_ui_test`（两态断点 + `ShellLayout.values` 长度为 2）、
+  `widget_test`（720/840 起为完整侧栏，逐项断言图标+文字、220dp 宽度）。
+- 新增：`phase6_1_polish_test`（NAV01–05 / SET01–05 / SCROLL01 / STAT01–03 /
+  DICT01–03 / SYNCUI01–04 / TOP01–08）。
+- Golden 基准图未变：本轮没有改动它们渲染的控件与几何。

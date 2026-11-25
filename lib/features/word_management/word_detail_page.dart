@@ -201,19 +201,19 @@ class _WordDetailPageState extends ConsumerState<WordDetailPage> {
     final ThemeData theme = Theme.of(context);
     if (_loading) {
       return Scaffold(
-        appBar: AppBar(title: const Text('词条')),
+        appBar: ClassicAppBar(title: const Text('词条')),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
     if (_wordRow == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('词条')),
+        appBar: ClassicAppBar(title: const Text('词条')),
         body: const EmptyState(icon: Icons.search_off, title: '词条不存在或已被删除'),
       );
     }
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: ClassicAppBar(
         title: Text(_wordRow!.word),
         actions: <Widget>[
           FavoriteButton(wordId: widget.wordId),

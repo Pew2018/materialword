@@ -234,7 +234,7 @@ class _StudyPageState extends ConsumerState<StudyPage>
       animation: _session,
       builder: (BuildContext context, Widget? _) {
         return Scaffold(
-          appBar: AppBar(
+          appBar: ClassicAppBar(
             title: Text(_title, maxLines: 1, overflow: TextOverflow.ellipsis),
             bottom: PreferredSize(
               preferredSize: const Size.fromHeight(3),

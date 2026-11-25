@@ -472,7 +472,7 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(
+      appBar: ClassicAppBar(
         title: Text('词汇管理${_total > 0 ? '（$_total）' : ''}'),
         actions: <Widget>[
           IconButton(
@@ -878,7 +878,7 @@ class _WordDetailScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('词条详情')),
+      appBar: ClassicAppBar(title: const Text('词条详情')),
       body: _WordDetailPane(wordId: wordId, onChanged: onChanged),
     );
   }

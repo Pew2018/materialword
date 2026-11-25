@@ -68,21 +68,18 @@ class AppDimens {
   static const double fabSize = 56;
   static const double sectionHeaderHeight = 40;
 
-  /// Mini / small tablet width: below this the full side rail would eat the
-  /// content, so only an icon rail is used.
-  static const double desktopBreakpoint = 900;
-
-  /// Below this width even the icon rail costs too much horizontal space: the
-  /// window switches to the phone layout (bottom navigation) regardless of the
-  /// platform, so a narrow macOS window is a phone layout, not a squeezed
-  /// desktop one.
-  static const double railCollapseBreakpoint = 720;
+  /// The single navigation breakpoint: at or above it the window gets the full
+  /// side navigation (icon + label + brand), below it the phone bottom bar.
+  ///
+  /// There is deliberately no icon-only rail in between: a 76dp strip of
+  /// unlabelled icons is neither a phone layout nor a desktop one, and it cost
+  /// real content width in a narrow macOS window.
+  static const double sideNavigationBreakpoint = 720;
 
   /// Above this width a list/detail two-column layout is comfortable.
   static const double twoPaneBreakpoint = 1040;
 
   static const double navRailWidth = 220;
-  static const double navRailCompactWidth = 76;
   static const double contentMaxWidth = 880;
 
   /// Comfortable reading width for a pinned action bar on desktop.
@@ -302,7 +299,7 @@ class AppTheme {
         color: isDark ? textPrimary : AppColors.textPrimaryLight,
         size: AppDimens.iconSize,
       ),
-      // The side navigation and the compact rail need a predictable surface.
+      // The side navigation needs a predictable surface.
       navigationRailTheme: NavigationRailThemeData(
         backgroundColor: surface,
         selectedIconTheme: IconThemeData(color: primary),

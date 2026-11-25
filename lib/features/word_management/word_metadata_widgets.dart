@@ -194,7 +194,7 @@ class _TagsPageState extends ConsumerState<TagsPage> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
+    appBar: ClassicAppBar(
       title: const Text('标签管理'),
       actions: [
         IconButton(

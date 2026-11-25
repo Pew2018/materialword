@@ -72,7 +72,7 @@ class _DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('诊断信息')),
+      appBar: ClassicAppBar(title: const Text('诊断信息')),
       body: ListView(
         padding: const EdgeInsets.only(bottom: 24),
         children: <Widget>[

@@ -108,7 +108,7 @@ class _WordBookDetailPageState extends ConsumerState<WordBookDetailPage> {
     final ThemeData theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: ClassicAppBar(
         title: Text(_book?.name ?? '词书'),
         actions: <Widget>[
           IconButton(

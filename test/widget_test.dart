@@ -74,8 +74,8 @@ void main() {
 
   group('T18 不同窗口宽度下无严重布局溢出', () {
     // The responsive matrix from the design system: phone, small tablet, the
-    // 720–900 icon-rail band that a narrow desktop window lands in, and wide
-    // desktop.
+    // 720dp breakpoint itself, and wide desktop. Nothing in between the bottom
+    // bar and the full labelled rail exists any more.
     for (final Size size in <Size>[
       const Size(360, 740),
       const Size(412, 860),
@@ -100,11 +100,34 @@ void main() {
         // `ClassicBottomNavigationBar` (fixed item widths, item-scoped ripple,
         // separate hover/focus/pressed feedback). The assertion follows the new
         // widget but keeps exactly the same intent.
-        final bool narrow = size.width < AppDimens.railCollapseBreakpoint;
+        final bool wide = size.width >= AppDimens.sideNavigationBreakpoint;
         expect(
           find.byType(ClassicBottomNavigationBar),
-          narrow ? findsOneWidget : findsNothing,
+          wide ? findsNothing : findsOneWidget,
         );
+        if (wide) {
+          // A full rail: brand block, icon + label rows, 220dp wide. The old
+          // 76dp icon-only strip must be gone at every width.
+          expect(
+            find.text('MaterialWord'),
+            findsOneWidget,
+            reason: 'the full rail shows its brand block',
+          );
+          expect(
+            tester.getSize(find.byKey(const ValueKey<String>('nav-今日'))).width,
+            closeTo(AppDimens.navRailWidth, 0.5),
+          );
+          for (final String label in <String>['今日', '词书', '词典', '统计', '设置']) {
+            expect(
+              find.descendant(
+                of: find.byKey(ValueKey<String>('nav-$label')),
+                matching: find.text(label),
+              ),
+              findsOneWidget,
+              reason: 'the rail always shows the label, never an icon alone',
+            );
+          }
+        }
         for (final String label in <String>['词书', '词典', '统计', '设置', '今日']) {
           await tester.tap(find.byKey(ValueKey<String>('nav-$label')));
           await settle(tester);

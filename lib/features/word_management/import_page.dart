@@ -227,7 +227,7 @@ class _ImportPageState extends ConsumerState<ImportPage> {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('导入词书')),
+      appBar: ClassicAppBar(title: const Text('导入词书')),
       body: ListView(
         padding: const EdgeInsets.all(AppDimens.gutter),
         children: <Widget>[

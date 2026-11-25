@@ -14,6 +14,69 @@ bool isDesktopPlatform(BuildContext context) {
   };
 }
 
+/// The one top bar used by every page.
+///
+/// A plain [AppBar] with the app's *foreground* ink response.
+///
+/// The global `ThemeData.splashColor` is accent-tinted so that a ripple is
+/// visible on white surfaces — but the light AppBar is painted with the same
+/// accent, so an accent-coloured splash on an accent-coloured bar is invisible.
+/// That is why the auto-generated back arrow and every action button looked
+/// dead. Overriding only the interactive colours for the AppBar subtree fixes
+/// both at once, including [BackButton]s this project does not construct, and
+/// including actions added later.
+///
+/// The splash stays a classic transient [InkRipple]: no persistent tint, no
+/// pill, no filled M3 icon button, no change to the 24dp icon or the ≥48dp hit
+/// target that [ThemeData.materialTapTargetSize] already provides.
+class ClassicAppBar extends StatelessWidget implements PreferredSizeWidget {
+  const ClassicAppBar({
+    super.key,
+    this.title,
+    this.leading,
+    this.automaticallyImplyLeading = true,
+    this.actions,
+    this.bottom,
+  });
+
+  final Widget? title;
+  final Widget? leading;
+  final bool automaticallyImplyLeading;
+  final List<Widget>? actions;
+  final PreferredSizeWidget? bottom;
+
+  @override
+  Size get preferredSize => Size.fromHeight(
+    AppDimens.appBarHeight + (bottom?.preferredSize.height ?? 0),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final Color background =
+        theme.appBarTheme.backgroundColor ?? theme.colorScheme.primary;
+    final Color foreground =
+        theme.appBarTheme.foregroundColor ?? AppTheme.onColor(background);
+
+    return Theme(
+      data: theme.copyWith(
+        splashFactory: InkRipple.splashFactory,
+        splashColor: foreground.withValues(alpha: 0.20),
+        highlightColor: foreground.withValues(alpha: 0.12),
+        hoverColor: foreground.withValues(alpha: 0.08),
+        focusColor: foreground.withValues(alpha: 0.16),
+      ),
+      child: AppBar(
+        title: title,
+        leading: leading,
+        automaticallyImplyLeading: automaticallyImplyLeading,
+        actions: actions,
+        bottom: bottom,
+      ),
+    );
+  }
+}
+
 /// Centred placeholder used by every screen that can be empty.
 class EmptyState extends StatelessWidget {
   const EmptyState({
@@ -336,6 +399,60 @@ class SettingsTile extends StatelessWidget {
               : Text(trailingText!, style: theme.textTheme.bodySmall)),
       onTap: onTap,
       shape: const RoundedRectangleBorder(),
+    );
+  }
+}
+
+/// One switch row, identical everywhere it appears.
+///
+/// Settings used to mix `dense: true` rows with default rows, so four switches
+/// in the same group had two different heights, two different text offsets and
+/// two different switch positions. This wrapper fixes the parameters once:
+/// 16dp horizontal padding, a 24dp leading icon, `bodyLarge` title,
+/// `bodySmall` description, the switch aligned right, and the row height
+/// following the text instead of a fixed `dense` height. Classic Material 2
+/// switch, never the M3 pill-and-icon variant.
+class SettingsSwitchTile extends StatelessWidget {
+  const SettingsSwitchTile({
+    super.key,
+    required this.title,
+    required this.value,
+    required this.onChanged,
+    this.subtitle,
+    this.icon,
+  });
+
+  final String title;
+  final String? subtitle;
+  final bool value;
+  final ValueChanged<bool>? onChanged;
+  final IconData? icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return SwitchListTile(
+      value: value,
+      onChanged: onChanged,
+      secondary: icon == null ? null : Icon(icon, size: AppDimens.iconSize),
+      contentPadding: const EdgeInsets.symmetric(
+        horizontal: AppDimens.gutter,
+        vertical: 2,
+      ),
+      title: Text(
+        title,
+        style: theme.textTheme.bodyLarge,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+      ),
+      subtitle: subtitle == null
+          ? null
+          : Text(
+              subtitle!,
+              style: theme.textTheme.bodySmall,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+            ),
     );
   }
 }

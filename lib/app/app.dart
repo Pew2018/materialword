@@ -48,8 +48,26 @@ class MaterialWordApp extends ConsumerWidget {
 }
 
 /// Keep native platform physics and scrollbars; omit decorative edge effects.
+///
+/// On macOS Flutter's default desktop physics is a bouncing simulation: the
+/// page keeps travelling after the fingers (or wheel) stop, which reads as
+/// heavy damping in a mostly-static list UI. [ClampingScrollPhysics] on top of
+/// [RangeMaintainingScrollPhysics] follows the gesture directly, stops when the
+/// input stops, and still keeps the scroll offset valid when content grows or
+/// shrinks. Android and iOS keep their own platform behaviour untouched.
 class ClassicScrollBehavior extends MaterialScrollBehavior {
   const ClassicScrollBehavior();
+
+  @override
+  ScrollPhysics getScrollPhysics(BuildContext context) {
+    if (getPlatform(context) == TargetPlatform.macOS) {
+      return const ClampingScrollPhysics(
+        parent: RangeMaintainingScrollPhysics(),
+      );
+    }
+    return super.getScrollPhysics(context);
+  }
+
   @override
   Widget buildOverscrollIndicator(
     BuildContext context,

@@ -239,7 +239,7 @@ class _PracticePageState extends ConsumerState<PracticePage>
     final ThemeData theme = Theme.of(context);
     final bool hasQuestion = _session.current != null;
     return Scaffold(
-      appBar: AppBar(
+      appBar: ClassicAppBar(
         title: Text(widget.kind.label),
         actions: <Widget>[
           IconButton(

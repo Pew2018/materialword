@@ -192,7 +192,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               SettingsTile(
                 leading: const Icon(Icons.sync),
                 title: '数据同步',
-                subtitle: 'GitHub / WebDAV / 本地文件，合并而不是覆盖',
+                subtitle: '在多台设备间同步学习进度',
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => Navigator.of(context).push<void>(
                   MaterialPageRoute<void>(
@@ -203,7 +203,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               SettingsTile(
                 leading: const Icon(Icons.backup_outlined),
                 title: '备份与恢复',
-                subtitle: '导出 JSON、导入并合并',
+                subtitle: '备份、恢复或迁移学习数据',
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => Navigator.of(context).push<void>(
                   MaterialPageRoute<void>(
@@ -239,12 +239,13 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     AppSpacing.h4,
                     Text(
                       '离线优先的英语单词学习工具。学习记录保存在本机，'
-                      '同步时只传输合并后的数据，账号凭据只存放在系统安全存储中。',
+                      '开启同步后会在多台设备间保持一致。',
                       style: theme.textTheme.bodySmall,
                     ),
                     AppSpacing.h8,
                     Text(
-                      '内置词典：ECDICT（$dictionaryLicense 许可，$dictionaryEntryCount 条词条）。',
+                      '内置离线词典：$dictionaryEntryCount 条词条'
+                      '（ECDICT，$dictionaryLicense 许可）。',
                       style: theme.textTheme.bodySmall,
                     ),
                   ],
@@ -542,7 +543,6 @@ class _TtsSectionState extends ConsumerState<_TtsSection> {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
     return SettingsGroup(
       children: <Widget>[
         FutureBuilder<List<TtsVoice>>(
@@ -605,16 +605,12 @@ class _TtsSectionState extends ConsumerState<_TtsSection> {
           rate: widget.settings.ttsRate,
           onCommit: (int value) => widget.onSave(null, null, value, null),
         ),
-        SwitchListTile(
-          dense: true,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+        SettingsSwitchTile(
           value: widget.settings.ttsAutoSpeak,
+          icon: Icons.volume_up_outlined,
+          title: '进入单词时自动发音',
+          subtitle: '语音是否可离线使用取决于系统安装的语音包',
           onChanged: (bool value) => widget.onSave(null, null, null, value),
-          title: const Text('进入单词时自动发音'),
-          subtitle: Text(
-            '语音是否可离线使用取决于系统安装的语音包',
-            style: theme.textTheme.bodySmall,
-          ),
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
@@ -707,7 +703,11 @@ class _TtsRateSettingState extends State<_TtsRateSetting> {
             value: _draft.clamp(10, 100),
             min: 10,
             max: 100,
-            divisions: 18,
+            // No `divisions`: with 18 divisions over 10–100 the thumb could
+            // only land on 5% steps, so a slow drag moved in visible jumps.
+            // Continuous tracking follows the pointer pixel by pixel; the
+            // number next to the label still reads as a whole percent and the
+            // value is still written once, on release.
             label: '${_draft.round()}%',
             onChanged: (double value) => setState(() => _draft = value),
             onChangeEnd: (double value) => widget.onCommit(value.round()),
@@ -728,12 +728,15 @@ class _KeepScreenOnTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final ThemeData theme = Theme.of(context);
     final AsyncValue<bool> value = ref.watch(keepScreenOnProvider);
     final bool supported = ref.read(screenAwakeProvider).isSupported;
-    return SwitchListTile(
-      secondary: const Icon(Icons.lightbulb_outline),
+    return SettingsSwitchTile(
       value: value.value ?? false,
+      icon: Icons.lightbulb_outline,
+      title: '学习时保持屏幕常亮',
+      subtitle: supported
+          ? '只在实际的学习或练习页面生效；离开页面或切到后台后自动释放'
+          : '当前平台不支持此功能，学习功能不受影响',
       onChanged: supported
           ? (bool enabled) async {
               final AppDatabase db = ref.read(databaseProvider);
@@ -747,11 +750,6 @@ class _KeepScreenOnTile extends ConsumerWidget {
               }
             }
           : null,
-      title: const Text('学习时保持屏幕常亮'),
-      subtitle: Text(
-        supported ? '只在实际的学习或练习页面生效；离开页面或切到后台后自动释放' : '当前平台不支持此功能，学习功能不受影响',
-        style: theme.textTheme.bodySmall,
-      ),
     );
   }
 }
@@ -783,10 +781,11 @@ class _RandomOrderSettingState extends ConsumerState<_RandomOrderSetting> {
 
   @override
   Widget build(BuildContext context) {
-    return SwitchListTile(
+    return SettingsSwitchTile(
       value: _value ?? false,
-      title: const Text('随机学习顺序'),
-      subtitle: const Text('只改变呈现顺序，不会遗漏或重复；专项练习与冲刺不受影响'),
+      icon: Icons.shuffle,
+      title: '随机学习顺序',
+      subtitle: '只改变呈现顺序，不会遗漏或重复；专项练习与冲刺不受影响',
       onChanged: _value == null
           ? null
           : (bool value) async {

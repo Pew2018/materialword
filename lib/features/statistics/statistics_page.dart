@@ -230,9 +230,10 @@ class StatisticsPage extends ConsumerWidget {
                       for (final PracticeKind kind in PracticeKind.values)
                         if ((data.breakdown.practiceByKind[kind] ?? 0) > 0)
                           _LineRow(
-                            label: '　· ${kind.label}',
+                            label: '• ${kind.label}',
                             value: '${data.breakdown.practiceByKind[kind]} 次',
                             subtle: true,
+                            indent: 16,
                           ),
                       _LineRow(
                         label: '同轮复练',
@@ -248,7 +249,7 @@ class StatisticsPage extends ConsumerWidget {
                       ),
                       AppSpacing.h8,
                       Text(
-                        '练习模式真实计次，但不改变长期复习间隔；人工掌握/重置属于管理事件，不计入作答。',
+                        '练习会计入次数，但不会影响复习计划；手动设为掌握或重置进度不计入作答统计。',
                         style: theme.textTheme.bodySmall,
                       ),
                     ],
@@ -374,34 +375,44 @@ class _LineRow extends StatelessWidget {
     required this.label,
     required this.value,
     this.subtle = false,
+    this.indent = 0,
   });
 
   final String label;
   final String value;
+
+  /// A child row of the row above it (e.g. one practice mode under 练习模式).
   final bool subtle;
+
+  /// Real layout indent in logical pixels. Child rows used to be pushed right
+  /// by a full-width space character in the label, which made the label and the
+  /// number sit on different type scales and shifted with the font.
+  final double indent;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    // One style for both sides: a subtle row is *small* on the left and right,
+    // a normal row is medium on both sides. The number only adds tabular
+    // figures so the column stays aligned.
+    final TextStyle? style = subtle
+        ? theme.textTheme.bodySmall
+        : theme.textTheme.bodyMedium;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
-      child: Row(
-        children: <Widget>[
-          Expanded(
-            child: Text(
-              label,
-              style: subtle
-                  ? theme.textTheme.bodySmall
-                  : theme.textTheme.bodyMedium,
+      padding: EdgeInsets.only(left: indent),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3),
+        child: Row(
+          children: <Widget>[
+            Expanded(child: Text(label, style: style)),
+            Text(
+              value,
+              style: style?.copyWith(
+                fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+              ),
             ),
-          ),
-          Text(
-            value,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

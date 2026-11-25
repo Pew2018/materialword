@@ -13,6 +13,7 @@ import '../features/word_management/word_management_page.dart';
 import '../features/wordbooks/wordbooks_page.dart';
 import '../services/diagnostics_service.dart';
 import '../services/backup_manager.dart';
+import '../shared/widgets/common.dart';
 import 'providers.dart';
 import 'theme.dart';
 
@@ -54,26 +55,31 @@ const List<AppDestination> appDestinations = <AppDestination>[
 ];
 
 /// Which navigation chrome the current window should use.
-enum ShellLayout { bottomBar, compactRail, rail }
+///
+/// Exactly two states, by design: a narrow window is a phone (bottom bar) and
+/// everything wider gets the full, labelled side navigation. The old
+/// icon-only middle state was removed on request — it was reachable only in
+/// the 720–899dp band, where it made the app look like a collapsed desktop
+/// rather than either of its two real layouts.
+enum ShellLayout { bottomBar, rail }
 
 /// Picks the navigation chrome from the *window width*, not the platform.
 ///
-/// A narrow macOS window must behave like a phone: keeping an icon rail in a
-/// 500dp window cost ~76dp of content width and produced wrapped numbers and
-/// squeezed buttons. [platform] is kept in the signature because callers (and
-/// tests) already have it, but it no longer decides the layout.
+/// A narrow macOS window must behave like a phone: keeping a rail in a 500dp
+/// window cost content width and produced wrapped numbers and squeezed
+/// buttons. [platform] is kept in the signature because callers (and tests)
+/// already have it, but it no longer decides the layout.
 ShellLayout layoutFor({
   required double width,
   required TargetPlatform platform,
 }) {
-  if (width >= AppDimens.desktopBreakpoint) return ShellLayout.rail;
-  if (width >= AppDimens.railCollapseBreakpoint) {
-    return ShellLayout.compactRail;
-  }
-  return ShellLayout.bottomBar;
+  return width >= AppDimens.sideNavigationBreakpoint
+      ? ShellLayout.rail
+      : ShellLayout.bottomBar;
 }
 
-/// Application frame: an [AppBar] plus the platform-appropriate navigation.
+/// Application frame: a [ClassicAppBar] plus the platform-appropriate
+/// navigation.
 ///
 /// First-level pages live in a lazily populated [IndexedStack]: scrolling,
 /// search text and expanded sections survive tab switches, but a page is not
@@ -90,6 +96,7 @@ class _AppShellState extends ConsumerState<AppShell>
     with WidgetsBindingObserver {
   int _index = 0;
   final Set<int> _built = <int>{0};
+  final FocusNode _shellFocus = FocusNode(debugLabel: 'shell-shortcuts');
   final FocusNode _searchFocus = FocusNode(debugLabel: 'dictionary-search');
   Timer? _dayTimer;
   Timer? _dueTimer;
@@ -144,6 +151,7 @@ class _AppShellState extends ConsumerState<AppShell>
     _autoBackupTimer?.cancel();
     _databaseChanges?.cancel();
     _searchFocus.dispose();
+    _shellFocus.dispose();
     super.dispose();
   }
 
@@ -289,6 +297,11 @@ class _AppShellState extends ConsumerState<AppShell>
 
   void _select(int index) {
     FocusManager.instance.primaryFocus?.unfocus();
+    // Hand keyboard focus back to the shell instead of dropping it: with no
+    // focused node the [CallbackShortcuts] bindings (⌘F / ⌘N) never fire, so
+    // the shortcuts used to stop working after the first navigation tap until
+    // the user clicked a text field again.
+    _shellFocus.requestFocus();
     setState(() {
       _index = index;
       _built.add(index);
@@ -377,13 +390,14 @@ class _AppShellState extends ConsumerState<AppShell>
         },
       },
       child: Focus(
+        focusNode: _shellFocus,
         autofocus: true,
         child: IndexedStack(index: _index, children: pages),
       ),
     );
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: ClassicAppBar(
         title: Text(appDestinations[_index].label),
         actions: <Widget>[
           if (hasRail)
@@ -391,12 +405,6 @@ class _AppShellState extends ConsumerState<AppShell>
               tooltip: '快速添加单词 (⌘N)',
               icon: const Icon(Icons.add),
               onPressed: _quickAdd,
-            ),
-          if (_index == 2)
-            IconButton(
-              tooltip: '搜索 (⌘F)',
-              icon: const Icon(Icons.search),
-              onPressed: _focusSearch,
             ),
           if (_index == 1 && hasRail)
             IconButton(
@@ -412,15 +420,10 @@ class _AppShellState extends ConsumerState<AppShell>
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             SizedBox(
-              width: hasRail
-                  ? (layout == ShellLayout.compactRail
-                        ? AppDimens.navRailCompactWidth
-                        : AppDimens.navRailWidth)
-                  : 0,
+              width: hasRail ? AppDimens.navRailWidth : 0,
               child: hasRail
                   ? _SideNavigation(
                       index: _index,
-                      compact: layout == ShellLayout.compactRail,
                       onSelect: _select,
                       onManageWords: _openWordManagement,
                     )
@@ -599,48 +602,43 @@ class _SideNavigation extends StatelessWidget {
     required this.index,
     required this.onSelect,
     required this.onManageWords,
-    this.compact = false,
   });
 
   final int index;
   final ValueChanged<int> onSelect;
   final VoidCallback onManageWords;
-  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final Color active = theme.colorScheme.primary;
     return SizedBox(
-      width: compact ? AppDimens.navRailCompactWidth : AppDimens.navRailWidth,
+      width: AppDimens.navRailWidth,
       child: Material(
         color: theme.cardColor,
         child: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              if (!compact)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
-                  child: Row(
-                    children: <Widget>[
-                      Icon(Icons.menu_book, size: 22, color: active),
-                      AppSpacing.w8,
-                      Expanded(
-                        child: Text(
-                          'MaterialWord',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+                child: Row(
+                  children: <Widget>[
+                    Icon(Icons.menu_book, size: 22, color: active),
+                    AppSpacing.w8,
+                    Expanded(
+                      child: Text(
+                        'MaterialWord',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
-                    ],
-                  ),
-                )
-              else
-                AppSpacing.h12,
+                    ),
+                  ],
+                ),
+              ),
               const Divider(height: 1),
               AppSpacing.h8,
               for (int i = 0; i < appDestinations.length; i++)
@@ -648,7 +646,6 @@ class _SideNavigation extends StatelessWidget {
                   key: ValueKey<String>('nav-${appDestinations[i].label}'),
                   destination: appDestinations[i],
                   selected: i == index,
-                  compact: compact,
                   onTap: () => onSelect(i),
                 ),
               const Divider(height: 16, indent: 12, endIndent: 12),
@@ -660,15 +657,12 @@ class _SideNavigation extends StatelessWidget {
                   activeIcon: Icons.table_rows,
                 ),
                 selected: false,
-                compact: compact,
                 onTap: onManageWords,
               ),
-
-              if (!compact)
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text('离线可用 · 本地优先', style: theme.textTheme.bodySmall),
-                ),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text('离线可用 · 本地优先', style: theme.textTheme.bodySmall),
+              ),
             ],
           ),
         ),
@@ -682,13 +676,11 @@ class _RailItem extends StatelessWidget {
     super.key,
     required this.destination,
     required this.selected,
-    required this.compact,
     required this.onTap,
   });
 
   final AppDestination destination;
   final bool selected;
-  final bool compact;
   final VoidCallback onTap;
 
   @override
@@ -697,29 +689,6 @@ class _RailItem extends StatelessWidget {
     final Color color = selected
         ? theme.colorScheme.primary
         : theme.textTheme.bodySmall?.color ?? theme.disabledColor;
-    final Widget content = Row(
-      children: <Widget>[
-        Icon(
-          selected ? destination.activeIcon : destination.icon,
-          size: AppDimens.iconSize,
-          color: color,
-        ),
-        if (!compact) ...<Widget>[
-          AppSpacing.w12,
-          Expanded(
-            child: Text(
-              destination.label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodyLarge?.copyWith(
-                color: color,
-                fontWeight: selected ? FontWeight.w500 : FontWeight.w400,
-              ),
-            ),
-          ),
-        ],
-      ],
-    );
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
       child: Semantics(
@@ -738,17 +707,33 @@ class _RailItem extends StatelessWidget {
             hoverColor: theme.colorScheme.primary.withValues(alpha: 0.06),
             focusColor: theme.colorScheme.primary.withValues(alpha: 0.14),
             splashColor: theme.colorScheme.primary.withValues(alpha: 0.14),
-            child: Tooltip(
-              message: compact ? destination.label : '',
-              waitDuration: const Duration(milliseconds: 600),
-              child: SizedBox(
-                height: AppDimens.listItemHeight - 8,
-                child: compact
-                    ? Center(child: content)
-                    : Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 10),
-                        child: content,
+            child: SizedBox(
+              height: AppDimens.listItemHeight - 8,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                child: Row(
+                  children: <Widget>[
+                    Icon(
+                      selected ? destination.activeIcon : destination.icon,
+                      size: AppDimens.iconSize,
+                      color: color,
+                    ),
+                    AppSpacing.w12,
+                    Expanded(
+                      child: Text(
+                        destination.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodyLarge?.copyWith(
+                          color: color,
+                          fontWeight: selected
+                              ? FontWeight.w500
+                              : FontWeight.w400,
+                        ),
                       ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

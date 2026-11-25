@@ -45,9 +45,11 @@ void main() {
     );
   });
 
-  test('UI navigation follows the window width, not the platform', () {
-    // Full rail, icon rail, then the phone layout. A narrow macOS window is a
-    // phone layout — it must never keep a rail that eats the content width.
+  test('UI navigation has exactly two states and follows the window width', () {
+    // Bottom bar, then the full labelled side navigation. The icon-only rail
+    // that used to exist between 720 and 899 is gone for good: a narrow macOS
+    // window is a phone layout, and anything from 720dp up gets the complete
+    // rail with icons, labels and the brand block.
     for (final TargetPlatform platform in <TargetPlatform>[
       TargetPlatform.macOS,
       TargetPlatform.android,
@@ -59,13 +61,16 @@ void main() {
         reason: '1280 on $platform',
       );
       expect(layoutFor(width: 900, platform: platform), ShellLayout.rail);
-      expect(
-        layoutFor(width: 800, platform: platform),
-        ShellLayout.compactRail,
-      );
+      expect(layoutFor(width: 800, platform: platform), ShellLayout.rail);
       expect(
         layoutFor(width: 720, platform: platform),
-        ShellLayout.compactRail,
+        ShellLayout.rail,
+        reason: 'the breakpoint itself already gets the full rail',
+      );
+      expect(
+        layoutFor(width: 719, platform: platform),
+        ShellLayout.bottomBar,
+        reason: 'one dp below the breakpoint is the phone layout',
       );
       expect(
         layoutFor(width: 640, platform: platform),
@@ -74,6 +79,8 @@ void main() {
       );
       expect(layoutFor(width: 412, platform: platform), ShellLayout.bottomBar);
     }
+    // Only two states exist; the enum itself guarantees no third layout.
+    expect(ShellLayout.values, hasLength(2));
   });
 
   testWidgets(

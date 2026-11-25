@@ -274,9 +274,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       } on CredentialStoreUnavailable catch (e) {
         if (mounted) {
           setState(() {
-            _credentialNotice =
-                '${e.reason}。凭据没有保存（也不会以明文保存），'
-                '请在系统钥匙串可用后重新输入；离线学习不受影响。';
+            _credentialNotice = '${e.reason}。凭据没有保存，请重新输入；离线学习不受影响。';
           });
         }
         return false;
@@ -372,9 +370,8 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
         context,
         title: '首次同步',
         message:
-            '首次同步会把远程数据与本机数据合并（按单词、作答记录去重），'
-            '不会用远程数据覆盖本地学习进度，也不会删除本地单词。'
-            '如果远程已有大量数据，合并后可能出现重复词条以外的额外记录。\n\n继续吗？',
+            '首次同步会把远程数据与本机数据合并，'
+            '不会用远程数据覆盖本地学习进度，也不会删除本地单词。\n\n继续吗？',
         confirmLabel: '开始合并',
       );
       if (!ok) return;
@@ -613,11 +610,11 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
   Future<void> _disconnect() async {
     final bool ok = await confirmDialog(
       context,
-      title: '解除同步配置',
+      title: '关闭同步',
       message:
-          '将删除本机保存的同步配置和凭据（访问令牌 / 密码）。'
-          '远程数据不会被删除，本地学习数据不受影响。',
-      confirmLabel: '解除',
+          '本机保存的同步设置和凭据（访问令牌 / 密码）会被删除。远程数据不会被删除，'
+          '学习记录仍然保存在本机。',
+      confirmLabel: '关闭',
       destructive: true,
     );
     if (!ok) return;
@@ -635,7 +632,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       _githubToken.clear();
       _webdavUser.clear();
       _webdavPassword.clear();
-      _status = '已解除同步配置';
+      _status = '已关闭同步';
       _testResult = null;
     });
   }
@@ -649,7 +646,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       _error = null;
     });
     if (_provider != 'none') {
-      showMessage(context, '切换同步方式后请重新测试连接；切换只改变传输通道，合并规则完全相同。');
+      showMessage(context, '切换同步方式后请重新测试连接。');
     }
   }
 
@@ -672,7 +669,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
         (_lastResult ?? '').contains('远程数据文件已被删除');
 
     return Scaffold(
-      appBar: AppBar(title: const Text('数据同步')),
+      appBar: ClassicAppBar(title: const Text('数据同步')),
       body: ContentColumn(
         child: ListView(
           padding: const EdgeInsets.only(bottom: 40),
@@ -733,7 +730,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
                   ),
                 ),
               ),
-            SectionHeader(title: '同步方式（同一时间只启用一种）'),
+            SectionHeader(title: '同步方式'),
             SettingsGroup(
               children: <Widget>[
                 for (final ({String id, String label, String description})
@@ -760,52 +757,49 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
               SectionHeader(title: '同步'),
               SettingsGroup(
                 children: <Widget>[
-                  SwitchListTile(
-                    dense: true,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                  SettingsSwitchTile(
                     value: autoStart,
+                    icon: Icons.play_circle_outline,
+                    title: '启动时同步',
+                    subtitle: '不阻塞启动：应用始终先显示本地数据',
                     onChanged: !canAuto || _busy
                         ? null
                         : (value) => _setAutoOption('autoOnStart', value),
-                    title: const Text('启动时同步'),
-                    subtitle: Text(
-                      '不阻塞启动：应用始终先显示本地数据',
-                      style: theme.textTheme.bodySmall,
-                    ),
                   ),
-                  SwitchListTile(
-                    dense: true,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                  SettingsSwitchTile(
                     value: autoResume,
+                    icon: Icons.refresh,
+                    title: '返回应用时同步',
+                    subtitle: '切回应用后自动检查更新；失败时会稍后重试',
                     onChanged: !canAuto || _busy
                         ? null
                         : (value) => _setAutoOption('autoOnResume', value),
-                    title: const Text('恢复前台时同步'),
-                    subtitle: Text(
-                      '最多每分钟一次，失败退避 5–60 分钟，重启后仍保留',
-                      style: theme.textTheme.bodySmall,
-                    ),
                   ),
-                  SwitchListTile(
+                  SettingsSwitchTile(
                     value: _fields['autoOnChange'] == 'true',
+                    icon: Icons.edit_note,
+                    title: '数据变化后自动同步',
+                    subtitle: '停止操作约 20 秒后自动同步，不会在每次作答后立即联网',
                     onChanged: !canAuto || _busy
                         ? null
                         : (value) => _setAutoOption('autoOnChange', value),
-                    title: const Text('数据变化后自动同步'),
-                    subtitle: const Text('停止修改 20 秒后检查；持续背词不会每次请求网络'),
                   ),
-                  SwitchListTile(
+                  SettingsSwitchTile(
                     value: _fields['autoAfterSession'] == 'true',
+                    icon: Icons.school_outlined,
+                    title: '本轮学习结束后同步',
+                    subtitle: '学习结束后自动同步，不影响结束流程',
                     onChanged: !canAuto || _busy
                         ? null
                         : (value) => _setAutoOption('autoAfterSession', value),
-                    title: const Text('本轮学习结束后同步'),
-                    subtitle: const Text('遵守同一冷却与退避规则，不阻塞学习'),
                   ),
                   if (!canAuto)
-                    const Padding(
-                      padding: EdgeInsets.all(16),
-                      child: Text('本地文件仅用于手动合并；自动双向同步请选择支持条件写入的远程目标。'),
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Text(
+                        '本地文件只用于手动合并；需要自动同步时请选择 GitHub 私有仓库或 WebDAV。',
+                        style: theme.textTheme.bodySmall,
+                      ),
                     ),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
@@ -813,6 +807,10 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
                       spacing: 8,
                       runSpacing: 8,
                       children: <Widget>[
+                        // One primary action per screen: 立即同步 is the filled
+                        // button, the other two are secondary and keep the same
+                        // outline treatment so a wrapped row never looks like a
+                        // stray line of accent text.
                         OutlinedButton.icon(
                           onPressed: _busy ? null : _runTest,
                           icon: const Icon(Icons.wifi_tethering),
@@ -823,10 +821,10 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
                           icon: const Icon(Icons.sync),
                           label: Text(_busy ? '同步中…' : '立即同步'),
                         ),
-                        TextButton.icon(
+                        OutlinedButton.icon(
                           onPressed: _busy ? null : _exportBackup,
                           icon: const Icon(Icons.save_alt),
-                          label: const Text('导出本地备份'),
+                          label: const Text('导出备份'),
                         ),
                       ],
                     ),
@@ -956,7 +954,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
                           ? Icons.cloud_upload_outlined
                           : Icons.cloud_done_outlined,
                     ),
-                    title: '本地待同步修改',
+                    title: '待同步的更改',
                     subtitle: _pendingChanges == true
                         ? '有本地修改尚未上传'
                         : '本地与上次同步一致',
@@ -979,39 +977,47 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                       child: Text('· $note', style: theme.textTheme.bodySmall),
                     ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Text(
-                          '合并规则：单词按拼写去重；作答记录按 ID 去重并重算学习状态；'
-                          '词书关联带删除标记，旧备份不会让已删除内容复活。'
-                          '同步不会删除本地笔记，也不会覆盖较新的学习记录。',
-                          style: theme.textTheme.bodySmall,
-                        ),
-                        AppSpacing.h8,
-                        Text(
-                          '凭据只保存在系统安全存储（钥匙串/Keystore），'
-                          '不会写入数据库、备份文件或日志。',
-                          style: theme.textTheme.bodySmall,
-                        ),
-                        AppSpacing.h8,
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: TextButton.icon(
-                            onPressed: _busy ? null : _disconnect,
-                            style: TextButton.styleFrom(
-                              foregroundColor: AppColors.unknown,
-                            ),
-                            icon: const Icon(Icons.link_off),
-                            label: const Text('解除同步配置'),
-                          ),
-                        ),
-                      ],
-                    ),
+                ],
+              ),
+              // Everything below is deliberately collapsed: the main page has
+              // to read like a settings screen, not like a protocol document.
+              // Deduplication keys, delete markers, tie-breaking and the
+              // credential store live here, one tap away.
+              ExpansionTile(
+                leading: const Icon(
+                  Icons.help_outline,
+                  size: AppDimens.iconSize,
+                ),
+                title: Text('同步与合并说明', style: theme.textTheme.bodyLarge),
+                tilePadding: const EdgeInsets.symmetric(horizontal: 16),
+                childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                children: <Widget>[
+                  Text(
+                    '远程数据和本机数据会合并，不会互相覆盖。\n'
+                    '· 同一个单词只保留一条记录；\n'
+                    '· 每次作答都单独保留，合并后重新计算学习状态；\n'
+                    '· 已经删除的单词和词书不会被旧备份恢复；\n'
+                    '· 两台设备改了同一项时，保留较新的一次，另一份留在'
+                    '「被覆盖的内容」里，可以随时改回来。\n'
+                    '令牌与密码只保存在本机系统安全存储（钥匙串 / Keystore）中，'
+                    '不会写进数据库、备份文件或日志。',
+                    style: theme.textTheme.bodySmall,
                   ),
                 ],
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: _busy ? null : _disconnect,
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.unknown,
+                    ),
+                    icon: const Icon(Icons.link_off),
+                    label: const Text('关闭同步'),
+                  ),
+                ),
               ),
             ],
           ],
@@ -1022,19 +1028,39 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
 
   Widget _configGroup() {
     final ThemeData theme = Theme.of(context);
-    Widget plainField(
+
+    /// One field style for every connection setting: same margins, same
+    /// content padding (from the theme), same label/helper scale. The business
+    /// controllers stay where they are — this is only the shell.
+    Widget field(
       String key,
       String label, {
       String hint = '',
       String fallback = '',
     }) {
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-        child: TextFormField(
-          initialValue: _field(key, fallback: fallback),
-          decoration: InputDecoration(labelText: label, hintText: hint),
-          onChanged: (String value) => _fields[key] = value,
-        ),
+      return _SyncTextField(
+        label: label,
+        hint: hint,
+        initialValue: _field(key, fallback: fallback),
+        onChanged: (String value) => _fields[key] = value,
+      );
+    }
+
+    Widget secretField(
+      String label, {
+      required TextEditingController controller,
+      String? helper,
+      ValueChanged<String>? onChanged,
+    }) {
+      return _SyncTextField(
+        label: label,
+        helper: helper,
+        controller: controller,
+        obscureText: true,
+        onChanged: (String value) {
+          onChanged?.call(value);
+          if (!_allowSecretEdit) setState(() => _allowSecretEdit = true);
+        },
       );
     }
 
@@ -1042,7 +1068,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       case 'local-file':
         return SettingsGroup(
           children: <Widget>[
-            plainField(
+            field(
               'path',
               '同步文件路径',
               hint: '/Users/you/MaterialWord/materialword-data.json',
@@ -1050,8 +1076,8 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
               child: Text(
-                'Android / iOS 无法永久授权任意外部路径：请使用应用目录内的文件，'
-                '或改用「导出到… / 导入并合并」手动模式。',
+                '手机上无法长期访问任意文件夹，请使用应用内的文件，'
+                '或改用「备份与恢复」中的导出 / 导入。',
                 style: theme.textTheme.bodySmall,
               ),
             ),
@@ -1060,31 +1086,19 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       case 'github':
         return SettingsGroup(
           children: <Widget>[
-            plainField('owner', '仓库 owner', hint: 'your-name'),
-            plainField('repo', '仓库名', hint: 'materialword-data'),
-            plainField('branch', '分支', fallback: 'main'),
-            plainField('path', '数据文件路径', fallback: 'materialword-data.json'),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-              child: TextField(
-                controller: _githubToken,
-                obscureText: true,
-                onChanged: (_) {
-                  if (!_allowSecretEdit) {
-                    setState(() => _allowSecretEdit = true);
-                  }
-                },
-                decoration: const InputDecoration(
-                  labelText: '访问令牌（Access Token）',
-                  helperText: '需要该仓库的读取与写入权限；保存在系统安全存储',
-                ),
-              ),
+            field('owner', 'GitHub 用户名或组织', hint: 'your-name'),
+            field('repo', '仓库名', hint: 'materialword-data'),
+            field('branch', '分支', fallback: 'main'),
+            field('path', '数据文件路径', fallback: 'materialword-data.json'),
+            secretField(
+              '访问令牌（Access Token）',
+              controller: _githubToken,
+              helper: '用于访问你的私有仓库，仅保存在本机系统安全存储中',
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
               child: Text(
-                '不要使用程序源码仓库：学习数据属于个人隐私。'
-                '如果仓库是公开的，连接测试会给出提醒。',
+                '建议新建一个专用私有仓库保存学习数据，请勿使用公开仓库。',
                 style: theme.textTheme.bodySmall,
               ),
             ),
@@ -1093,43 +1107,28 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       case 'webdav':
         return SettingsGroup(
           children: <Widget>[
-            plainField(
+            field(
               'url',
               '服务器地址（HTTPS）',
               hint: 'https://dav.example.com/remote.php/dav/files/me/',
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-              child: TextField(
-                controller: _webdavUser,
-                decoration: const InputDecoration(labelText: '用户名'),
-                onChanged: (String value) => _fields['user'] = value,
-              ),
+            _SyncTextField(
+              label: '用户名',
+              controller: _webdavUser,
+              onChanged: (String value) => _fields['user'] = value,
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-              child: TextField(
-                controller: _webdavPassword,
-                obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: '密码 / 服务专用密码',
-                  helperText: '保存在系统安全存储；留空表示保持不变',
-                ),
-                onChanged: (_) {
-                  if (!_allowSecretEdit) {
-                    setState(() => _allowSecretEdit = true);
-                  }
-                },
-              ),
+            secretField(
+              '密码 / 服务专用密码',
+              controller: _webdavPassword,
+              helper: '留空表示保持不变',
             ),
-            plainField('dir', '远程目录', fallback: 'materialword'),
-            plainField('file', '数据文件名', fallback: 'materialword-data.json'),
+            field('dir', '远程目录', fallback: 'materialword'),
+            field('file', '数据文件名', fallback: 'materialword-data.json'),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
               child: Text(
                 '只使用 HTTPS，不会关闭证书校验。'
-                '如果这个服务器不能可靠地处理多设备同时修改，就无法启用自动同步；'
-                '可以先使用手动备份。',
+                '如果服务器无法可靠地处理多设备同时修改，可以用「立即同步」手动合并。',
                 style: theme.textTheme.bodySmall,
               ),
             ),
@@ -1138,5 +1137,66 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       default:
         return const SizedBox.shrink();
     }
+  }
+}
+
+/// One visual shell for every connection field on this page.
+///
+/// The four inputs used to be a mix of `TextFormField` and `TextField` with
+/// hand-written paddings, so the GitHub token sat at a different height than
+/// the fields above it. This wrapper fixes the outer margins, the content
+/// padding (from the theme), the label/helper scale and the border; the
+/// controllers and the save logic stay exactly where they were.
+class _SyncTextField extends StatelessWidget {
+  const _SyncTextField({
+    required this.label,
+    this.initialValue,
+    this.controller,
+    this.hint,
+    this.helper,
+    this.obscureText = false,
+    this.onChanged,
+  }) : assert(
+         controller == null || initialValue == null,
+         'a field is either uncontrolled or driven by a controller',
+       );
+
+  final String label;
+  final String? initialValue;
+  final TextEditingController? controller;
+  final String? hint;
+  final String? helper;
+  final bool obscureText;
+  final ValueChanged<String>? onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final InputDecoration decoration = InputDecoration(
+      labelText: label,
+      hintText: (hint ?? '').isEmpty ? null : hint,
+      helperText: helper,
+      helperMaxLines: 2,
+    );
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppDimens.gutter,
+        8,
+        AppDimens.gutter,
+        8,
+      ),
+      child: controller == null
+          ? TextFormField(
+              initialValue: initialValue ?? '',
+              obscureText: obscureText,
+              decoration: decoration,
+              onChanged: onChanged,
+            )
+          : TextField(
+              controller: controller,
+              obscureText: obscureText,
+              decoration: decoration,
+              onChanged: onChanged,
+            ),
+    );
   }
 }
