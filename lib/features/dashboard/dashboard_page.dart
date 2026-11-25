@@ -81,6 +81,7 @@ class DashboardPage extends ConsumerWidget {
                     reviewOnly: resume.mode == StudyMode.reviewOnly,
                     special: resume.special,
                     bookIdOverride: resume.bookId,
+                    useGlobalScope: resume.bookId == null,
                   ),
                 ),
               ),

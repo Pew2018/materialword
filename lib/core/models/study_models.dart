@@ -2,6 +2,41 @@ import '../database/app_database.dart';
 import '../models/enums.dart';
 import '../repositories/word_repository.dart';
 
+class RoundDifficultWord {
+  const RoundDifficultWord({
+    required this.id,
+    required this.word,
+    required this.available,
+  });
+  final String id, word;
+  final bool available;
+}
+
+class StudyRoundSummary {
+  const StudyRoundSummary({
+    required this.newWords,
+    required this.reviewWords,
+    required this.uniqueWords,
+    required this.known,
+    required this.hazy,
+    required this.unknown,
+    required this.repeatAttempts,
+    required this.elapsed,
+    required this.difficultWords,
+  });
+  final int newWords,
+      reviewWords,
+      uniqueWords,
+      known,
+      hazy,
+      unknown,
+      repeatAttempts;
+  final Duration elapsed;
+  final List<RoundDifficultWord> difficultWords;
+  int get attempts => known + hazy + unknown;
+  double? get accuracy => attempts == 0 ? null : known / attempts;
+}
+
 /// One card in a study or review session.
 class StudyCard {
   const StudyCard({

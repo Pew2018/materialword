@@ -310,6 +310,7 @@ class BackupService {
                 'special-mistakes',
                 'special-book',
                 'special-favorites',
+                'special-session-mistakes',
                 'manual-mastered',
                 'manual-unmastered',
                 'reset',

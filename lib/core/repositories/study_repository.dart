@@ -174,6 +174,7 @@ SELECT $wordColumnsWithState
         order = 'ORDER BY ls.next_review_at ASC, w.normalized, w.id';
       case SpecialReview.none:
       case SpecialReview.favorites:
+      case SpecialReview.sessionMistakes:
         return const <WordWithState>[];
     }
     if (bookId != null) {

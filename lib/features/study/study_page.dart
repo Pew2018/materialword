@@ -29,6 +29,8 @@ class StudyPage extends ConsumerStatefulWidget {
     this.reviewOnly = false,
     this.special = SpecialReview.none,
     this.bookIdOverride,
+    this.useGlobalScope = false,
+    this.focusedWordIds,
   });
 
   final bool reviewOnly;
@@ -37,6 +39,8 @@ class StudyPage extends ConsumerStatefulWidget {
   /// Forces the queue to a specific book (used by the "词书内专项复习" entry);
   /// normal study always follows the book selected in settings.
   final String? bookIdOverride;
+  final bool useGlobalScope;
+  final List<String>? focusedWordIds;
 
   @override
   ConsumerState<StudyPage> createState() => _StudyPageState();
@@ -49,6 +53,7 @@ class _StudyPageState extends ConsumerState<StudyPage> {
   String? _lastCardId;
   StudySettingsRow? _settings;
   late final TtsService _tts;
+  Future<StudyRoundSummary>? _summaryFuture;
 
   @override
   void initState() {
@@ -74,6 +79,11 @@ class _StudyPageState extends ConsumerState<StudyPage> {
   }
 
   void _onSessionChanged() {
+    if (_session.isFinished) {
+      _summaryFuture ??= _session.summary();
+    } else {
+      _summaryFuture = null;
+    }
     if (_session.isFinished &&
         _session.newAnswered + _session.reviewAnswered > 0) {
       ref.read(autoSyncServiceProvider).requestSessionEnd();
@@ -136,7 +146,10 @@ class _StudyPageState extends ConsumerState<StudyPage> {
       reviewLimit: isSpecial
           ? (reviewAllowance > 0 ? reviewAllowance : 20)
           : reviewAllowance,
-      bookId: widget.bookIdOverride ?? settings.currentWordBookId,
+      bookId: widget.useGlobalScope
+          ? null
+          : widget.bookIdOverride ?? settings.currentWordBookId,
+      focusedWordIds: widget.focusedWordIds,
       mode: widget.reviewOnly
           ? StudyMode.reviewOnly
           : StudyMode.fromCode(settings.studyMode),
@@ -343,15 +356,45 @@ class _StudyPageState extends ConsumerState<StudyPage> {
       );
     }
     if (_session.isFinished) {
-      return _SummaryView(
-        newAnswered: _session.newAnswered,
-        reviewAnswered: _session.reviewAnswered,
-        repeats: _session.repeatCards,
-        backlog: _session.backlog,
-        onDone: () => Navigator.of(context).maybePop(),
-        onAgain: () async {
-          _started = false;
-          await _start();
+      return FutureBuilder<StudyRoundSummary>(
+        future: _summaryFuture ??= _session.summary(),
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return ErrorBanner(
+              message: '读取本轮统计失败',
+              onRetry: () => setState(() {
+                _summaryFuture = _session.summary();
+              }),
+            );
+          }
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final summary = snapshot.data!;
+          return _SummaryView(
+            summary: summary,
+            backlog: _session.backlog,
+            onMistakes: summary.difficultWords.any((w) => w.available)
+                ? () => Navigator.of(context).push<void>(
+                    MaterialPageRoute(
+                      builder: (_) => StudyPage(
+                        special: SpecialReview.sessionMistakes,
+                        focusedWordIds: summary.difficultWords
+                            .where((w) => w.available)
+                            .map((w) => w.id)
+                            .toList(),
+                        bookIdOverride: _session.bookId,
+                        useGlobalScope: _session.bookId == null,
+                      ),
+                    ),
+                  )
+                : null,
+            onDone: () => Navigator.of(context).maybePop(),
+            onAgain: () async {
+              _started = false;
+              await _start();
+            },
+          );
         },
       );
     }
@@ -759,17 +802,15 @@ class _AnswerButton extends StatelessWidget {
 
 class _SummaryView extends StatelessWidget {
   const _SummaryView({
-    required this.newAnswered,
-    required this.reviewAnswered,
-    required this.repeats,
+    required this.summary,
+    required this.onMistakes,
     required this.backlog,
     required this.onDone,
     required this.onAgain,
   });
 
-  final int newAnswered;
-  final int reviewAnswered;
-  final int repeats;
+  final StudyRoundSummary summary;
+  final VoidCallback? onMistakes;
   final int backlog;
   final VoidCallback onDone;
   final Future<void> Function() onAgain;
@@ -800,16 +841,74 @@ class _SummaryView extends StatelessWidget {
               Row(
                 children: <Widget>[
                   Expanded(
-                    child: StatBlock(value: '$newAnswered', label: '新词'),
+                    child: StatBlock(
+                      value: '${summary.newWords}',
+                      label: '新词（独立）',
+                    ),
                   ),
                   Expanded(
-                    child: StatBlock(value: '$reviewAnswered', label: '复习'),
+                    child: StatBlock(
+                      value: '${summary.reviewWords}',
+                      label: '复习（独立）',
+                    ),
                   ),
                   Expanded(
-                    child: StatBlock(value: '$repeats', label: '重复练习'),
+                    child: StatBlock(
+                      value: '${summary.repeatAttempts}',
+                      label: '复练作答',
+                    ),
                   ),
                 ],
               ),
+              AppSpacing.h16,
+              Text(
+                '共 ${summary.uniqueWords} 个独立单词，${summary.attempts} 次实际作答',
+                textAlign: TextAlign.center,
+              ),
+              AppSpacing.h12,
+              Row(
+                children: [
+                  Expanded(
+                    child: StatBlock(value: '${summary.known}', label: '认识'),
+                  ),
+                  Expanded(
+                    child: StatBlock(value: '${summary.hazy}', label: '模糊'),
+                  ),
+                  Expanded(
+                    child: StatBlock(value: '${summary.unknown}', label: '不认识'),
+                  ),
+                ],
+              ),
+              AppSpacing.h12,
+              Text(
+                '本轮正确率：${summary.accuracy == null ? '—' : '${(summary.accuracy! * 100).toStringAsFixed(1)}%'}',
+                textAlign: TextAlign.center,
+              ),
+              Text(
+                '经过时间：${summary.elapsed.inMinutes} 分 ${summary.elapsed.inSeconds % 60} 秒（含暂停）',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall,
+              ),
+              if (summary.difficultWords.isNotEmpty) ...[
+                AppSpacing.h16,
+                Text('本轮困难词', style: theme.textTheme.titleSmall),
+                AppSpacing.h8,
+                SelectableText(
+                  summary.difficultWords
+                      .map((w) => '${w.word}${w.available ? '' : '（已删除）'}')
+                      .join(' · '),
+                ),
+                Text(
+                  '包含本轮曾模糊或不认识的单词；已删除词不进入复练。',
+                  style: theme.textTheme.bodySmall,
+                ),
+                AppSpacing.h12,
+                OutlinedButton.icon(
+                  onPressed: onMistakes,
+                  icon: const Icon(Icons.replay),
+                  label: const Text('复练本轮错词'),
+                ),
+              ],
               if (backlog > 0) ...<Widget>[
                 AppSpacing.h16,
                 Text(

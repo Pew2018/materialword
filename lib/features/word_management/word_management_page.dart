@@ -462,8 +462,10 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
             onPressed: () => Navigator.push<void>(
               context,
               MaterialPageRoute(
-                builder: (_) =>
-                    const StudyPage(special: SpecialReview.favorites),
+                builder: (_) => const StudyPage(
+                  special: SpecialReview.favorites,
+                  useGlobalScope: true,
+                ),
               ),
             ),
           ),

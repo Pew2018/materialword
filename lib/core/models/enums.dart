@@ -121,7 +121,8 @@ enum SpecialReview {
   hard('hard', '困难词专项'),
   recentMistakes('mistakes', '近期错误专项'),
   inBook('book', '词书内专项'),
-  favorites('favorites', '收藏词专项');
+  favorites('favorites', '收藏词专项'),
+  sessionMistakes('session-mistakes', '本轮错词复练');
 
   const SpecialReview(this.code, this.label);
 
@@ -149,6 +150,7 @@ class ReviewEventMode {
   static const String specialMistakes = 'special-mistakes';
   static const String specialBook = 'special-book';
   static const String specialFavorites = 'special-favorites';
+  static const String specialSessionMistakes = 'special-session-mistakes';
 
   /// Recorded when the user marks a word as mastered by hand.
   static const String manualMastered = 'manual-mastered';
@@ -173,6 +175,7 @@ class ReviewEventMode {
     SpecialReview.recentMistakes => specialMistakes,
     SpecialReview.inBook => specialBook,
     SpecialReview.favorites => specialFavorites,
+    SpecialReview.sessionMistakes => specialSessionMistakes,
     SpecialReview.none => normal,
   };
 }

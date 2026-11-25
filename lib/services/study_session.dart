@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 import '../core/models/enums.dart';
+import '../core/database/app_database.dart';
 import '../core/models/study_models.dart';
 import '../core/repositories/settings_repository.dart';
 import '../core/repositories/study_repository.dart';
@@ -42,6 +43,7 @@ class StudySession extends ChangeNotifier {
 
   final List<StudyCard> _queue = <StudyCard>[];
   final Set<String> _answeredCardIds = <String>{};
+  final List<String> _eventIds = [];
   int _cursor = 0;
   bool _revealed = false;
   bool _busy = false;
@@ -52,6 +54,7 @@ class StudySession extends ChangeNotifier {
   StudyMode _mode = StudyMode.mixed;
   String _planVersion = '';
   DateTime? _startedAt;
+  DateTime? _finishedAt;
   Map<String, Object?>? _lastSubmission;
   String? _deviceId;
   String? _error;
@@ -84,6 +87,7 @@ class StudySession extends ChangeNotifier {
   bool get isEmpty => !_loading && _queue.isEmpty;
   String? get error => _error;
   SpecialReview get special => _special;
+  String? get bookId => _bookId;
 
   StudyCard? get current => _cursor < _queue.length ? _queue[_cursor] : null;
 
@@ -114,6 +118,7 @@ class StudySession extends ChangeNotifier {
     String? bookId,
     StudyMode mode = StudyMode.mixed,
     SpecialReview special = SpecialReview.none,
+    List<String>? focusedWordIds,
   }) async {
     _loading = true;
     _error = null;
@@ -126,14 +131,16 @@ class StudySession extends ChangeNotifier {
       _planVersion = jsonEncode(await _settings.sharedVersion());
       if (await _restore()) return;
       _startedAt = _clock.now();
-      final StudyQueue queue = await _study.buildQueue(
-        now: _clock.now(),
-        newLimit: newLimit,
-        reviewLimit: reviewLimit,
-        bookId: bookId,
-        mode: special == SpecialReview.none ? mode : StudyMode.special,
-        special: special,
-      );
+      final StudyQueue queue = focusedWordIds != null
+          ? await _focusedQueue(focusedWordIds)
+          : await _study.buildQueue(
+              now: _clock.now(),
+              newLimit: newLimit,
+              reviewLimit: reviewLimit,
+              bookId: bookId,
+              mode: special == SpecialReview.none ? mode : StudyMode.special,
+              special: special,
+            );
       _queue
         ..clear()
         ..addAll(queue.cards);
@@ -144,6 +151,8 @@ class StudySession extends ChangeNotifier {
       _reviewAnswered = 0;
       _repeatCards = 0;
       _answeredCardIds.clear();
+      _eventIds.clear();
+      _finishedAt = null;
       _newAvailable = queue.newAvailable;
       _newQueued = queue.newQueued;
       _reviewAvailable = queue.reviewAvailable;
@@ -187,6 +196,8 @@ class StudySession extends ChangeNotifier {
       final beforeReview = _reviewAnswered;
       final beforeRepeats = _repeatCards;
       final previousUndo = _lastSubmission;
+      final beforeEvents = List<String>.of(_eventIds);
+      final beforeFinished = _finishedAt;
       try {
         return await _study.db.transaction(() async {
           final word = await _study.managedWord(card.word.id);
@@ -220,6 +231,9 @@ class StudySession extends ChangeNotifier {
               (_bookId != null && (book == null || book.deletedAt != null))) {
             _answeredCardIds.remove(cardId);
             _queue.removeAt(_cursor);
+            if (_queue.isNotEmpty && _cursor >= _queue.length) {
+              _finishedAt = now;
+            }
             _lastSubmission = null;
             _revealed = false;
             await _persist();
@@ -266,6 +280,8 @@ class StudySession extends ChangeNotifier {
             'cardId': cardId,
           };
           _cursor++;
+          _eventIds.add(record.eventId);
+          if (_cursor >= _queue.length) _finishedAt = now;
           _revealed = false;
           _error = null;
           await _persist();
@@ -280,6 +296,10 @@ class StudySession extends ChangeNotifier {
         _reviewAnswered = beforeReview;
         _repeatCards = beforeRepeats;
         _lastSubmission = previousUndo;
+        _eventIds
+          ..clear()
+          ..addAll(beforeEvents);
+        _finishedAt = beforeFinished;
         _revealed = true;
         rethrow;
       }
@@ -295,6 +315,131 @@ class StudySession extends ChangeNotifier {
 
   String _day(DateTime date) =>
       '${date.toLocal().year}-${date.toLocal().month}-${date.toLocal().day}';
+
+  Future<StudyQueue> _focusedQueue(List<String> ids) async {
+    final cards = <StudyCard>[];
+    if (_bookId != null) {
+      final book = await (_study.db.select(
+        _study.db.wordBooks,
+      )..where((t) => t.id.equals(_bookId!))).getSingleOrNull();
+      if (book == null || book.deletedAt != null) {
+        return const StudyQueue(
+          cards: [],
+          newAvailable: 0,
+          reviewAvailable: 0,
+          backlog: 0,
+        );
+      }
+    }
+    for (final id in ids.toSet()) {
+      final row = await _study.managedWord(id);
+      if (row == null) continue;
+      if (_bookId != null) {
+        final link =
+            await (_study.db.select(_study.db.wordBookEntries)..where(
+                  (t) =>
+                      t.wordId.equals(id) &
+                      t.wordBookId.equals(_bookId!) &
+                      t.deletedAt.isNull(),
+                ))
+                .getSingleOrNull();
+        if (link == null) continue;
+      }
+      cards.add(
+        StudyCard(
+          word: row.word,
+          withState: WordWithState(
+            word: row.word,
+            state: row.state,
+            bookCount: row.bookCount,
+            lastAnsweredAt: row.lastStudiedAt,
+          ),
+          type: ReviewType.review,
+        ),
+      );
+    }
+    return StudyQueue(
+      cards: cards,
+      newAvailable: 0,
+      reviewAvailable: cards.length,
+      backlog: 0,
+      mode: StudyMode.special,
+    );
+  }
+
+  /// Query only this round's event IDs, keeping unrelated answers out of totals.
+  Future<StudyRoundSummary> summary() => _study.db.transaction(() async {
+    final ids = _eventIds.toSet().toList(), events = <ReviewEvent>[];
+    final undone = <String>{};
+    for (var start = 0; start < ids.length; start += 400) {
+      final chunk = ids.sublist(start, (start + 400).clamp(0, ids.length));
+      events.addAll(
+        await (_study.db.select(
+          _study.db.reviewEvents,
+        )..where((t) => t.id.isIn(chunk))).get(),
+      );
+      final undo = await (_study.db.select(
+        _study.db.reviewEvents,
+      )..where((t) => t.mode.isIn(chunk.map((id) => 'undo:$id')))).get();
+      undone.addAll(
+        undo.map((e) => e.mode.substring(ReviewEventMode.undoPrefix.length)),
+      );
+    }
+    final newIds = <String>{},
+        reviewIds = <String>{},
+        allIds = <String>{},
+        difficultIds = <String>{};
+    int known = 0, hazy = 0, unknown = 0, repeats = 0;
+    for (final event in events) {
+      if (undone.contains(event.id) ||
+          ReviewEventMode.isManagement(event.mode)) {
+        continue;
+      }
+      allIds.add(event.wordId);
+      (event.type == ReviewType.study.code ? newIds : reviewIds).add(
+        event.wordId,
+      );
+      switch (AnswerResult.fromCode(event.result)) {
+        case AnswerResult.known:
+          known++;
+        case AnswerResult.hazy:
+          hazy++;
+          difficultIds.add(event.wordId);
+        case AnswerResult.unknown:
+          unknown++;
+          difficultIds.add(event.wordId);
+      }
+      if (event.mode == ReviewEventMode.repeat) repeats++;
+    }
+    final difficult = <RoundDifficultWord>[];
+    for (final id in difficultIds) {
+      final word = await (_study.db.select(
+        _study.db.words,
+      )..where((t) => t.id.equals(id))).getSingleOrNull();
+      difficult.add(
+        RoundDifficultWord(
+          id: id,
+          word: word?.word ?? '已删除词条',
+          available: word != null && word.deletedAt == null,
+        ),
+      );
+    }
+    difficult.sort((a, b) => a.word.compareTo(b.word));
+    final elapsed = (_finishedAt ?? _clock.now()).difference(
+      _startedAt ?? _clock.now(),
+    );
+    return StudyRoundSummary(
+      newWords: newIds.length,
+      reviewWords: reviewIds.length,
+      uniqueWords: allIds.length,
+      known: known,
+      hazy: hazy,
+      unknown: unknown,
+      repeatAttempts: repeats,
+      elapsed: elapsed.isNegative ? Duration.zero : elapsed,
+      difficultWords: List.unmodifiable(difficult),
+    );
+  });
 
   Future<void> _persist() async {
     if (_queue.isEmpty || _cursor >= _queue.length) {
@@ -320,6 +465,7 @@ class StudySession extends ChangeNotifier {
         'reviewAvailable': _reviewAvailable,
         'backlog': _backlog,
         'lastSubmission': _lastSubmission,
+        'eventIds': _eventIds,
         'queue': _queue
             .map(
               (card) => {
@@ -429,6 +575,10 @@ class StudySession extends ChangeNotifier {
     _cursor = cursor;
     _revealed = false;
     _startedAt = DateTime.fromMillisecondsSinceEpoch(data['startedAt'] as int);
+    _eventIds
+      ..clear()
+      ..addAll((data['eventIds'] as List?)?.whereType<String>() ?? const []);
+    _finishedAt = null;
     _newAnswered = data['newAnswered'] as int;
     _reviewAnswered = data['reviewAnswered'] as int;
     _repeatCards = data['repeatCards'] as int;
@@ -453,6 +603,8 @@ class StudySession extends ChangeNotifier {
         reviewAnswered = _reviewAnswered,
         repeats = _repeatCards;
     final answered = Set<String>.of(_answeredCardIds);
+    final events = List<String>.of(_eventIds);
+    final finishedAt = _finishedAt;
     final revealed = _revealed;
     _busy = true;
     notifyListeners();
@@ -471,6 +623,8 @@ class StudySession extends ChangeNotifier {
         _repeatCards = previous['repeatCards'] as int;
         _answeredCardIds.remove(previous['cardId']);
         _lastSubmission = null;
+        _eventIds.remove(previous['eventId']);
+        _finishedAt = null;
         _revealed = false;
         await _persist();
       });
@@ -487,6 +641,10 @@ class StudySession extends ChangeNotifier {
         ..clear()
         ..addAll(answered);
       _lastSubmission = previous;
+      _eventIds
+        ..clear()
+        ..addAll(events);
+      _finishedAt = finishedAt;
       _revealed = revealed;
       _error = '撤销失败，请重试';
       return false;
@@ -530,10 +688,14 @@ class StudySession extends ChangeNotifier {
     final card = current!;
     final previous = _lastSubmission;
     final revealed = _revealed;
+    final finishedAt = _finishedAt;
     _busy = true;
     notifyListeners();
     try {
       _queue.removeAt(_cursor);
+      if (_queue.isNotEmpty && _cursor >= _queue.length) {
+        _finishedAt = _clock.now();
+      }
       _lastSubmission = null;
       _revealed = false;
       await _persist();
@@ -541,6 +703,7 @@ class StudySession extends ChangeNotifier {
     } catch (_) {
       _queue.insert(_cursor, card);
       _lastSubmission = previous;
+      _finishedAt = finishedAt;
       _revealed = revealed;
       _error = '跳过失败，请重试';
       return false;
