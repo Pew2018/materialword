@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,6 +9,7 @@ import '../../app/theme.dart';
 import '../../core/database/app_database.dart';
 import '../../core/models/enums.dart';
 import '../../core/models/study_models.dart';
+import '../../services/screen_awake.dart';
 import '../../services/study_session.dart';
 import '../../services/tts_service.dart';
 import '../../shared/widgets/common.dart';
@@ -46,7 +49,8 @@ class StudyPage extends ConsumerStatefulWidget {
   ConsumerState<StudyPage> createState() => _StudyPageState();
 }
 
-class _StudyPageState extends ConsumerState<StudyPage> {
+class _StudyPageState extends ConsumerState<StudyPage>
+    with WidgetsBindingObserver {
   late final StudySession _session;
   final ScrollController _scroll = ScrollController();
   bool _started = false;
@@ -55,28 +59,54 @@ class _StudyPageState extends ConsumerState<StudyPage> {
   bool _randomOrder = false;
   static const String _randomOrderKey = 'study_random_order';
   late final TtsService _tts;
+  late final ScreenAwakeService _screen;
   Future<StudyRoundSummary>? _summaryFuture;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // Resolved eagerly: `ref` must not be touched in dispose().
     _tts = ref.read(ttsServiceProvider);
+    _screen = ref.read(screenAwakeProvider);
     _session = StudySession(
       ref.read(studyRepositoryProvider),
       ref.read(settingsRepositoryProvider),
       ref.read(clockProvider),
     )..addListener(_onSessionChanged);
     _start();
+    _applyScreenAwake();
+  }
+
+  /// Only ever keeps the screen on while this page is the visible session and
+  /// the user asked for it; a platform that cannot do it says so once and the
+  /// session continues unchanged.
+  Future<void> _applyScreenAwake() async {
+    final bool wanted = await ref.read(keepScreenOnProvider.future);
+    if (!wanted || !mounted) return;
+    await _screen.enable();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // The OS drops the flag while backgrounded, so "still wanted" has to be
+      // re-applied rather than assumed.
+      unawaited(_screen.refresh());
+    } else {
+      unawaited(_screen.disable());
+    }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _session.removeListener(_onSessionChanged);
     _session.dispose();
     _scroll.dispose();
     // Captured in initState: `ref` must not be used while disposing.
     _tts.stop();
+    _screen.disable();
     super.dispose();
   }
 

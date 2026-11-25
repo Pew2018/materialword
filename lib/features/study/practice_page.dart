@@ -7,6 +7,7 @@ import '../../core/database/app_database.dart';
 import '../../core/models/enums.dart';
 import '../../shared/widgets/common.dart';
 import '../../services/practice_session.dart';
+import '../../services/screen_awake.dart';
 import '../../services/tts_service.dart';
 
 /// Practice drills: spelling, dictation, multiple choice and cloze.
@@ -15,54 +16,97 @@ import '../../services/tts_service.dart';
 ///  * it never consumes the daily new/review allowance,
 ///  * it never moves the long-term interval (see `ReviewEventMode.isPractice`),
 ///  * but every answer is still a real, undoable, syncable event.
+///
+/// The page renders whatever [PracticeSession.phase] says and owns nothing that
+/// the session also owns: the question on screen during feedback is
+/// `session.current`, never a stale copy.
 class PracticePage extends ConsumerStatefulWidget {
   const PracticePage({
     super.key,
     required this.kind,
     this.bookId,
     this.limit = PracticeSession.defaultLimit,
+    this.resume = true,
   });
 
   final PracticeKind kind;
   final String? bookId;
   final int limit;
 
+  /// Whether a persisted attempt of the same drill may be resumed.
+  final bool resume;
+
   @override
   ConsumerState<PracticePage> createState() => _PracticePageState();
 }
 
-class _PracticePageState extends ConsumerState<PracticePage> {
+class _PracticePageState extends ConsumerState<PracticePage>
+    with WidgetsBindingObserver {
   late final PracticeSession _session;
   // Resolved eagerly: `ref` must not be touched in dispose().
   late final TtsService _tts;
+  late final ScreenAwakeService _screen;
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focus = FocusNode(debugLabel: 'practice-answer');
-  String? _lastQuestionId;
-  PracticeOutcome? _outcome;
-  PracticeQuestion? _answeredQuestion;
+
+  /// Identity of the question the widgets are currently built for. Only used to
+  /// decide when to reset the text field and when to pronounce a dictation —
+  /// never to decide which question is "current" (the session owns that).
+  String? _shownQuestionId;
+  PracticePhase? _shownPhase;
+
+  /// Drops pronunciation results that belong to a question already left.
+  int _speechGeneration = 0;
   bool _showHint = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _tts = ref.read(ttsServiceProvider);
+    _screen = ref.read(screenAwakeProvider);
     _session = PracticeSession(
       ref.read(studyRepositoryProvider),
       ref.read(settingsRepositoryProvider),
       ref.read(clockProvider),
     )..addListener(_onChanged);
     _start();
+    _applyScreenAwake();
+  }
+
+  Future<void> _applyScreenAwake() async {
+    final bool wanted = await ref.read(keepScreenOnProvider.future);
+    if (!wanted || !mounted) return;
+    await _screen.enable();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _speechGeneration++;
     _session.removeListener(_onChanged);
     _session.dispose();
     _controller.dispose();
     _focus.dispose();
     // Stop any pronunciation started for the previous card.
     _tts.stop();
+    _screen.disable();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Background audio must not outlive the drill: Android/iOS keep the audio
+    // session alive otherwise, and the user comes back to a voice reading a
+    // word that is no longer on screen.
+    if (state != AppLifecycleState.resumed) {
+      _speechGeneration++;
+      _tts.stop();
+      // The OS drops the keep-awake flag in the background; re-apply on return.
+      _screen.disable();
+    } else {
+      _screen.refresh();
+    }
   }
 
   Future<void> _start() async {
@@ -70,6 +114,7 @@ class _PracticePageState extends ConsumerState<PracticePage> {
       kind: widget.kind,
       bookId: widget.bookId,
       limit: widget.limit,
+      resume: widget.resume,
     );
     if (!mounted) return;
     ref.invalidate(statisticsProvider);
@@ -79,31 +124,46 @@ class _PracticePageState extends ConsumerState<PracticePage> {
   void _onChanged() {
     if (!mounted) return;
     final PracticeQuestion? question = _session.current;
-    if (question == null) {
-      setState(() {});
-      return;
+    final String? id = question == null
+        ? null
+        : '${question.word.id}:${question.contentSignature}';
+    final PracticePhase phase = _session.phase;
+    final bool questionChanged = id != _shownQuestionId;
+    final bool enteredQuestion =
+        questionChanged ||
+        (phase == PracticePhase.question &&
+            _shownPhase != PracticePhase.question);
+    if (questionChanged) {
+      _controller.clear();
+      _showHint = false;
+      // A new card always invalidates the previous pronunciation request.
+      _speechGeneration++;
     }
-    final String id = '${question.word.id}:${_session.position}';
-    if (id == _lastQuestionId) {
-      setState(() {});
-      return;
-    }
-    _lastQuestionId = id;
-    _controller.clear();
-    _showHint = false;
+    _shownQuestionId = id;
+    _shownPhase = phase;
     setState(() {});
-    if (question.kind == PracticeKind.dictation) {
+    if (enteredQuestion &&
+        question != null &&
+        phase == PracticePhase.question &&
+        question.kind == PracticeKind.dictation) {
       _speak(question.answer, announceFailure: true);
     }
-    // Focus is requested after the frame so the field exists.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && _session.current != null && question.kind.isTyped) {
-        _focus.requestFocus();
-      }
-    });
+    if (enteredQuestion && phase == PracticePhase.question) {
+      // Focus is requested after the frame so the field exists.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted &&
+            _session.phase == PracticePhase.question &&
+            question != null &&
+            question.kind.isTyped) {
+          _focus.requestFocus();
+        }
+      });
+    }
   }
 
   Future<void> _speak(String text, {bool announceFailure = false}) async {
+    // Anything older than this request must not report back to the UI.
+    final int generation = ++_speechGeneration;
     final StudySettingsRow? settings = ref.read(settingsProvider).value;
     final bool ok = await _tts.speak(
       text,
@@ -113,63 +173,63 @@ class _PracticePageState extends ConsumerState<PracticePage> {
       locale: settings?.ttsLocale ?? 'en-US',
       rate: settings?.ttsRate ?? 50,
     );
-    if (!ok && mounted && announceFailure) {
+    if (generation != _speechGeneration) return;
+    if (!mounted) return;
+    if (!ok) {
+      // The drill stays usable without audio: show the Chinese hint and say so
+      // in Chinese. Never a fake "played" state.
       setState(() => _showHint = true);
-      showMessage(context, '系统语音不可用，已显示中文提示；可继续用拼写或选择题练习', error: true);
+      if (announceFailure) {
+        showMessage(
+          context,
+          _tts.lastError ?? '系统语音不可用，已显示中文提示；可以继续用拼写或选择题练习',
+          error: true,
+        );
+      }
     }
   }
 
   Future<void> _submitTyped() async {
-    if (_session.isBusy || _session.current == null) return;
-    final PracticeQuestion question = _session.current!;
+    if (_session.phase != PracticePhase.question || _session.current == null) {
+      return;
+    }
     final PracticeOutcome? outcome = await _session.submitTyped(
       _controller.text,
     );
     if (!mounted) return;
-    if (outcome == null) return;
+    if (outcome == null) {
+      if (_session.error != null) {
+        showMessage(context, _session.error!, error: true);
+      }
+      return;
+    }
     FocusScope.of(context).unfocus();
-    setState(() {
-      _outcome = outcome;
-      _answeredQuestion = question;
-    });
     ref.invalidate(statisticsProvider);
     ref.invalidate(todayProgressProvider);
   }
 
   Future<void> _submitChoice(int index) async {
-    final PracticeQuestion? question = _session.current;
-    if (question == null || _session.isBusy) return;
+    if (_session.phase != PracticePhase.question) return;
     final PracticeOutcome? outcome = await _session.submitChoice(index);
     if (!mounted || outcome == null) return;
-    setState(() {
-      _outcome = outcome;
-      _answeredQuestion = question;
-    });
     ref.invalidate(statisticsProvider);
     ref.invalidate(todayProgressProvider);
   }
 
   void _next() {
-    setState(() {
-      _outcome = null;
-      _answeredQuestion = null;
-      _showHint = false;
-    });
-    _controller.clear();
-    _onChanged();
+    _session.advance();
   }
 
   Future<void> _undo() async {
     final bool ok = await _session.undo();
     if (!mounted) return;
-    if (ok) {
-      setState(() {
-        _outcome = null;
-        _answeredQuestion = null;
-      });
-      _lastQuestionId = null;
-      _onChanged();
-    } else if (_session.error != null) {
+    if (!ok && _session.error != null) {
+      showMessage(context, _session.error!, error: true);
+    }
+  }
+
+  void _skip() {
+    if (!_session.skip() && _session.error != null) {
       showMessage(context, _session.error!, error: true);
     }
   }
@@ -177,6 +237,7 @@ class _PracticePageState extends ConsumerState<PracticePage> {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final bool hasQuestion = _session.current != null;
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.kind.label),
@@ -186,28 +247,18 @@ class _PracticePageState extends ConsumerState<PracticePage> {
             onPressed: _session.canUndo ? _undo : null,
             icon: const Icon(Icons.undo),
           ),
-          if (!_session.isLoading && !_session.isEmpty && !_session.isFinished)
+          if (_session.phase == PracticePhase.question && hasQuestion)
             IconButton(
               tooltip: '跳过（不记录作答）',
-              onPressed: _session.isBusy
-                  ? null
-                  : () {
-                      _session.skip();
-                      setState(() {
-                        _outcome = null;
-                        _answeredQuestion = null;
-                      });
-                      _lastQuestionId = null;
-                      _onChanged();
-                    },
+              onPressed: _skip,
               icon: const Icon(Icons.skip_next),
             ),
-          if (!_session.isLoading && !_session.isEmpty)
+          if (!_session.isLoading && _session.total > 0)
             Padding(
               padding: const EdgeInsets.only(right: 16),
               child: Center(
                 child: Text(
-                  '${_session.position}/${_session.total}',
+                  '${_session.questionNumber}/${_session.total}',
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: theme.colorScheme.onPrimary,
                   ),
@@ -222,18 +273,22 @@ class _PracticePageState extends ConsumerState<PracticePage> {
             if (_session.error != null)
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                child: ErrorBanner(message: _session.error!, onRetry: _start),
+                child: ErrorBanner(
+                  message: _session.error!,
+                  onRetry: _session.isFinished || _session.isEmpty
+                      ? () => _start()
+                      : null,
+                ),
               ),
             Expanded(child: _buildBody(theme)),
-            if (!_session.isLoading &&
-                !_session.isEmpty &&
-                !_session.isFinished)
+            if (hasQuestion && !_session.isFinished)
               _AnswerArea(
                 kind: widget.kind,
                 controller: _controller,
                 focusNode: _focus,
                 busy: _session.isBusy,
-                answered: _outcome != null,
+                answered: _session.isFeedback,
+                isLast: _session.isLastQuestion,
                 onSpeak: widget.kind == PracticeKind.dictation
                     ? () => _speak(_session.current?.answer ?? '')
                     : null,
@@ -272,7 +327,7 @@ class _PracticePageState extends ConsumerState<PracticePage> {
         onAgain: _restartSession,
       );
     }
-    final PracticeQuestion? question = _answeredQuestion ?? _session.current;
+    final PracticeQuestion? question = _session.current;
     if (question == null) return const SizedBox.shrink();
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
@@ -284,13 +339,16 @@ class _PracticePageState extends ConsumerState<PracticePage> {
             _PromptCard(
               question: question,
               showHint: _showHint,
-              outcome: _outcome,
+              outcome: _session.outcome,
               onSpeak: () => _speak(question.answer),
-              onChoice: _outcome == null ? _submitChoice : null,
+              onChoice:
+                  _session.phase == PracticePhase.question && !_session.isBusy
+                  ? _submitChoice
+                  : null,
             ),
-            if (_outcome != null) ...<Widget>[
+            if (_session.outcome != null) ...<Widget>[
               AppSpacing.h16,
-              _FeedbackCard(outcome: _outcome!),
+              _FeedbackCard(outcome: _session.outcome!),
             ],
           ],
         ),
@@ -299,11 +357,8 @@ class _PracticePageState extends ConsumerState<PracticePage> {
   }
 
   Future<void> _restartSession() async {
-    setState(() {
-      _outcome = null;
-      _answeredQuestion = null;
-      _lastQuestionId = null;
-    });
+    _shownQuestionId = null;
+    _shownPhase = null;
     await _start();
   }
 }
@@ -459,6 +514,7 @@ class _AnswerArea extends StatelessWidget {
     required this.focusNode,
     required this.busy,
     required this.answered,
+    required this.isLast,
     required this.showHint,
     required this.onToggleHint,
     required this.onSubmit,
@@ -471,6 +527,7 @@ class _AnswerArea extends StatelessWidget {
   final FocusNode focusNode;
   final bool busy;
   final bool answered;
+  final bool isLast;
   final bool showHint;
   final VoidCallback onToggleHint;
   final Future<void> Function() onSubmit;
@@ -491,7 +548,9 @@ class _AnswerArea extends StatelessWidget {
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: onNext,
-                  child: const Text('下一题'),
+                  // The last question shows its feedback too; the button then
+                  // leads to the summary instead of pretending the round is over.
+                  child: Text(isLast ? '查看本组结果' : '下一题'),
                 ),
               )
             : Row(

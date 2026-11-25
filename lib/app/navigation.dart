@@ -11,6 +11,7 @@ import '../features/statistics/statistics_page.dart';
 import '../features/word_management/quick_add_page.dart';
 import '../features/word_management/word_management_page.dart';
 import '../features/wordbooks/wordbooks_page.dart';
+import '../services/diagnostics_service.dart';
 import 'providers.dart';
 import 'theme.dart';
 
@@ -151,6 +152,9 @@ class _AppShellState extends ConsumerState<AppShell>
         .setForeground(state == AppLifecycleState.resumed);
     if (state != AppLifecycleState.resumed) {
       ref.read(ttsServiceProvider).stop();
+      // The OS may kill a backgrounded process at any time, so anything still
+      // buffered in memory is written now rather than never.
+      unawaited(DiagnosticsService.instance.flushToDisk());
     }
     if (state == AppLifecycleState.resumed) {
       _refreshDailyData();

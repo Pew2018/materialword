@@ -25,6 +25,7 @@ import '../services/sync/sync_coordinator.dart';
 import '../services/sync/auto_sync_service.dart';
 import '../services/sync/sync_provider.dart';
 import '../services/sync/webdav_sync_provider.dart';
+import '../services/screen_awake.dart';
 import '../services/tts_service.dart';
 import 'theme.dart';
 
@@ -162,6 +163,21 @@ final FutureProvider<StudyStatistics> statisticsProvider =
 final Provider<TtsService> ttsServiceProvider = Provider<TtsService>(
   (Ref ref) => TtsService(),
 );
+
+final Provider<ScreenAwakeService> screenAwakeProvider =
+    Provider<ScreenAwakeService>((Ref ref) => ScreenAwakeService());
+
+/// Device-local "keep the screen on while studying" switch.
+///
+/// Stored in `app_meta`, deliberately not in `study_settings`: the preference is
+/// about this screen, not about the learning plan, so it must never be synced.
+final FutureProvider<bool> keepScreenOnProvider = FutureProvider<bool>((
+  Ref ref,
+) async {
+  final AppDatabase db = ref.watch(databaseProvider);
+  final String? value = await db.readMeta(ScreenAwakeService.preferenceKey);
+  return value == '1';
+});
 
 final autoSyncServiceProvider = Provider<AutoSyncService>((ref) {
   final service = AutoSyncService(

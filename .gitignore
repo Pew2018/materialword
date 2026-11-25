@@ -77,3 +77,6 @@ stardict.7z
 
 # Local tooling output.
 dist/
+
+# Local benchmark logs and scratch output.
+work/

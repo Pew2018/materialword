@@ -14,13 +14,13 @@
 
 | 项 | 值 |
 | --- | --- |
-| 版本 | 1.1.0 (Phase 2) |
+| 版本 | 1.2.0 (Phase 4) |
 | Flutter | **3.50.1** stable（Dart 3.14.0） |
-| 关键依赖 | drift 2.35.4 / flutter_riverpod 3.5.0 / flutter_tts 4.2.5 / flutter_secure_storage 11.2.0 / http 1.6.0 / crypto 3.0.8 |
+| 关键依赖 | drift 2.35.4 / flutter_riverpod 3.5.0 / flutter_tts 4.2.5 / flutter_secure_storage 11.2.0 / http 1.6.0 / crypto 3.0.8 / wakelock_plus 1.8.2 |
 | 应用 ID | `com.pew2018.materialword` |
-| 数据库 schemaVersion | 3（用户库）、1（词典库） |
+| 数据库 schemaVersion | 3（用户库，Phase 4 未再升级）、1（词典库） |
 | 备份协议 | schemaVersion 3（兼容导入 1/2；数据库独立为 3） |
-| 自动化检查 | 102 项测试通过；`flutter analyze` 通过 |
+| 自动化检查 | 341 项测试通过 / 2 项平台条件跳过；`flutter analyze` 无问题；格式检查通过 |
 
 ## 快速开始
 
@@ -38,11 +38,33 @@ flutter test
 
 原生平台完整构建仅在 GitHub Actions 运行；本机禁止安装 Xcode、Apple SDK、CLT 或新模拟器。
 
-## Phase 3（实施中）
+## Phase 4：可靠性、数据安全与性能收尾
 
-已加入稳定分页、明确范围的批量选择、取消无副作用、管理事件与真实答题分离、会话恢复与撤销、本轮真实总结和错词复练、独立考前冲刺、共享设置版本、事务快照、字段级合并与重命名身份、收藏和多标签、因果事件顺序、学习中编辑和语音刷新、持久化自动同步与配置并发保护、WebDAV 强 ETag/条件读取及经典 Material 交互整改。当前完整本地回归为 231 项通过、2 项平台条件跳过；不是三平台最终交付。
+Phase 4 不新增功能面，只让已有功能更可靠：
 
-逐项范围见 [任务审计](docs/phase3-audit.md)，实际证据见 [验证记录](docs/phase3-verification.md)。轻量练习模式、其余扩展、完整同步矩阵与平台交付仍待完成。
+- **练习模式（重点整改）**：独立的公平覆盖调度（连续多轮逐步走遍词书，困难词保留
+  但有上限的优先级）；挖空题按资格分页查找，不再因固定候选窗口误报"没有题目"；
+  显式答题状态机（加载/作答/提交/反馈/完成），反馈期间题目身份不变、游标不动、
+  最后一题同样展示反馈；本轮练习可跨进程恢复且不重复写入；提交前校验词条是否被删除、
+  移出词书或改写；选择题干扰项按完整释义分段排除同义/多义冲突。
+- **数据可靠性**：诊断报告改为结构化脱敏，截断后仍是合法 JSON，构建 Commit SHA 只在
+  构建元数据白名单下保留；CSV 导出中和电子表格公式注入；诊断日志可落盘、轮转、清除。
+- **性能**：完整合并与重放（20000 词 / 100000 事件）同机同测试由 13759 ms 降至
+  6866 ms（−50.1%），事件合并改为批量插入、状态重放改为分块读取，批量与逐词重放
+  结果逐字段一致。
+- **原生能力**：学习/练习期间屏幕常亮（默认关闭、设备本地、离开页面即释放、不支持
+  平台明确降级）。
+
+逐项范围与根因见 [Phase 4 审计](docs/phase4-audit.md)，实际证据见
+[Phase 4 验证记录](docs/phase4-verification.md) 与
+[验收矩阵](docs/phase4-acceptance-matrix.md)，交付信息见
+[Phase 4 交付](docs/phase4-delivery.md)。
+
+## Phase 3 历史实现
+
+已加入稳定分页、明确范围的批量选择、取消无副作用、管理事件与真实答题分离、会话恢复与撤销、本轮真实总结和错词复练、独立考前冲刺、共享设置版本、事务快照、字段级合并与重命名身份、收藏和多标签、因果事件顺序、学习中编辑和语音刷新、持久化自动同步与配置并发保护、WebDAV 强 ETag/条件读取及经典 Material 交互整改。
+
+逐项范围见 [任务审计](docs/phase3-audit.md)，实际证据见 [验证记录](docs/phase3-verification.md)。
 
 ## Phase 2 历史实现
 
@@ -73,21 +95,22 @@ flutter test
 ```
 lib/
   app/                     导航壳、主题系统、Riverpod providers
-  core/database/           Drift 表、schema v2 迁移、行映射
+  core/database/           Drift 表、schema v3 迁移、行映射
   core/text/               词典文本规范化
-  core/repositories/       词条 / 词书 / 学习 / 设置
+  core/repositories/       词条 / 词书 / 学习 / 冲刺 / 内容版本 / 设置
   features/                dashboard / study / dictionary / settings / statistics /
                            word_management / wordbooks / sync / backup
-  services/                调度、会话、词典、导入、备份、TTS、同步
+  services/                调度、学习会话、练习会话、词典、导入、备份、TTS、常亮、诊断、同步
   shared/widgets/          经典 Material 2 列表与通用控件
 assets/dictionary/          ECDICT SQLite + 内容哈希元数据 + MIT 许可证
-test/                      102 项测试（Phase 1 T01–T20 + UI/DATA/SYNC 回归）
+test/                      341 项测试（Phase 1–4 回归 + 性能基线 + golden）
 ```
 
 ## 文档
 
 - [架构](docs/architecture.md) · [同步协议](docs/sync-protocol.md) · [学习算法](docs/study-scheduler.md)
 - [构建指南](docs/build-guide.md) · [路线图](docs/roadmap.md)
+- Phase 4：[审计](docs/phase4-audit.md) · [验证](docs/phase4-verification.md) · [验收矩阵](docs/phase4-acceptance-matrix.md) · [交付](docs/phase4-delivery.md)
 
 ## 已知限制
 
@@ -96,5 +119,11 @@ test/                      102 项测试（Phase 1 T01–T20 + UI/DATA/SYNC 回�
 - iOS 仅 `--no-codesign` 编译验证，**不可安装**。
 - Android release 仍使用 debug keystore，签名身份与上一阶段一致，旧用户可覆盖安装。
 - WebDAV 服务器若不返回 ETag，会被明确标注为"无法安全检测并发修改"，自动同步受限。
-- GitHub / WebDAV 的协议测试使用 Mock HTTP；未连接真实服务，真实账号联调仍需用户提供测试配置。
-- 真机动画、TTS 语音与窗口缩放的人工验收尚未完成；Widget 测试与编译成功不等同于真机验收。
+- GitHub / WebDAV 的协议测试使用 Mock HTTP 与 loopback HTTPS；**未连接真实服务**，
+  真实账号联调仍需用户提供测试配置。
+- 真机动画、TTS 语音、屏幕常亮与窗口缩放的人工验收尚未完成；Widget 测试与编译成功
+  不等同于真机验收。
+- 屏幕常亮依赖 `wakelock_plus`（会带入 `package_info_plus`），三平台行为只在 CI 编译
+  层面验证，未做真机确认。
+- 大数据性能数字为 Debug + 内存 SQLite，不是 Release 真机基准；合并中的"词条阶段"
+  仍有约 3 s 的已定位但未实施的优化空间。

@@ -192,17 +192,147 @@ void main() {
     addTearDown(session.dispose);
     final PracticeQuestion question = session.current!;
     await session.submitTyped('definitely-wrong');
-    expect(session.position, 1);
+    // Phase 4B-03: a saved answer shows feedback on the *same* question; the
+    // cursor only moves when the user asks for the next one. The previous
+    // assertion (`position == 1` right after submit) encoded the old bug where
+    // the session had already moved on while the page still showed feedback.
+    expect(session.phase, PracticePhase.feedback);
+    expect(session.position, 0);
+    expect(session.current!.word.id, question.word.id);
     expect(session.canUndo, isTrue);
 
     expect(await session.undo(), isTrue);
+    expect(session.phase, PracticePhase.question);
     expect(session.position, 0);
     expect(session.current!.word.id, question.word.id);
+    expect(session.outcome, isNull);
 
     final StudyStatistics stats = await env.study.statistics(
       now: env.clock.now(),
     );
     expect(stats.breakdown.practice, 0);
+  });
+
+  test('the cursor moves only when the user advances', () async {
+    final WordBook book = await env.seedBook(words: <String>['alpha', 'beta']);
+    final PracticeSession session = await sessionFor(
+      PracticeKind.spelling,
+      bookId: book.id,
+    );
+    addTearDown(session.dispose);
+    final String first = session.current!.word.id;
+    await session.submitTyped(session.current!.answer);
+    expect(session.position, 0);
+    expect(session.phase, PracticePhase.feedback);
+    // Skipping is rejected while feedback is on screen: it used to silently
+    // skip the *next* question and skew the counters.
+    expect(session.skip(), isFalse);
+    expect(session.skippedCount, 0);
+
+    expect(session.advance(), isTrue);
+    expect(session.position, 1);
+    expect(session.phase, PracticePhase.question);
+    expect(session.current!.word.id, isNot(first));
+    // Advancing without feedback is impossible, so a stray tap cannot skip.
+    expect(session.advance(), isFalse);
+
+    // The last question keeps its feedback before the summary appears.
+    await session.submitTyped(session.current!.answer);
+    expect(session.isFinished, isFalse);
+    expect(session.phase, PracticePhase.feedback);
+    expect(session.isLastQuestion, isTrue);
+    expect(session.outcome, isNotNull);
+    expect(session.advance(), isTrue);
+    expect(session.isFinished, isTrue);
+    expect(session.position, 2);
+    expect(session.answeredCount, 2);
+    expect(session.correctCount, 2);
+  });
+
+  test('a second submit while one is in flight is ignored', () async {
+    final WordBook book = await env.seedBook(words: <String>['alpha', 'beta']);
+    final PracticeSession session = await sessionFor(
+      PracticeKind.spelling,
+      bookId: book.id,
+    );
+    addTearDown(session.dispose);
+    final PracticeQuestion question = session.current!;
+    // Fired without awaiting: exactly what a double tap or a keyboard "done"
+    // racing the submit button does.
+    final Future<PracticeOutcome?> first = session.submitTyped(question.answer);
+    final Future<PracticeOutcome?> second = session.submitTyped(
+      question.answer,
+    );
+    expect(await first, isNotNull);
+    expect(await second, isNull);
+    expect(session.answeredCount, 1);
+    final List<ReviewEvent> events = await env.db
+        .select(env.db.reviewEvents)
+        .get();
+    expect(
+      events.where((ReviewEvent e) => ReviewEventMode.isPractice(e.mode)),
+      hasLength(1),
+    );
+  });
+
+  test(
+    'a question whose word changed is refused instead of graded on old text',
+    () async {
+      final WordBook book = await env.seedBook(words: <String>['alpha']);
+      final PracticeSession session = await sessionFor(
+        PracticeKind.spelling,
+        bookId: book.id,
+      );
+      addTearDown(session.dispose);
+      final PracticeQuestion question = session.current!;
+      // Simulate a sync merge / another page editing the row underneath us.
+      await env.words.updateContent(
+        question.word.id,
+        translation: '完全不同的释义',
+        now: env.clock.now(),
+      );
+
+      final PracticeOutcome? outcome = await session.submitTyped(
+        question.answer,
+      );
+      expect(outcome, isNull);
+      expect(session.answeredCount, 0);
+      expect(session.phase, PracticePhase.question);
+      expect(session.error, contains('已更新'));
+      expect(await env.db.select(env.db.reviewEvents).get(), isEmpty);
+    },
+  );
+
+  test('a question whose word was removed from the book is refused', () async {
+    final WordBook book = await env.seedBook(words: <String>['alpha', 'beta']);
+    final PracticeSession session = await sessionFor(
+      PracticeKind.spelling,
+      bookId: book.id,
+    );
+    addTearDown(session.dispose);
+    final PracticeQuestion question = session.current!;
+    await env.books.removeWords(book.id, <String>[
+      question.word.id,
+    ], now: env.clock.now());
+
+    expect(await session.submitTyped(question.answer), isNull);
+    expect(session.error, contains('移出'));
+    expect(await env.db.select(env.db.reviewEvents).get(), isEmpty);
+  });
+
+  test('a deleted word is refused instead of graded', () async {
+    final WordBook book = await env.seedBook(words: <String>['alpha', 'beta']);
+    final PracticeSession session = await sessionFor(
+      PracticeKind.spelling,
+      bookId: book.id,
+    );
+    addTearDown(session.dispose);
+    final PracticeQuestion question = session.current!;
+    await env.words.softDelete(question.word.id, now: env.clock.now());
+
+    expect(await session.submitTyped(question.answer), isNull);
+    expect(session.error, contains('删除'));
+    expect(await env.db.select(env.db.reviewEvents).get(), isEmpty);
   });
 
   test(

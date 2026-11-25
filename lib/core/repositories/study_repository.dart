@@ -211,50 +211,216 @@ SELECT $wordColumnsWithState
 
   /// Candidate words for a practice drill, plus a distractor pool.
   ///
-  /// Only words with a Chinese meaning can be drilled (it is the prompt), and a
-  /// cloze exercise additionally requires the word to appear in its own example
-  /// sentence — examples are never invented to fill a gap. Words the user has
-  /// already answered come first (most recent, then hardest); never-answered
-  /// words fill up the rest so a fresh library is not a dead end.
+  /// A drill is scheduled independently of the spaced-repetition queue:
+  ///
+  ///  * **coverage** — words are ordered by how long they have waited for *this
+  ///    drill kind*, using the practice events themselves as the record (no
+  ///    shadow table and no invented events). Never-practised words come first,
+  ///    so consecutive rounds walk through the book instead of repeating the
+  ///    same 20 words;
+  ///  * **priority** — hard words keep a bounded advantage through
+  ///    `wrong_count`/`hazy_count`, but [PracticeSession.coverageShare] of the
+  ///    round is reserved for coverage so they cannot occupy every round.
+  ///
+  /// Eligibility is decided *while* paging, not after a fixed window: a cloze
+  /// drill needs a real example sentence, and a small window used to report "no
+  /// questions" while hundreds of valid ones sat further down the book. Pages
+  /// are read until the round is full or the whole scope has been examined.
   Future<PracticeBatch> practiceBatch({
     required DateTime now,
     String? bookId,
     PracticeKind kind = PracticeKind.spelling,
     int limit = 20,
   }) async {
-    final List<Variable<Object>> variables = <Variable<Object>>[];
-    if (bookId != null) variables.add(Variable<String>(bookId));
-    variables.add(Variable<int>(math.max(limit * 6, 60)));
-    final List<QueryRow> rows = await db
-        .customSelect(
-          '''
+    final int want = limit.clamp(1, 200);
+    final bool needsExample = kind == PracticeKind.cloze;
+    final String mode = ReviewEventMode.forPractice(kind);
+    final int coverageWant = want <= 1
+        ? want
+        : (want * 0.4).ceil().clamp(1, want - 1);
+
+    final List<Word> priority = await _practiceCandidates(
+      bookId: bookId,
+      mode: mode,
+      needsExample: needsExample,
+      priorityOrder: true,
+      want: want,
+    );
+    final List<Word> coverage = await _practiceCandidates(
+      bookId: bookId,
+      mode: mode,
+      needsExample: needsExample,
+      priorityOrder: false,
+      want: coverageWant,
+    );
+
+    final List<Word> selected = <Word>[];
+    final Set<String> seen = <String>{};
+    void take(Word word) {
+      if (selected.length >= want || !seen.add(word.id)) return;
+      selected.add(word);
+    }
+
+    // Honour both halves of the round. The two orderings overlap heavily (for a
+    // fresh book they are identical), so a quota is only spent when a word is
+    // actually added — otherwise the coverage share would be eaten by
+    // duplicates and the round would come up short.
+    final int priorityFirst = want - coverageWant;
+    int priorityIndex = 0;
+    int coverageIndex = 0;
+    int priorityTaken = 0;
+    int coverageTaken = 0;
+    while (selected.length < want) {
+      final bool priorityLeft =
+          priorityTaken < priorityFirst && priorityIndex < priority.length;
+      final bool coverageLeft =
+          coverageTaken < coverageWant && coverageIndex < coverage.length;
+      if (!priorityLeft && !coverageLeft) break;
+      // Alternate, but always fall back to whichever half still has words.
+      final bool fromPriority =
+          priorityLeft && (!coverageLeft || selected.length.isEven);
+      final Word word = fromPriority
+          ? priority[priorityIndex++]
+          : coverage[coverageIndex++];
+      final int before = selected.length;
+      take(word);
+      if (selected.length > before) {
+        if (fromPriority) {
+          priorityTaken++;
+        } else {
+          coverageTaken++;
+        }
+      }
+    }
+    // Both quotas exhausted: fill the rest from whatever is still unseen rather
+    // than returning a short round.
+    for (final List<Word> list in <List<Word>>[priority, coverage]) {
+      for (final Word word in list) {
+        if (selected.length >= want) break;
+        take(word);
+      }
+    }
+
+    return PracticeBatch(
+      kind: kind,
+      words: selected,
+      pool: await _practicePool(bookId: bookId, extra: selected),
+    );
+  }
+
+  /// Reads practice candidates page by page, applying the drill's eligibility
+  /// rules in Dart (example-sentence word boundaries cannot be expressed in
+  /// plain SQL) and stopping as soon as [want] usable words are found.
+  Future<List<Word>> _practiceCandidates({
+    required String? bookId,
+    required String mode,
+    required bool needsExample,
+    required bool priorityOrder,
+    required int want,
+  }) async {
+    const int pageSize = 120;
+    // Bounded so a pathological library cannot turn one tap into a full scan of
+    // hundreds of thousands of rows. Well above any realistic book size.
+    const int maxPages = 60;
+    final List<Word> collected = <Word>[];
+    final Set<String> seen = <String>{};
+    final String order = priorityOrder
+        ? 'ORDER BY (COALESCE(ls.wrong_count, 0) * 2 + COALESCE(ls.hazy_count, 0)) DESC, '
+              'CASE WHEN pc.last_at IS NULL THEN 0 ELSE 1 END, '
+              'pc.last_at ASC, w.normalized, w.id'
+        : 'ORDER BY CASE WHEN pc.last_at IS NULL THEN 0 ELSE 1 END, '
+              'pc.last_at ASC, COALESCE(ls.wrong_count, 0) DESC, w.normalized, w.id';
+    for (int page = 0; page < maxPages; page++) {
+      final List<Variable<Object>> variables = <Variable<Object>>[
+        Variable<String>(mode),
+      ];
+      if (bookId != null) variables.add(Variable<String>(bookId));
+      variables
+        ..add(Variable<int>(pageSize))
+        ..add(Variable<int>(page * pageSize));
+      final List<QueryRow> rows = await db
+          .customSelect(
+            '''
+SELECT $wordColumnsWithState
+  FROM words w
+  $_stateJoin
+  LEFT JOIN (
+    SELECT re.word_id AS wid, MAX(re.answered_at) AS last_at
+      FROM review_events re
+     WHERE re.mode = ?
+       AND NOT EXISTS (SELECT 1 FROM review_events undo
+                        WHERE undo.mode = 'undo:' || re.id
+                          AND undo.word_id = re.word_id)
+     GROUP BY re.word_id
+  ) pc ON pc.wid = w.id
+ WHERE w.deleted_at IS NULL
+   AND w.translation != ''
+   AND TRIM(w.word) != ''
+   ${needsExample ? "AND w.example != ''" : ''}
+   ${_bookFilter(active: bookId != null)}
+ $order
+ LIMIT ? OFFSET ?''',
+            variables: variables,
+            readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
+              db.words,
+              db.learningStates,
+              db.wordBookEntries,
+              db.reviewEvents,
+            },
+          )
+          .get();
+      if (rows.isEmpty) break;
+      for (final WordWithState row in _toWordWithState(rows)) {
+        if (!seen.add(row.word.id)) continue;
+        if (needsExample && clozeSentenceFor(row.word) == null) continue;
+        collected.add(row.word);
+        if (collected.length >= want) return collected;
+      }
+      if (rows.length < pageSize) break;
+    }
+    return collected;
+  }
+
+  /// Distractor pool for multiple choice.
+  ///
+  /// Two alphabetical windows instead of one so a large book does not offer
+  /// only "a…" words as wrong options. Never the whole table: four options per
+  /// question need a handful of plausible spellings, not 20 000 rows.
+  Future<List<Word>> _practicePool({
+    required String? bookId,
+    required List<Word> extra,
+  }) async {
+    const int half = 140;
+    final List<Word> pool = <Word>[...extra];
+    final Set<String> seen = <String>{for (final Word word in pool) word.id};
+    for (final String direction in <String>['ASC', 'DESC']) {
+      final List<Variable<Object>> variables = <Variable<Object>>[];
+      if (bookId != null) variables.add(Variable<String>(bookId));
+      variables.add(Variable<int>(half));
+      final List<QueryRow> rows = await db
+          .customSelect(
+            '''
 SELECT $wordColumnsWithState
   FROM words w
   $_stateJoin
  WHERE w.deleted_at IS NULL
    AND w.translation != ''
    ${_bookFilter(active: bookId != null)}
- ORDER BY CASE WHEN ls.last_studied_at IS NULL THEN 1 ELSE 0 END,
-          ls.last_studied_at DESC,
-          (COALESCE(ls.wrong_count, 0) * 2 + COALESCE(ls.hazy_count, 0)) DESC,
-          w.normalized
+ ORDER BY w.normalized $direction, w.id
  LIMIT ?''',
-          variables: variables,
-          readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
-            db.words,
-            db.learningStates,
-            db.wordBookEntries,
-          },
-        )
-        .get();
-    final pool = _toWordWithState(rows).map((row) => row.word).toList();
-    final eligible = kind == PracticeKind.cloze
-        ? pool.where((Word w) => clozeSentenceFor(w) != null).toList()
-        : pool;
-    final words = eligible.take(limit).toList();
-    // The distractor pool is the whole candidate set: a word that is drilled
-    // later in the same round is still a perfectly good wrong option now.
-    return PracticeBatch(kind: kind, words: words, pool: pool);
+            variables: variables,
+            readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
+              db.words,
+              db.learningStates,
+              db.wordBookEntries,
+            },
+          )
+          .get();
+      for (final WordWithState row in _toWordWithState(rows)) {
+        if (seen.add(row.word.id)) pool.add(row.word);
+      }
+    }
+    return pool;
   }
 
   /// The sentence used by a cloze drill: the word's own example if it really
@@ -644,17 +810,76 @@ SELECT COUNT(*) AS c
   /// produce the same millisecond timestamp; without a total order a rebuild
   /// could produce different results on each device.
   Future<void> rebuildStateFromEvents(String wordId) async {
-    final List<ReviewEvent> events =
-        await (db.select(db.reviewEvents)
-              ..where((t) => t.wordId.equals(wordId))
-              ..orderBy(<OrderClauseGenerator<$ReviewEventsTable>>[
-                (t) => OrderingTerm(expression: t.causalOrder),
-                (t) => OrderingTerm(expression: t.answeredAt),
-                (t) => OrderingTerm(expression: t.deviceId),
-                (t) => OrderingTerm(expression: t.id),
-              ]))
-            .get();
+    final List<ReviewEvent> events = await _eventsFor(<String>[wordId]);
+    await _applyReplay(wordId, _replay(events));
+  }
 
+  /// Batched version of [rebuildStateFromEvents] for a merge that touched many
+  /// words.
+  ///
+  /// One query per [chunk] words instead of one per word: for a 20 000-word
+  /// import that is 50 indexed reads instead of 20 000. The replay itself and
+  /// the written values are byte-for-byte the same as the single-word path —
+  /// batching must not change a single state row.
+  Future<int> rebuildStatesForWords(Iterable<String> wordIds) async {
+    const int chunk = 400;
+    final List<String> ids = wordIds.toSet().toList(growable: false);
+    if (ids.isEmpty) return 0;
+    int rebuilt = 0;
+    for (int start = 0; start < ids.length; start += chunk) {
+      final List<String> slice = ids.sublist(
+        start,
+        math.min(start + chunk, ids.length),
+      );
+      final List<ReviewEvent> events = await _eventsFor(slice);
+      final Map<String, List<ReviewEvent>> grouped =
+          <String, List<ReviewEvent>>{
+            for (final String id in slice) id: <ReviewEvent>[],
+          };
+      for (final ReviewEvent event in events) {
+        (grouped[event.wordId] ??= <ReviewEvent>[]).add(event);
+      }
+      for (final String id in slice) {
+        await _applyReplay(id, _replay(grouped[id] ?? const <ReviewEvent>[]));
+        rebuilt++;
+      }
+    }
+    return rebuilt;
+  }
+
+  /// Events of [wordIds] in the canonical replay order.
+  Future<List<ReviewEvent>> _eventsFor(List<String> wordIds) {
+    return (db.select(db.reviewEvents)
+          ..where((t) => t.wordId.isIn(wordIds))
+          ..orderBy(<OrderClauseGenerator<$ReviewEventsTable>>[
+            (t) => OrderingTerm(expression: t.causalOrder),
+            (t) => OrderingTerm(expression: t.answeredAt),
+            (t) => OrderingTerm(expression: t.deviceId),
+            (t) => OrderingTerm(expression: t.id),
+          ]))
+        .get();
+  }
+
+  Future<void> _applyReplay(String wordId, _ReplayOutcome outcome) async {
+    if (!outcome.hasProgress) {
+      await (db.delete(
+        db.learningStates,
+      )..where((t) => t.wordId.equals(wordId))).go();
+      return;
+    }
+    await _writeState(
+      wordId: wordId,
+      snapshot: outcome.snapshot,
+      lastStudiedAt: outcome.lastStudiedAt,
+      nextReviewAt: outcome.nextReviewAt,
+      now: outcome.lastEventAt!,
+    );
+  }
+
+  /// Pure replay of one word's history. No database access, so the batched and
+  /// single-word paths cannot drift apart.
+  _ReplayOutcome _replay(List<ReviewEvent> events) {
+    if (events.isEmpty) return const _ReplayOutcome.empty();
     LearningSnapshot snapshot = const LearningSnapshot.empty();
     DateTime? lastStudiedAt;
     DateTime? nextReviewAt;
@@ -733,19 +958,12 @@ SELECT COUNT(*) AS c
       hasProgress = true;
     }
 
-    if (!hasProgress) {
-      await (db.delete(
-        db.learningStates,
-      )..where((t) => t.wordId.equals(wordId))).go();
-      return;
-    }
-
-    await _writeState(
-      wordId: wordId,
+    return _ReplayOutcome(
+      hasProgress: hasProgress,
       snapshot: snapshot,
       lastStudiedAt: lastStudiedAt,
       nextReviewAt: nextReviewAt,
-      now: DateTime.fromMillisecondsSinceEpoch(
+      lastEventAt: DateTime.fromMillisecondsSinceEpoch(
         events.last.answeredAt,
         isUtc: true,
       ),
@@ -1616,3 +1834,27 @@ SELECT $wordColumnsWithState,
 /// importing the text helper directly.
 bool studyTextNeedsNormalization(String value) =>
     needsDictionaryNormalization(value);
+
+/// The observable result of replaying one word's event log.
+class _ReplayOutcome {
+  const _ReplayOutcome({
+    required this.hasProgress,
+    required this.snapshot,
+    required this.lastStudiedAt,
+    required this.nextReviewAt,
+    required this.lastEventAt,
+  });
+
+  const _ReplayOutcome.empty()
+    : hasProgress = false,
+      snapshot = const LearningSnapshot.empty(),
+      lastStudiedAt = null,
+      nextReviewAt = null,
+      lastEventAt = null;
+
+  final bool hasProgress;
+  final LearningSnapshot snapshot;
+  final DateTime? lastStudiedAt;
+  final DateTime? nextReviewAt;
+  final DateTime? lastEventAt;
+}

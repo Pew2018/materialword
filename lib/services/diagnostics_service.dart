@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -48,22 +49,87 @@ class DiagnosticsService {
   static const String enabledKey = 'diagnostics_enabled';
   static const int maxReportChars = 64 * 1024;
 
+  /// Hard cap for the on-disk trace file. It only ever holds text the user
+  /// switched on, is rotated once, and never grows without bound.
+  static const int maxFileBytes = 256 * 1024;
+
+  /// How many queued lines trigger a write. Batching keeps the learning path
+  /// free of per-answer disk I/O while still surviving a process kill.
+  static const int flushThreshold = 20;
+
   bool _enabled = false;
   final List<DiagnosticsEntry> _entries = <DiagnosticsEntry>[];
+  final List<DiagnosticsEntry> _pending = <DiagnosticsEntry>[];
   String? _lastError;
+  File? _file;
 
   bool get enabled => _enabled;
   List<DiagnosticsEntry> get entries =>
       List<DiagnosticsEntry>.unmodifiable(_entries);
   String? get lastError => _lastError;
 
-  /// Reads the persisted switch. Called once at start-up and after toggling.
+  /// Points the service at an app-private file. Absent a file (tests, or a
+  /// platform without a writable directory) everything still works in memory.
+  void attachFile(File file) {
+    _file = file;
+  }
+
+  /// Reads the persisted switch, then restores the tail of the previous session
+  /// so a crash that happened *before* the restart is still reportable.
   Future<bool> load(AppDatabase db) async {
     final row = await (db.select(
       db.appMeta,
     )..where((AppMeta t) => t.key.equals(enabledKey))).getSingleOrNull();
     _enabled = row?.value == '1';
+    if (_enabled) await _restoreFromDisk();
     return _enabled;
+  }
+
+  Future<void> _restoreFromDisk() async {
+    final File? file = _file;
+    if (file == null) return;
+    try {
+      if (!await file.exists()) return;
+      // The file is capped, but never read more than the cap regardless.
+      final RandomAccessFile handle = await file.open();
+      try {
+        final int length = await handle.length();
+        final int start = length > maxFileBytes ? length - maxFileBytes : 0;
+        await handle.setPosition(start);
+        final List<int> bytes = await handle.read(length - start);
+        final String text = utf8.decode(bytes, allowMalformed: true);
+        final DateTime cutoff = DateTime.now().subtract(retention);
+        for (final String line in const LineSplitter().convert(text)) {
+          final DiagnosticsEntry? entry = _parse(line);
+          if (entry == null || entry.at.isBefore(cutoff)) continue;
+          _entries.add(entry);
+        }
+        _prune();
+      } finally {
+        await handle.close();
+      }
+    } catch (_) {
+      // A damaged trace file must never stop the app from starting.
+    }
+  }
+
+  static DiagnosticsEntry? _parse(String line) {
+    final int levelAt = line.indexOf(' INFO  [');
+    final int errorAt = line.indexOf(' ERROR [');
+    final int at = levelAt >= 0 ? levelAt : errorAt;
+    if (at <= 0) return null;
+    final DateTime? when = DateTime.tryParse(line.substring(0, at).trim());
+    if (when == null) return null;
+    final bool isError = errorAt >= 0;
+    final int categoryStart = line.indexOf('[', at) + 1;
+    final int categoryEnd = line.indexOf(']', categoryStart);
+    if (categoryEnd <= categoryStart) return null;
+    return DiagnosticsEntry(
+      at: when,
+      category: line.substring(categoryStart, categoryEnd),
+      message: line.substring(categoryEnd + 1).trim(),
+      isError: isError,
+    );
   }
 
   Future<void> setEnabled(AppDatabase db, bool value) async {
@@ -73,7 +139,11 @@ class DiagnosticsService {
         .insertOnConflictUpdate(
           AppMetaCompanion.insert(key: enabledKey, value: value ? '1' : '0'),
         );
-    if (!value) _entries.clear();
+    if (!value) {
+      _entries.clear();
+      _pending.clear();
+      await _deleteFile();
+    }
     log('diagnostics', value ? 'enabled' : 'disabled');
   }
 
@@ -86,15 +156,18 @@ class DiagnosticsService {
       if (error) _lastError = safe;
       return;
     }
-    _entries.add(
-      DiagnosticsEntry(
-        at: DateTime.now(),
-        category: category,
-        message: safe,
-        isError: error,
-      ),
+    final DiagnosticsEntry entry = DiagnosticsEntry(
+      at: DateTime.now(),
+      category: category,
+      message: safe,
+      isError: error,
     );
+    _entries.add(entry);
+    _pending.add(entry);
     _prune();
+    if (_pending.length >= flushThreshold) {
+      unawaited(flushToDisk());
+    }
   }
 
   void _prune() {
@@ -107,8 +180,61 @@ class DiagnosticsService {
 
   void clear() {
     _entries.clear();
+    _pending.clear();
     _lastError = null;
+    unawaited(_deleteFile());
   }
+
+  /// Serialises every file operation so a delete cannot overtake an append.
+  Future<void> _ioChain = Future<void>.value();
+
+  Future<void> _enqueueIo(Future<void> Function() operation) {
+    final Future<void> next = _ioChain.then((_) => operation());
+    _ioChain = next.then<void>((_) {}, onError: (Object _) {});
+    return next;
+  }
+
+  /// Writes buffered lines to the app-private file, rotating when it is full.
+  ///
+  /// Best-effort by design: a full disk or a read-only directory must not turn
+  /// a diagnostic failure into an application failure.
+  Future<void> flushToDisk() => _enqueueIo(() async {
+    final File? file = _file;
+    if (file == null || !_enabled) {
+      _pending.clear();
+      return;
+    }
+    if (_pending.isEmpty) return;
+    final List<DiagnosticsEntry> batch = _pending.toList();
+    _pending.clear();
+    try {
+      await file.parent.create(recursive: true);
+      final String text = batch
+          .map((DiagnosticsEntry e) => '${e.format()}\n')
+          .join();
+      final int existing = await file.exists() ? await file.length() : 0;
+      if (existing + text.length > maxFileBytes) {
+        final File rotated = File('${file.path}.1');
+        if (await rotated.exists()) await rotated.delete();
+        if (await file.exists()) await file.rename(rotated.path);
+      }
+      await file.writeAsString(text, mode: FileMode.append, flush: false);
+    } catch (_) {
+      // Intentionally silent: diagnostics must never break the app.
+    }
+  });
+
+  Future<void> _deleteFile() => _enqueueIo(() async {
+    final File? file = _file;
+    if (file == null) return;
+    try {
+      final File rotated = File('${file.path}.1');
+      if (await rotated.exists()) await rotated.delete();
+      if (await file.exists()) await file.delete();
+    } catch (_) {
+      // Same reasoning as flushToDisk.
+    }
+  });
 
   static final RegExp _urlCredentials = RegExp(
     r'([a-zA-Z][a-zA-Z0-9+.-]*://)[^/\s@]+@',
@@ -124,18 +250,92 @@ class DiagnosticsService {
     r'''["']?(token|password|passwd|secret|apikey|api_key|authorization)["']?\s*[=:]\s*["']?[^\s,;&"'}]+''',
     caseSensitive: false,
   );
+
+  /// The quoted form, which the unquoted rule above cannot cover because it
+  /// stops at the first space: `password = "my secret pass"` used to leave
+  /// ` secret pass"` behind.
+  static final RegExp _quotedSecret = RegExp(
+    r'''["']?(token|password|passwd|secret|apikey|api_key|authorization)["']?\s*[=:]\s*["'][^"'\n]*["']''',
+    caseSensitive: false,
+  );
   static final RegExp _longOpaque = RegExp(r'\b[A-Za-z0-9_\-]{32,}\b');
+
+  /// A build commit as produced by CI (`--dart-define=GIT_COMMIT=$GITHUB_SHA`),
+  /// possibly shortened for a display label.
+  static final RegExp _shaLike = RegExp(r'^[0-9a-f]{7,40}$');
+
+  /// A plain version or timestamp such as `1.2.0` or `2026-11-25T04:00:00Z`.
+  static final RegExp _versionLike = RegExp(
+    r'^[0-9]{1,4}([.:\-][0-9]{1,4}){0,6}([-+][A-Za-z0-9.:]{1,20})?$',
+  );
+
+  /// Runtime keys whose value may survive redaction verbatim — but only when the
+  /// value itself looks like a build identifier, never merely because of its key.
+  static const Set<String> trustedRuntimeKeys = <String>{
+    'buildCommit',
+    'commit',
+    'gitCommit',
+    'revision',
+    'appVersion',
+    'version',
+    'flutterVersion',
+    'buildTime',
+  };
 
   /// Removes anything that could be a credential. Kept deliberately aggressive:
   /// a false positive only costs a diagnostic line, a false negative leaks a
   /// secret into a file the user shares.
-  static String redact(String text) {
-    return text
+  ///
+  /// [keep] lists strings that must survive because they come from a trusted
+  /// source (the build metadata). They are swapped for inert placeholders while
+  /// the patterns run, so keeping a commit SHA can never weaken the rules for
+  /// any other text — a token is only ever preserved if a caller passed it in
+  /// as trusted build metadata, which the call sites never do.
+  static String redact(String text, {Set<String> keep = const <String>{}}) {
+    if (text.isEmpty) return text;
+    String working = text;
+    final Map<String, String> restored = <String, String>{};
+    int index = 0;
+    for (final String value in keep) {
+      if (value.isEmpty || !working.contains(value)) continue;
+      final String placeholder = '\u0000keep${index++}\u0000';
+      restored[placeholder] = value;
+      working = working.replaceAll(value, placeholder);
+    }
+    working = working
         .replaceAllMapped(_urlCredentials, (Match m) => '${m[1]}<redacted>@')
         .replaceAll(_authorization, 'authorization=<redacted>')
         .replaceAll(_tokenLike, '<redacted-token>')
+        .replaceAllMapped(_quotedSecret, (Match m) => '${m[1]}=<redacted>')
         .replaceAllMapped(_keyValueSecret, (Match m) => '${m[1]}=<redacted>')
         .replaceAll(_longOpaque, '<redacted>');
+    restored.forEach((String placeholder, String value) {
+      working = working.replaceAll(placeholder, value);
+    });
+    return working;
+  }
+
+  /// Redacts every string inside a JSON-shaped structure, so the *encoder* is
+  /// the only thing that ever produces text. This is what keeps the exported
+  /// report parseable: the previous implementation redacted and truncated the
+  /// already-encoded JSON, which produced invalid documents.
+  static Object? redactStructured(
+    Object? value, {
+    Set<String> keep = const <String>{},
+  }) {
+    if (value is String) return redact(value, keep: keep);
+    if (value is List) {
+      return <Object?>[
+        for (final Object? item in value) redactStructured(item, keep: keep),
+      ];
+    }
+    if (value is Map) {
+      return <String, Object?>{
+        for (final MapEntry<Object?, Object?> entry in value.entries)
+          '${entry.key}': redactStructured(entry.value, keep: keep),
+      };
+    }
+    return value;
   }
 
   /// Builds the redacted report. [runtime] lets the caller add build metadata
@@ -144,12 +344,24 @@ class DiagnosticsService {
     AppDatabase db, {
     Map<String, Object?> runtime = const <String, Object?>{},
   }) async {
+    final Map<String, Object?> trustedRuntime = <String, Object?>{};
+    final Set<String> trustedValues = <String>{};
+    runtime.forEach((String key, Object? value) {
+      if (value is String &&
+          trustedRuntimeKeys.contains(key) &&
+          (_shaLike.hasMatch(value) || _versionLike.hasMatch(value))) {
+        trustedRuntime[key] = value;
+        trustedValues.add(value);
+      } else {
+        trustedRuntime[key] = value;
+      }
+    });
     final Map<String, Object?> report = <String, Object?>{
       'generatedAt': DateTime.now().toIso8601String(),
       'runtime': <String, Object?>{
-        ...runtime,
+        ...trustedRuntime,
         'operatingSystem': Platform.operatingSystem,
-        'operatingSystemVersion': redact(Platform.operatingSystemVersion),
+        'operatingSystemVersion': Platform.operatingSystemVersion,
         'dartVersion': Platform.version.split(' ').first,
       },
       'database': await _databaseSection(db),
@@ -162,12 +374,57 @@ class DiagnosticsService {
             'lists, meanings, notes and any personal learning content.',
       ],
     };
-    String text = const JsonEncoder.withIndent('  ').convert(report);
-    if (text.length > maxReportChars) {
-      text = '${text.substring(0, maxReportChars)}\n… (truncated)';
+    final Object? sanitized = redactStructured(report, keep: trustedValues);
+    return _encodeWithinBudget(sanitized! as Map<String, Object?>);
+  }
+
+  /// Encodes [report] and, when it is too large, drops the oldest trace lines
+  /// until it fits. The result is always a *complete* JSON document: truncation
+  /// removes whole entries and sets `truncated: true`, it never cuts the
+  /// encoded text in half.
+  static String _encodeWithinBudget(Map<String, Object?> report) {
+    const JsonEncoder encoder = JsonEncoder.withIndent('  ');
+    String text = encoder.convert(report);
+    if (text.length <= maxReportChars) return text;
+
+    final List<Object?> allTraces = <Object?>[
+      ...(report['traces'] as List<Object?>? ?? const <Object?>[]),
+    ];
+    final List<Object?> traces = <Object?>[...allTraces];
+    while (traces.isNotEmpty) {
+      final int drop = (traces.length / 4).ceil().clamp(1, traces.length);
+      traces.removeRange(0, drop);
+      text = encoder.convert(<String, Object?>{
+        ...report,
+        'traces': traces,
+        'truncated': true,
+        'droppedTraceLines': allTraces.length - traces.length,
+      });
+      if (text.length <= maxReportChars) return text;
     }
-    // Final safety net: the encoded payload goes through the same redaction.
-    return redact(text);
+
+    // Even without traces the skeleton is too big (a very long error message).
+    final Object? lastError = report['lastError'];
+    text = encoder.convert(<String, Object?>{
+      ...report,
+      'traces': const <Object?>[],
+      if (lastError is String)
+        'lastError': lastError.length > 2000
+            ? '${lastError.substring(0, 2000)}…'
+            : lastError,
+      'truncated': true,
+      'droppedTraceLines': allTraces.length,
+      'notes': <String>['truncated to stay inside the export size budget'],
+    });
+    if (text.length <= maxReportChars) return text;
+
+    // Absolute last resort: still a valid document, just far fewer fields.
+    return encoder.convert(<String, Object?>{
+      'generatedAt': report['generatedAt'],
+      'runtime': report['runtime'],
+      'truncated': true,
+      'notes': <String>['truncated to stay inside the export size budget'],
+    });
   }
 
   Future<Map<String, Object?>> _databaseSection(AppDatabase db) async {

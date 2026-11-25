@@ -696,11 +696,25 @@ class BackupService {
 
   /// Merges [dataset] into the local database in a single transaction, then
   /// rebuilds every touched learning state **inside** that transaction.
+  ///
+  /// [onPhase] is a measurement hook: it reports how long each section of the
+  /// merge took, so an optimisation can be justified by data instead of by
+  /// guessing where 14 seconds go. It has no effect on the merged result and is
+  /// null in production.
   Future<MergeReport> mergeDataset(
     Map<String, Object?> dataset, {
     required DateTime now,
+    void Function(String phase, Duration elapsed)? onPhase,
   }) async {
+    final Stopwatch clock = Stopwatch()..start();
+    void phase(String name) {
+      if (onPhase == null) return;
+      onPhase(name, clock.elapsed);
+      clock.reset();
+    }
+
     final Map<String, Object?> valid = await validateDatasetAsync(dataset);
+    phase('validate');
     final List<dynamic> rawWords =
         (valid['words'] as List<dynamic>?) ?? const <dynamic>[];
     final List<dynamic> rawBooks =
@@ -727,6 +741,7 @@ class BackupService {
     await db.transaction(() async {
       final bool originallyEmpty =
           await _countWords() == 0 && await _countEvents() == 0;
+      phase('transaction-start');
       // ------------------------------------------------------------- words
       // remote id → canonical local id. This is the fix for the phase-1 bug
       // where entries/events kept pointing at the remote UUID and were dropped.
@@ -808,6 +823,7 @@ class BackupService {
         if (merged.conflict) conflicts++;
       }
 
+      phase('words');
       // IDs and retained aliases take precedence over names, so later renames
       // keep existing entries and events attached to their original identity.
       for (final dynamic raw in rawBooks) {
@@ -876,6 +892,7 @@ class BackupService {
         if (merged.conflict) conflicts++;
       }
 
+      phase('books');
       // ----------------------------------------------------------- entries
       for (final dynamic node in rawEntries) {
         if (node is! Map<String, dynamic>) {
@@ -940,8 +957,32 @@ class BackupService {
         }
       }
 
+      phase('entries');
       metadataUpdates = await WordMetadataSync(db).merge(valid, wordIdMap);
+      phase('metadata');
       // ------------------------------------------------------------ events
+      // One read of the existing ids instead of a `SELECT ... WHERE id = ?`
+      // per incoming event: a 100 000-event import used to issue 100 000
+      // single-row reads plus 100 000 single-row inserts. Only ids are held in
+      // memory, so the footprint stays proportional to the log (a few MB) and
+      // not to the full row payload.
+      final Set<String> knownEventIds = await _existingEventIds();
+      final Map<String, ReviewEvent> pendingEvents = <String, ReviewEvent>{};
+      Future<void> flushPendingEvents() async {
+        if (pendingEvents.isEmpty) return;
+        final List<ReviewEvent> rows = pendingEvents.values.toList(
+          growable: false,
+        );
+        pendingEvents.clear();
+        await db.batch(
+          (Batch batch) => batch.insertAll(
+            db.reviewEvents,
+            rows,
+            mode: InsertMode.insertOrIgnore,
+          ),
+        );
+      }
+
       for (final dynamic node in rawEvents) {
         if (node is! Map<String, dynamic>) {
           skipped++;
@@ -964,9 +1005,15 @@ class BackupService {
           skipped++;
           continue;
         }
-        final ReviewEvent? local = await (db.select(
-          db.reviewEvents,
-        )..where((t) => t.id.equals(incoming.id))).getSingleOrNull();
+        // A repeated id inside the same dataset is resolved against the pending
+        // batch, exactly like a duplicate against the database.
+        final ReviewEvent? local =
+            pendingEvents[incoming.id] ??
+            (knownEventIds.contains(incoming.id)
+                ? await (db.select(
+                    db.reviewEvents,
+                  )..where((t) => t.id.equals(incoming.id))).getSingleOrNull()
+                : null);
         if (local != null) {
           if (local.wordId != incoming.wordId ||
               local.causalOrder != incoming.causalOrder ||
@@ -995,27 +1042,37 @@ class BackupService {
                   incoming.dayStartUtc != null &&
                   (local.dayStartUtc == null ||
                       incoming.dayStartUtc! < local.dayStartUtc!))) {
-            await (db.update(
-              db.reviewEvents,
-            )..where((t) => t.id.equals(local.id))).write(
-              ReviewEventsCompanion(
-                dayStartUtc: Value(incoming.dayStartUtc),
-                dayStartSource: Value(incoming.dayStartSource),
-                localDay: Value(incoming.localDay),
-              ),
-            );
+            if (pendingEvents.containsKey(incoming.id)) {
+              pendingEvents[incoming.id] = local.copyWith(
+                dayStartUtc: Value<int?>(incoming.dayStartUtc),
+                dayStartSource: incoming.dayStartSource,
+                localDay: incoming.localDay,
+              );
+            } else {
+              await (db.update(
+                db.reviewEvents,
+              )..where((t) => t.id.equals(local.id))).write(
+                ReviewEventsCompanion(
+                  dayStartUtc: Value(incoming.dayStartUtc),
+                  dayStartSource: Value(incoming.dayStartSource),
+                  localDay: Value(incoming.localDay),
+                ),
+              );
+            }
             touchedWords.add(wordId);
           }
           duplicateEvents++;
           continue;
         }
-        await db
-            .into(db.reviewEvents)
-            .insert(incoming, mode: InsertMode.insertOrIgnore);
+        pendingEvents[incoming.id] = incoming;
+        knownEventIds.add(incoming.id);
         addedEvents++;
         touchedWords.add(wordId);
+        if (pendingEvents.length >= 500) await flushPendingEvents();
       }
+      await flushPendingEvents();
 
+      phase('events');
       // Shared settings use a Lamport counter plus a stable source-device tie break.
       final Object? sharedSettings = valid['settings'];
       if (sharedSettings is Map<String, dynamic>) {
@@ -1071,10 +1128,11 @@ class BackupService {
       // ---- rebuild derived state inside the transaction ------------------
       // Every state row is a pure function of the merged event log, so this is
       // deterministic and cannot be left half-applied: an interruption rolls
-      // the whole transaction back.
-      for (final String wordId in touchedWords) {
-        await study.rebuildStateFromEvents(wordId);
-      }
+      // the whole transaction back. The batched entry point produces exactly
+      // the same rows as the per-word one, one query per chunk instead of one
+      // per word.
+      await study.rebuildStatesForWords(touchedWords);
+      phase('replay');
     });
 
     return MergeReport(
@@ -1093,6 +1151,21 @@ class BackupService {
       conflicts: conflicts,
       settingsKept: true,
     );
+  }
+
+  /// Every event id already in the log. Only the ids are read: the merge uses
+  /// them to skip the per-row existence check, and the detailed comparison for
+  /// a genuine duplicate still reads that one row.
+  Future<Set<String>> _existingEventIds() async {
+    final List<QueryRow> rows = await db
+        .customSelect(
+          'SELECT id FROM review_events',
+          readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
+            db.reviewEvents,
+          },
+        )
+        .get();
+    return <String>{for (final QueryRow row in rows) row.read<String>('id')};
   }
 
   Future<int> _countWords() async {

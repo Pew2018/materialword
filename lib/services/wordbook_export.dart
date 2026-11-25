@@ -72,15 +72,33 @@ class WordBookExporter {
 
   /// RFC 4180 quoting: wrap in quotes when the field contains a separator,
   /// quote or line break, and double the inner quotes.
+  ///
+  /// Formula injection is handled separately: quoting alone does **not** stop a
+  /// spreadsheet from evaluating `=HYPERLINK(...)` or `+cmd|...`, because the
+  /// cell value is still a formula. Leading characters that Excel, LibreOffice
+  /// and Numbers treat as a formula are therefore prefixed with an apostrophe,
+  /// which forces a literal text cell. The stored word is untouched — this is
+  /// an export-only transformation.
   static String _csvField(String value) {
     if (value.isEmpty) return '';
+    final String guarded = sanitizeCsvCell(value);
     final bool needsQuotes =
-        value.contains(',') ||
-        value.contains('"') ||
-        value.contains('\n') ||
-        value.contains('\r');
-    final String escaped = value.replaceAll('"', '""');
+        guarded.contains(',') ||
+        guarded.contains('"') ||
+        guarded.contains('\n') ||
+        guarded.contains('\r');
+    final String escaped = guarded.replaceAll('"', '""');
     return needsQuotes ? '"$escaped"' : escaped;
+  }
+
+  /// Characters that make a spreadsheet interpret a cell as a formula.
+  static const String formulaPrefixes = '=+-@\t\r';
+
+  /// Neutralises spreadsheet formula injection without touching the data.
+  static String sanitizeCsvCell(String value) {
+    if (value.isEmpty) return value;
+    if (!formulaPrefixes.contains(value[0])) return value;
+    return "'$value";
   }
 
   static String _json(List<Word> words) {

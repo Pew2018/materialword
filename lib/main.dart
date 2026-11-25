@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
 
 import 'app/app.dart';
 import 'app/providers.dart';
@@ -28,10 +30,29 @@ Future<void> main() async {
   );
 
   unawaited(_repairDictionaryTextAfterFirstFrame(database));
-  // Restores the (default off) diagnostics switch before the first sync runs.
-  unawaited(
-    DiagnosticsService.instance.load(database).catchError((Object _) => false),
-  );
+  // Restores the (default off) diagnostics switch and, when it is on, the tail
+  // of the previous session's trace file.
+  unawaited(_initialiseDiagnostics(database));
+}
+
+/// Points diagnostics at an app-private file, then reads the persisted switch.
+///
+/// Kept after the first frame for the same reason as the dictionary repair: the
+/// window must appear even if the file system is slow or read-only.
+Future<void> _initialiseDiagnostics(AppDatabase database) async {
+  try {
+    final Directory directory = await getApplicationSupportDirectory();
+    DiagnosticsService.instance.attachFile(
+      File('${directory.path}/diagnostics.log'),
+    );
+  } catch (_) {
+    // No writable directory: diagnostics stay in memory only.
+  }
+  try {
+    await DiagnosticsService.instance.load(database);
+  } catch (_) {
+    // A diagnostics failure must never stop the app from starting.
+  }
 }
 
 /// Rewrites dictionary rows written by older builds (literal `\n` escapes).

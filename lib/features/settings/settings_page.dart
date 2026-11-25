@@ -12,6 +12,7 @@ import '../../core/database/app_database.dart';
 import '../../core/models/enums.dart';
 import '../../core/repositories/wordbook_repository.dart';
 import '../../services/diagnostics_service.dart';
+import '../../services/screen_awake.dart';
 import '../../services/tts_service.dart';
 
 import 'package:file_picker/file_picker.dart';
@@ -188,6 +189,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 ttsAutoSpeak: auto,
               ),
         ),
+        SectionHeader(title: '学习'),
+        const _ScreenAwakeSection(),
         SectionHeader(title: '数据'),
         SettingsGroup(
           children: <Widget>[
@@ -747,6 +750,49 @@ class _TtsRateSettingState extends State<_TtsRateSetting> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Opt-in diagnostics: off by default, bounded, redacted, exportable.
+/// Device-local "keep the screen on" switch.
+///
+/// Deliberately not part of `study_settings`: whether this screen dims is a
+/// property of the device in front of you, not of the shared learning plan, so
+/// it lives in `app_meta` and never travels through sync.
+class _ScreenAwakeSection extends ConsumerWidget {
+  const _ScreenAwakeSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ThemeData theme = Theme.of(context);
+    final AsyncValue<bool> value = ref.watch(keepScreenOnProvider);
+    final bool supported = ref.read(screenAwakeProvider).isSupported;
+    return SettingsGroup(
+      children: <Widget>[
+        SwitchListTile(
+          secondary: const Icon(Icons.lightbulb_outline),
+          value: value.value ?? false,
+          onChanged: supported
+              ? (bool enabled) async {
+                  final AppDatabase db = ref.read(databaseProvider);
+                  await db.writeMeta(
+                    ScreenAwakeService.preferenceKey,
+                    enabled ? '1' : '0',
+                  );
+                  ref.invalidate(keepScreenOnProvider);
+                  if (!enabled) {
+                    await ref.read(screenAwakeProvider).disable();
+                  }
+                }
+              : null,
+          title: const Text('学习时保持屏幕常亮'),
+          subtitle: Text(
+            supported ? '只在实际的学习或练习页面生效；离开页面或切到后台后自动释放' : '当前平台不支持此功能，学习功能不受影响',
+            style: theme.textTheme.bodySmall,
+          ),
+        ),
+      ],
     );
   }
 }
