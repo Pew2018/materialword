@@ -458,7 +458,8 @@ class WebDavSyncProvider implements SyncProvider {
         'lock-token-submitted',
         'no-conflicting-lock',
       };
-      for (final XmlElement element in xml.descendants.whereType<XmlElement>()) {
+      for (final XmlElement element
+          in xml.descendants.whereType<XmlElement>()) {
         final String code = element.name.local == 'exception'
             ? element.innerText.trim()
             : element.name.local;
@@ -558,15 +559,21 @@ class WebDavSyncProvider implements SyncProvider {
         switch (stage) {
           WebDavStage.baseCollectionProbe ||
           WebDavStage.targetDirectoryProbe ||
-          WebDavStage.directoryCreation => WebDavPropfindProfile.collectionProbe,
-          WebDavStage.directoryListing => WebDavPropfindProfile.directoryListing,
+          WebDavStage.directoryCreation =>
+            WebDavPropfindProfile.collectionProbe,
+          WebDavStage.directoryListing =>
+            WebDavPropfindProfile.directoryListing,
           _ => WebDavPropfindProfile.fileMetadata,
         };
     final bool collection =
         resolvedProfile == WebDavPropfindProfile.collectionProbe;
     final String firstDepth = collection && _collectionDepthOne ? '1' : depth;
-    Future<http.Response> send(String depth) =>
-        _sendPropfind(uri, depth: depth, profile: resolvedProfile, stage: stage);
+    Future<http.Response> send(String depth) => _sendPropfind(
+      uri,
+      depth: depth,
+      profile: resolvedProfile,
+      stage: stage,
+    );
     http.Response response = await send(firstDepth);
     if (collection &&
         firstDepth == '0' &&
@@ -578,9 +585,10 @@ class WebDavSyncProvider implements SyncProvider {
     WebDavDirectoryEntry? self;
     if (response.statusCode == 207 || response.statusCode == 200) {
       final Uri requested = response.request?.url ?? uri;
-      self = _parseMultistatus(response.body, requested)
-          .where((WebDavDirectoryEntry e) => e.uri == requested)
-          .firstOrNull;
+      self = _parseMultistatus(
+        response.body,
+        requested,
+      ).where((WebDavDirectoryEntry e) => e.uri == requested).firstOrNull;
     }
     return (
       status: response.statusCode,
