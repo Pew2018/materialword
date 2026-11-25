@@ -6,6 +6,7 @@ import 'package:materialword/app/app.dart';
 import 'package:materialword/app/navigation.dart';
 import 'package:materialword/app/providers.dart';
 import 'package:materialword/app/theme.dart';
+import 'package:materialword/core/models/enums.dart';
 import 'package:materialword/features/study/study_page.dart';
 import 'package:materialword/services/tts_service.dart';
 import 'package:materialword/shared/widgets/classic_select.dart';
@@ -223,6 +224,46 @@ void main() {
     for (final String label in <String>['不认识', '模糊', '认识']) {
       expect(renderedRadius(label), BorderRadius.circular(2));
     }
+    expect(tester.takeException(), isNull);
+    await clean(tester);
+  });
+
+  testWidgets('a 360dp study page keeps its AppBar readable', (
+    WidgetTester tester,
+  ) async {
+    final TestEnv env = await TestEnv.create();
+    addTearDown(env.dispose);
+    await env.seedBook(words: <String>['alpha', 'beta']);
+    // One wrong answer, so the focused drill has a card (and a long title).
+    final session = env.session();
+    await session.load(newLimit: 2, reviewLimit: 0);
+    session.reveal();
+    await session.submit(AnswerResult.unknown);
+    session.dispose();
+
+    tester.view.physicalSize = const Size(360, 740);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          databaseProvider.overrideWithValue(env.db),
+          clockProvider.overrideWithValue(env.clock),
+          ttsServiceProvider.overrideWithValue(_SilentTts()),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.light(),
+          home: const StudyPage(special: SpecialReview.hard),
+        ),
+      ),
+    );
+    await settle(tester);
+    // Four icon buttons plus the counter used to overflow this AppBar.
+    expect(find.byTooltip('更多操作'), findsOneWidget);
+    expect(find.byTooltip('跳过（不计入作答）'), findsNothing);
+    expect(find.text('显示释义'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await clean(tester);
   });

@@ -229,12 +229,13 @@ class _StudyPageState extends ConsumerState<StudyPage>
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool desktop = isDesktopPlatform(context);
+    final bool compact = MediaQuery.sizeOf(context).width < 600;
     return AnimatedBuilder(
       animation: _session,
       builder: (BuildContext context, Widget? _) {
         return Scaffold(
           appBar: AppBar(
-            title: Text(_title),
+            title: Text(_title, maxLines: 1, overflow: TextOverflow.ellipsis),
             bottom: PreferredSize(
               preferredSize: const Size.fromHeight(3),
               child: LinearProgressIndicator(
@@ -249,6 +250,9 @@ class _StudyPageState extends ConsumerState<StudyPage>
                 ),
               ),
             ),
+            // A long title plus four icon buttons plus the counter overflowed a
+            // 360dp phone. On compact widths the two low-frequency actions collapse into
+            // one overflow menu, leaving the AppBar readable.
             actions: <Widget>[
               if (_session.current != null && !_session.isFinished)
                 IconButton(
@@ -275,29 +279,52 @@ class _StudyPageState extends ConsumerState<StudyPage>
                   !_session.isLoading &&
                   !_session.isFinished)
                 FavoriteButton(wordId: _session.current!.word.id),
-              if (_session.current != null && !_session.isLoading)
+              if (compact)
+                PopupMenuButton<String>(
+                  tooltip: '更多操作',
+                  onSelected: (String value) {
+                    if (value == 'skip' && !_session.isBusy) _session.skip();
+                    if (value == 'undo' && _session.canUndo) _undo();
+                  },
+                  itemBuilder: (BuildContext context) =>
+                      <PopupMenuEntry<String>>[
+                        PopupMenuItem<String>(
+                          value: 'skip',
+                          enabled: _session.current != null && !_session.isBusy,
+                          child: const Text('跳过（不计入作答）'),
+                        ),
+                        PopupMenuItem<String>(
+                          value: 'undo',
+                          enabled: _session.canUndo,
+                          child: const Text('撤销上一作答'),
+                        ),
+                      ],
+                )
+              else ...<Widget>[
+                if (_session.current != null && !_session.isLoading)
+                  IconButton(
+                    tooltip: '跳过（不计入作答）',
+                    icon: const Icon(Icons.skip_next),
+                    onPressed: _session.isBusy ? null : _session.skip,
+                  ),
                 IconButton(
-                  tooltip: '跳过（不计入作答）',
-                  icon: const Icon(Icons.skip_next),
-                  onPressed: _session.isBusy ? null : _session.skip,
+                  tooltip: '撤销上一作答',
+                  onPressed: _session.canUndo ? _undo : null,
+                  icon: const Icon(Icons.undo),
                 ),
-              IconButton(
-                tooltip: '撤销上一作答',
-                onPressed: _session.canUndo ? _undo : null,
-                icon: const Icon(Icons.undo),
-              ),
-              if (!_session.isLoading && !_session.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(right: 16),
-                  child: Center(
-                    child: Text(
-                      '${_session.position}/${_session.totalCards}',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onPrimary,
+                if (!_session.isLoading && !_session.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 16),
+                    child: Center(
+                      child: Text(
+                        '${_session.position}/${_session.totalCards}',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onPrimary,
+                        ),
                       ),
                     ),
                   ),
-                ),
+              ],
             ],
           ),
           body: CallbackShortcuts(
