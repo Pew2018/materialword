@@ -88,3 +88,10 @@ GitHub/会话过期保护批次：本机 `flutter analyze` 无问题，完整 `f
   - `phase3_diagnostics_test.dart`（5）：脱敏（Bearer/ghp_/密码/带凭据 URL/长串密钥）、默认关闭只留最后错误、开关持久化与 400 条上限、报告含计数与版本但不含词条内容、报告截断。
   - `phase3_export_and_forms_test.dart`（8）：词形候选（recognized/studies/stopped/running/making/bigger/largest/happier/boxes）、不返回自身、非法输入、候选上限与去重；词书导出只含存活成员、TXT 逐行、CSV 引号转义、JSON 结构。
 - 未验证：真实语音、真机手势、屏幕常亮（未引入原生插件）、真实 WebDAV/PAT 服务。
+
+## 平台构建（3af66aa，Run 45545215302）
+
+同一 SHA 的四个 job：**Android ARM64 APK 成功、macOS .app 成功、iOS 无签名构建成功**，Validate 仅因 Golden 参考图缺失失败（本轮新机制按设计写入候选图）。产物：
+`android-arm64-apk`（13,783,708 B）、`macos-app`（25,960,203 B，含 verify-bundle/verify-zip/launch 记录）、`ios-unsigned`（12,619,373 B）、`golden-failures`（14,571 B）。
+
+Linux 与 macOS 参考图的定量对比（`classic_light`）：差异 4129 px = 1.54%，最大通道差 186，差异行带全部落在文本/图标行（17-37、75-107、120-134、175-189、235-249、307-321、373-405、438-454、591-626），纯形状区域（按钮边框、背景、分隔线）无差异；每个文本行带的"墨迹"横向范围在两图中完全相同（如 20–339、20–369、18–401、36–243、36–227）。据此判定为 CoreText 与 FreeType 的字形抗锯齿差异，非布局或配色回归，因此把 Linux 参考图作为独立基线提交。

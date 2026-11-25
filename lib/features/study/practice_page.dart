@@ -106,13 +106,13 @@ class _PracticePageState extends ConsumerState<PracticePage> {
   Future<void> _speak(String text, {bool announceFailure = false}) async {
     final StudySettingsRow? settings = ref.read(settingsProvider).value;
     final bool ok = await _tts.speak(
-          text,
-          voiceName: (settings?.ttsVoice.isEmpty ?? true)
-              ? null
-              : settings!.ttsVoice,
-          locale: settings?.ttsLocale ?? 'en-US',
-          rate: settings?.ttsRate ?? 50,
-        );
+      text,
+      voiceName: (settings?.ttsVoice.isEmpty ?? true)
+          ? null
+          : settings!.ttsVoice,
+      locale: settings?.ttsLocale ?? 'en-US',
+      rate: settings?.ttsRate ?? 50,
+    );
     if (!ok && mounted && announceFailure) {
       setState(() => _showHint = true);
       showMessage(context, '系统语音不可用，已显示中文提示；可继续用拼写或选择题练习', error: true);
