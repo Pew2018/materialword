@@ -38,6 +38,7 @@ class _WordDetailPageState extends ConsumerState<WordDetailPage> {
   List<ReviewEvent> _events = const <ReviewEvent>[];
   bool _loading = true;
   bool _saving = false;
+  bool _manualMastery = false;
 
   @override
   void initState() {
@@ -72,8 +73,12 @@ class _WordDetailPageState extends ConsumerState<WordDetailPage> {
     final List<ReviewEvent> events = await ref
         .read(wordRepositoryProvider)
         .eventsForWord(widget.wordId);
+    final manualMastery = await ref
+        .read(studyRepositoryProvider)
+        .hasManualMastery(widget.wordId);
     if (!mounted) return;
     setState(() {
+      _manualMastery = manualMastery;
       _wordRow = word;
       _state = state;
       _events = events;
@@ -143,23 +148,24 @@ class _WordDetailPageState extends ConsumerState<WordDetailPage> {
     showMessage(context, '已用词典补全空白字段，记得保存');
   }
 
-  Future<void> _markMastered() async {
+  Future<void> _markMastered({bool undo = false}) async {
     final bool ok = await confirmDialog(
       context,
-      title: '标记为已掌握',
-      message: '标记为掌握，30 天后复习。保留历史，不计入作答次数和正确率。',
-      confirmLabel: '标记',
+      title: undo ? '取消掌握' : '标记为已掌握',
+      message: undo
+          ? '撤回人工掌握，按原有作答历史恢复状态和复习计划，不增加作答次数。'
+          : '标记为掌握，30 天后复习。保留历史，不计入作答次数和正确率。',
+      confirmLabel: undo ? '取消掌握' : '标记',
     );
-    if (!ok) return;
+    if (!ok || !mounted) return;
     final String device = await ref.read(settingsRepositoryProvider).deviceId();
-    await ref
-        .read(studyRepositoryProvider)
-        .markMastered(
-          wordId: widget.wordId,
-          deviceId: device,
-          now: ref.read(clockProvider).now(),
-          eventId: const Uuid().v4(),
-        );
+    final repo = ref.read(studyRepositoryProvider);
+    await (undo ? repo.unmarkMastered : repo.markMastered)(
+      wordId: widget.wordId,
+      deviceId: device,
+      now: ref.read(clockProvider).now(),
+      eventId: const Uuid().v4(),
+    );
     ref.invalidate(todayProgressProvider);
     ref.invalidate(statisticsProvider);
     if (mounted) await _load();
@@ -218,6 +224,8 @@ class _WordDetailPageState extends ConsumerState<WordDetailPage> {
                   await _fillFromDictionary();
                 case 'mastered':
                   await _markMastered();
+                case 'unmastered':
+                  await _markMastered(undo: true);
                 case 'reset':
                   await _resetProgress();
                 case 'remove':
@@ -270,9 +278,9 @@ class _WordDetailPageState extends ConsumerState<WordDetailPage> {
                 value: 'dict',
                 child: Text('用离线词典补全空白'),
               ),
-              const PopupMenuItem<String>(
-                value: 'mastered',
-                child: Text('标记为已掌握'),
+              PopupMenuItem<String>(
+                value: _manualMastery ? 'unmastered' : 'mastered',
+                child: Text(_manualMastery ? '取消掌握' : '标记为已掌握'),
               ),
               const PopupMenuItem<String>(
                 value: 'reset',

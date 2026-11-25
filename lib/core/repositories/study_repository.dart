@@ -356,6 +356,37 @@ SELECT COUNT(*) AS c
 
   // ----------------------------------------------------------- persistence
 
+  Future<int> _nextCausalOrder(String wordId) async {
+    final column = db.reviewEvents.causalOrder.max();
+    final query = db.selectOnly(db.reviewEvents)
+      ..addColumns([column])
+      ..where(db.reviewEvents.wordId.equals(wordId));
+    return ((await query.getSingle()).read(column) ?? 0) + 1;
+  }
+
+  Future<bool> hasManualMastery(String wordId) async {
+    final event =
+        await (db.select(db.reviewEvents)
+              ..where(
+                (t) =>
+                    t.wordId.equals(wordId) &
+                    t.mode.isIn([
+                      ReviewEventMode.manualMastered,
+                      ReviewEventMode.manualUnmastered,
+                      ReviewEventMode.reset,
+                    ]),
+              )
+              ..orderBy([
+                (t) => OrderingTerm.desc(t.causalOrder),
+                (t) => OrderingTerm.desc(t.answeredAt),
+                (t) => OrderingTerm.desc(t.deviceId),
+                (t) => OrderingTerm.desc(t.id),
+              ])
+              ..limit(1))
+            .getSingleOrNull();
+    return event?.mode == ReviewEventMode.manualMastered;
+  }
+
   /// Writes one answer atomically: raw event + derived state.
   ///
   /// [eventId] makes the operation idempotent — submitting the same id twice
@@ -412,6 +443,7 @@ SELECT COUNT(*) AS c
               ),
       );
 
+      final causalOrder = await _nextCausalOrder(wordId);
       await db
           .into(db.reviewEvents)
           .insert(
@@ -427,6 +459,7 @@ SELECT COUNT(*) AS c
               intervalDaysAfter: Value<int>(outcome.intervalDays),
               algoVersion: Value<int>(StudyScheduler.algorithmVersion),
               mode: Value<String>(mode),
+              causalOrder: Value(causalOrder),
               dayStartUtc: Value(startOfLocalDay(now).millisecondsSinceEpoch),
               dayStartSource: const Value('authored'),
             ),
@@ -434,14 +467,20 @@ SELECT COUNT(*) AS c
 
       if (ReviewEventMode.isManagement(mode)) {
         await rebuildStateFromEvents(wordId);
+        final restored = await (db.select(
+          db.learningStates,
+        )..where((t) => t.wordId.equals(wordId))).getSingleOrNull();
         return AnswerRecord(
           eventId: eventId,
           duplicate: false,
-          stage: mode == ReviewEventMode.manualMastered
-              ? StudyStage.review
-              : StudyStage.newWord,
-          nextReviewAt: now.add(const Duration(days: 30)),
-          intervalDays: 30,
+          stage: StudyStage.fromCode(restored?.stage ?? 0),
+          nextReviewAt: restored?.nextReviewAt == null
+              ? now
+              : DateTime.fromMillisecondsSinceEpoch(
+                  restored!.nextReviewAt!,
+                  isUtc: true,
+                ),
+          intervalDays: restored?.intervalDays ?? 0,
           repeatInSession: false,
         );
       }
@@ -524,6 +563,9 @@ SELECT COUNT(*) AS c
               type: ReviewType.study.code,
               algoVersion: Value<int>(StudyScheduler.algorithmVersion),
               mode: const Value<String>(ReviewEventMode.reset),
+              causalOrder: Value(await _nextCausalOrder(wordId)),
+              dayStartUtc: Value(startOfLocalDay(now).millisecondsSinceEpoch),
+              dayStartSource: const Value('authored'),
             ),
             mode: InsertMode.insertOrIgnore,
           );
@@ -534,7 +576,7 @@ SELECT COUNT(*) AS c
   /// Replays the whole history of [wordId] to recompute its state. Used after
   /// merging an imported backup, where the event log is authoritative.
   ///
-  /// Ordering is deterministic: `(answeredAt, deviceId, id)`. Two devices can
+  /// Ordering is deterministic: `(causalOrder, answeredAt, deviceId, id)`. Two devices can
   /// produce the same millisecond timestamp; without a total order a rebuild
   /// could produce different results on each device.
   Future<void> rebuildStateFromEvents(String wordId) async {
@@ -542,6 +584,7 @@ SELECT COUNT(*) AS c
         await (db.select(db.reviewEvents)
               ..where((t) => t.wordId.equals(wordId))
               ..orderBy(<OrderClauseGenerator<$ReviewEventsTable>>[
+                (t) => OrderingTerm(expression: t.causalOrder),
                 (t) => OrderingTerm(expression: t.answeredAt),
                 (t) => OrderingTerm(expression: t.deviceId),
                 (t) => OrderingTerm(expression: t.id),
@@ -638,7 +681,10 @@ SELECT COUNT(*) AS c
       snapshot: snapshot,
       lastStudiedAt: lastStudiedAt,
       nextReviewAt: nextReviewAt,
-      now: DateTime.now(),
+      now: DateTime.fromMillisecondsSinceEpoch(
+        events.last.answeredAt,
+        isUtc: true,
+      ),
     );
   }
 
@@ -773,6 +819,10 @@ SELECT COUNT(*) AS c
               result: 0,
               type: event.type,
               mode: Value('undo:$eventId'),
+              causalOrder: Value(await _nextCausalOrder(event.wordId)),
+              algoVersion: const Value(StudyScheduler.algorithmVersion),
+              dayStartUtc: Value(startOfLocalDay(now).millisecondsSinceEpoch),
+              dayStartSource: const Value('authored'),
             ),
             mode: InsertMode.insertOrIgnore,
           );

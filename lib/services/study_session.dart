@@ -496,6 +496,34 @@ class StudySession extends ChangeNotifier {
     }
   }
 
+  /// Refresh edited content without rebuilding the queue or recording answers.
+  Future<void> refreshCurrent() async {
+    if (_busy || current == null) return;
+    final id = current!.word.id;
+    final row = await _study.managedWord(id);
+    if (_busy || current?.word.id != id) return;
+    if (row == null) {
+      await skip();
+      return;
+    }
+    for (var i = _cursor; i < _queue.length; i++) {
+      final card = _queue[i];
+      if (card.word.id != id) continue;
+      _queue[i] = StudyCard(
+        word: row.word,
+        withState: WordWithState(
+          word: row.word,
+          state: row.state,
+          bookCount: row.bookCount,
+          lastAnsweredAt: row.lastStudiedAt,
+        ),
+        type: card.type,
+        repeatCount: card.repeatCount,
+      );
+    }
+    notifyListeners();
+  }
+
   /// A skip creates no answer and consumes no daily allowance.
   Future<bool> skip() async {
     if (_busy || current == null) return false;

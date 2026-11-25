@@ -592,13 +592,21 @@ class _TtsSectionState extends ConsumerState<_TtsSection> {
                     '请先在系统设置中安装英语语音。',
               );
             }
-            final String? selected =
-                voices.any((TtsVoice v) => v.name == widget.settings.ttsVoice)
-                ? widget.settings.ttsVoice
-                : null;
+            final String? selected = voices
+                .where(
+                  (v) =>
+                      v.name == widget.settings.ttsVoice &&
+                      v.locale.toLowerCase() ==
+                          widget.settings.ttsLocale
+                              .replaceAll('_', '-')
+                              .toLowerCase(),
+                )
+                .firstOrNull
+                ?.key;
             return Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
               child: DropdownButtonFormField<String>(
+                key: ValueKey(selected),
                 initialValue: selected,
                 isExpanded: true,
                 decoration: const InputDecoration(labelText: '英语语音'),
@@ -606,7 +614,7 @@ class _TtsSectionState extends ConsumerState<_TtsSection> {
                 items: <DropdownMenuItem<String>>[
                   for (final TtsVoice voice in voices)
                     DropdownMenuItem<String>(
-                      value: voice.name,
+                      value: voice.key,
                       child: Text(
                         voice.display,
                         maxLines: 1,
@@ -616,9 +624,9 @@ class _TtsSectionState extends ConsumerState<_TtsSection> {
                 ],
                 onChanged: (String? name) {
                   final TtsVoice? voice = voices
-                      .where((TtsVoice v) => v.name == name)
+                      .where((TtsVoice v) => v.key == name)
                       .firstOrNull;
-                  widget.onSave(name, voice?.locale, null, null);
+                  widget.onSave(voice?.name, voice?.locale, null, null);
                 },
               ),
             );
@@ -643,26 +651,44 @@ class _TtsSectionState extends ConsumerState<_TtsSection> {
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
           child: Align(
             alignment: Alignment.centerLeft,
-            child: OutlinedButton.icon(
-              onPressed: () async {
-                final TtsService tts = ref.read(ttsServiceProvider);
-                final bool ok = await tts.speak(
-                  'vocabulary',
-                  voiceName: widget.settings.ttsVoice.isEmpty
-                      ? null
-                      : widget.settings.ttsVoice,
-                  locale: widget.settings.ttsLocale,
-                  rate: widget.settings.ttsRate,
-                );
-                if (!context.mounted) return;
-                showMessage(
-                  context,
-                  ok ? '正在朗读测试单词' : (tts.lastError ?? '系统语音不可用'),
-                  error: !ok,
-                );
-              },
-              icon: const Icon(Icons.play_arrow),
-              label: const Text('测试发音'),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('刷新语音列表'),
+                  onPressed: () {
+                    final voices = ref
+                        .read(ttsServiceProvider)
+                        .englishVoices(refresh: true);
+                    setState(() {
+                      _voices = voices;
+                    });
+                  },
+                ),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    final TtsService tts = ref.read(ttsServiceProvider);
+                    final bool ok = await tts.speak(
+                      'vocabulary',
+                      voiceName: widget.settings.ttsVoice.isEmpty
+                          ? null
+                          : widget.settings.ttsVoice,
+                      locale: widget.settings.ttsLocale,
+                      rate: widget.settings.ttsRate,
+                    );
+                    if (!context.mounted) return;
+                    showMessage(
+                      context,
+                      ok ? '测试朗读完成' : (tts.lastError ?? '系统语音不可用'),
+                      error: !ok,
+                    );
+                  },
+                  icon: const Icon(Icons.play_arrow),
+                  label: const Text('测试发音'),
+                ),
+              ],
             ),
           ),
         ),

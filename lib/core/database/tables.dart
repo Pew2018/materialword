@@ -122,6 +122,9 @@ class ReviewEvents extends Table {
   IntColumn get intervalDaysAfter => integer().withDefault(const Constant(0))();
   IntColumn get algoVersion => integer().withDefault(const Constant(1))();
   TextColumn get mode => text().withDefault(const Constant('normal'))();
+
+  /// Lamport order per word. Zero is reserved for legacy events.
+  IntColumn get causalOrder => integer().withDefault(const Constant(0))();
   IntColumn get dayStartUtc => integer().nullable()();
   TextColumn get dayStartSource =>
       text().withDefault(const Constant('legacy-utc'))();

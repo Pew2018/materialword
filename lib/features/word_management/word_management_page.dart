@@ -308,24 +308,31 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
 
   Future<String> _deviceId() => ref.read(settingsRepositoryProvider).deviceId();
 
-  Future<void> _markMastered(Iterable<String> selection) async {
+  Future<void> _markMastered(
+    Iterable<String> selection, {
+    bool undo = false,
+  }) async {
     final List<String> ids = selection.toList(growable: false);
     final bool ok = await confirmDialog(
       context,
-      title: '标记为已掌握',
-      message:
-          '将选中的 ${ids.length} 个单词标记为掌握，30 天后复习。'
-          '保留学习历史，不计入作答次数和正确率。',
-      confirmLabel: '标记掌握',
+      title: undo ? '取消掌握' : '标记为已掌握',
+      message: undo
+          ? '仅撤回所选单词的人工掌握，按原有作答历史恢复状态和复习计划，不增加作答次数。'
+          : '将选中的 ${ids.length} 个单词标记为掌握，30 天后复习。'
+                '保留学习历史，不计入作答次数和正确率。',
+      confirmLabel: undo ? '取消掌握' : '标记掌握',
     );
     if (!ok) return;
     if (!mounted) return;
     await _runBatch(() async {
       final repository = ref.read(studyRepositoryProvider);
       final device = await _deviceId();
+      int changed = 0;
       await repository.db.transaction(() async {
         for (final id in ids) {
-          await repository.markMastered(
+          if (undo && !await repository.hasManualMastery(id)) continue;
+          changed++;
+          await (undo ? repository.unmarkMastered : repository.markMastered)(
             wordId: id,
             deviceId: device,
             now: ref.read(clockProvider).now(),
@@ -333,7 +340,7 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
           );
         }
       });
-      return '已标记 ${ids.length} 个单词为已掌握';
+      return undo ? '已取消 $changed 个单词的掌握状态' : '已标记 $changed 个单词为已掌握';
     });
   }
 
@@ -710,6 +717,13 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
             onPressed: _busy ? null : () => _markMastered(_selected),
           ),
           IconButton(
+            tooltip: '取消掌握',
+            icon: const Icon(Icons.verified),
+            onPressed: _busy
+                ? null
+                : () => _markMastered(_selected, undo: true),
+          ),
+          IconButton(
             tooltip: '重置进度',
             icon: const Icon(Icons.restart_alt),
             onPressed: _busy ? null : () => _resetProgress(_selected),
@@ -914,6 +928,7 @@ class _WordDetailPaneState extends ConsumerState<_WordDetailPane> {
   ManagedWord? _row;
   List<dynamic> _events = const <dynamic>[];
   bool _loading = true;
+  bool _manualMastery = false;
 
   @override
   void initState() {
@@ -929,8 +944,12 @@ class _WordDetailPaneState extends ConsumerState<_WordDetailPane> {
     final events = await ref
         .read(wordRepositoryProvider)
         .eventsForWord(widget.wordId, limit: 30);
+    final manualMastery = await ref
+        .read(studyRepositoryProvider)
+        .hasManualMastery(widget.wordId);
     if (!mounted) return;
     setState(() {
+      _manualMastery = manualMastery;
       _row = row;
       _events = events;
       _loading = false;
@@ -1032,9 +1051,9 @@ class _WordDetailPaneState extends ConsumerState<_WordDetailPane> {
               label: const Text('编辑词条'),
             ),
             TextButton.icon(
-              onPressed: () => _markMastered(),
+              onPressed: () => _markMastered(undo: _manualMastery),
               icon: const Icon(Icons.verified_outlined),
-              label: const Text('标记掌握'),
+              label: Text(_manualMastery ? '取消掌握' : '标记掌握'),
             ),
             TextButton.icon(
               onPressed: () => _reset(),
@@ -1103,23 +1122,24 @@ class _WordDetailPaneState extends ConsumerState<_WordDetailPane> {
     );
   }
 
-  Future<void> _markMastered() async {
+  Future<void> _markMastered({bool undo = false}) async {
     final bool ok = await confirmDialog(
       context,
-      title: '标记为已掌握',
-      message: '标记为掌握，30 天后复习。保留学习历史，不计入作答次数和正确率。',
-      confirmLabel: '标记',
+      title: undo ? '取消掌握' : '标记为已掌握',
+      message: undo
+          ? '取消掌握后恢复到学习阶段并安排近期复习。保留历史，不增加作答次数。'
+          : '标记为掌握，30 天后复习。保留学习历史，不计入作答次数和正确率。',
+      confirmLabel: undo ? '取消掌握' : '标记',
     );
-    if (!ok) return;
+    if (!ok || !mounted) return;
     final String device = await ref.read(settingsRepositoryProvider).deviceId();
-    await ref
-        .read(studyRepositoryProvider)
-        .markMastered(
-          wordId: widget.wordId,
-          deviceId: device,
-          now: ref.read(clockProvider).now(),
-          eventId: _uuid.v4(),
-        );
+    final repo = ref.read(studyRepositoryProvider);
+    await (undo ? repo.unmarkMastered : repo.markMastered)(
+      wordId: widget.wordId,
+      deviceId: device,
+      now: ref.read(clockProvider).now(),
+      eventId: _uuid.v4(),
+    );
     ref.invalidate(todayProgressProvider);
     ref.invalidate(statisticsProvider);
     if (!mounted) return;

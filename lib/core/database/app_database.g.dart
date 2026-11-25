@@ -2755,6 +2755,18 @@ class $ReviewEventsTable extends ReviewEvents
     requiredDuringInsert: false,
     defaultValue: const Constant('normal'),
   );
+  static const VerificationMeta _causalOrderMeta = const VerificationMeta(
+    'causalOrder',
+  );
+  @override
+  late final GeneratedColumn<int> causalOrder = GeneratedColumn<int>(
+    'causal_order',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
   static const VerificationMeta _dayStartUtcMeta = const VerificationMeta(
     'dayStartUtc',
   );
@@ -2791,6 +2803,7 @@ class $ReviewEventsTable extends ReviewEvents
     intervalDaysAfter,
     algoVersion,
     mode,
+    causalOrder,
     dayStartUtc,
     dayStartSource,
   ];
@@ -2892,6 +2905,15 @@ class $ReviewEventsTable extends ReviewEvents
         mode.isAcceptableOrUnknown(data['mode']!, _modeMeta),
       );
     }
+    if (data.containsKey('causal_order')) {
+      context.handle(
+        _causalOrderMeta,
+        causalOrder.isAcceptableOrUnknown(
+          data['causal_order']!,
+          _causalOrderMeta,
+        ),
+      );
+    }
     if (data.containsKey('day_start_utc')) {
       context.handle(
         _dayStartUtcMeta,
@@ -2963,6 +2985,10 @@ class $ReviewEventsTable extends ReviewEvents
         DriftSqlType.string,
         data['${effectivePrefix}mode'],
       )!,
+      causalOrder: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}causal_order'],
+      )!,
       dayStartUtc: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}day_start_utc'],
@@ -2992,6 +3018,9 @@ class ReviewEvent extends DataClass implements Insertable<ReviewEvent> {
   final int intervalDaysAfter;
   final int algoVersion;
   final String mode;
+
+  /// Lamport order per word. Zero is reserved for legacy events.
+  final int causalOrder;
   final int? dayStartUtc;
   final String dayStartSource;
   const ReviewEvent({
@@ -3006,6 +3035,7 @@ class ReviewEvent extends DataClass implements Insertable<ReviewEvent> {
     required this.intervalDaysAfter,
     required this.algoVersion,
     required this.mode,
+    required this.causalOrder,
     this.dayStartUtc,
     required this.dayStartSource,
   });
@@ -3023,6 +3053,7 @@ class ReviewEvent extends DataClass implements Insertable<ReviewEvent> {
     map['interval_days_after'] = Variable<int>(intervalDaysAfter);
     map['algo_version'] = Variable<int>(algoVersion);
     map['mode'] = Variable<String>(mode);
+    map['causal_order'] = Variable<int>(causalOrder);
     if (!nullToAbsent || dayStartUtc != null) {
       map['day_start_utc'] = Variable<int>(dayStartUtc);
     }
@@ -3043,6 +3074,7 @@ class ReviewEvent extends DataClass implements Insertable<ReviewEvent> {
       intervalDaysAfter: Value(intervalDaysAfter),
       algoVersion: Value(algoVersion),
       mode: Value(mode),
+      causalOrder: Value(causalOrder),
       dayStartUtc: dayStartUtc == null && nullToAbsent
           ? const Value.absent()
           : Value(dayStartUtc),
@@ -3067,6 +3099,7 @@ class ReviewEvent extends DataClass implements Insertable<ReviewEvent> {
       intervalDaysAfter: serializer.fromJson<int>(json['intervalDaysAfter']),
       algoVersion: serializer.fromJson<int>(json['algoVersion']),
       mode: serializer.fromJson<String>(json['mode']),
+      causalOrder: serializer.fromJson<int>(json['causalOrder']),
       dayStartUtc: serializer.fromJson<int?>(json['dayStartUtc']),
       dayStartSource: serializer.fromJson<String>(json['dayStartSource']),
     );
@@ -3086,6 +3119,7 @@ class ReviewEvent extends DataClass implements Insertable<ReviewEvent> {
       'intervalDaysAfter': serializer.toJson<int>(intervalDaysAfter),
       'algoVersion': serializer.toJson<int>(algoVersion),
       'mode': serializer.toJson<String>(mode),
+      'causalOrder': serializer.toJson<int>(causalOrder),
       'dayStartUtc': serializer.toJson<int?>(dayStartUtc),
       'dayStartSource': serializer.toJson<String>(dayStartSource),
     };
@@ -3103,6 +3137,7 @@ class ReviewEvent extends DataClass implements Insertable<ReviewEvent> {
     int? intervalDaysAfter,
     int? algoVersion,
     String? mode,
+    int? causalOrder,
     Value<int?> dayStartUtc = const Value.absent(),
     String? dayStartSource,
   }) => ReviewEvent(
@@ -3117,6 +3152,7 @@ class ReviewEvent extends DataClass implements Insertable<ReviewEvent> {
     intervalDaysAfter: intervalDaysAfter ?? this.intervalDaysAfter,
     algoVersion: algoVersion ?? this.algoVersion,
     mode: mode ?? this.mode,
+    causalOrder: causalOrder ?? this.causalOrder,
     dayStartUtc: dayStartUtc.present ? dayStartUtc.value : this.dayStartUtc,
     dayStartSource: dayStartSource ?? this.dayStartSource,
   );
@@ -3141,6 +3177,9 @@ class ReviewEvent extends DataClass implements Insertable<ReviewEvent> {
           ? data.algoVersion.value
           : this.algoVersion,
       mode: data.mode.present ? data.mode.value : this.mode,
+      causalOrder: data.causalOrder.present
+          ? data.causalOrder.value
+          : this.causalOrder,
       dayStartUtc: data.dayStartUtc.present
           ? data.dayStartUtc.value
           : this.dayStartUtc,
@@ -3164,6 +3203,7 @@ class ReviewEvent extends DataClass implements Insertable<ReviewEvent> {
           ..write('intervalDaysAfter: $intervalDaysAfter, ')
           ..write('algoVersion: $algoVersion, ')
           ..write('mode: $mode, ')
+          ..write('causalOrder: $causalOrder, ')
           ..write('dayStartUtc: $dayStartUtc, ')
           ..write('dayStartSource: $dayStartSource')
           ..write(')'))
@@ -3183,6 +3223,7 @@ class ReviewEvent extends DataClass implements Insertable<ReviewEvent> {
     intervalDaysAfter,
     algoVersion,
     mode,
+    causalOrder,
     dayStartUtc,
     dayStartSource,
   );
@@ -3201,6 +3242,7 @@ class ReviewEvent extends DataClass implements Insertable<ReviewEvent> {
           other.intervalDaysAfter == this.intervalDaysAfter &&
           other.algoVersion == this.algoVersion &&
           other.mode == this.mode &&
+          other.causalOrder == this.causalOrder &&
           other.dayStartUtc == this.dayStartUtc &&
           other.dayStartSource == this.dayStartSource);
 }
@@ -3217,6 +3259,7 @@ class ReviewEventsCompanion extends UpdateCompanion<ReviewEvent> {
   final Value<int> intervalDaysAfter;
   final Value<int> algoVersion;
   final Value<String> mode;
+  final Value<int> causalOrder;
   final Value<int?> dayStartUtc;
   final Value<String> dayStartSource;
   final Value<int> rowid;
@@ -3232,6 +3275,7 @@ class ReviewEventsCompanion extends UpdateCompanion<ReviewEvent> {
     this.intervalDaysAfter = const Value.absent(),
     this.algoVersion = const Value.absent(),
     this.mode = const Value.absent(),
+    this.causalOrder = const Value.absent(),
     this.dayStartUtc = const Value.absent(),
     this.dayStartSource = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -3248,6 +3292,7 @@ class ReviewEventsCompanion extends UpdateCompanion<ReviewEvent> {
     this.intervalDaysAfter = const Value.absent(),
     this.algoVersion = const Value.absent(),
     this.mode = const Value.absent(),
+    this.causalOrder = const Value.absent(),
     this.dayStartUtc = const Value.absent(),
     this.dayStartSource = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -3270,6 +3315,7 @@ class ReviewEventsCompanion extends UpdateCompanion<ReviewEvent> {
     Expression<int>? intervalDaysAfter,
     Expression<int>? algoVersion,
     Expression<String>? mode,
+    Expression<int>? causalOrder,
     Expression<int>? dayStartUtc,
     Expression<String>? dayStartSource,
     Expression<int>? rowid,
@@ -3286,6 +3332,7 @@ class ReviewEventsCompanion extends UpdateCompanion<ReviewEvent> {
       if (intervalDaysAfter != null) 'interval_days_after': intervalDaysAfter,
       if (algoVersion != null) 'algo_version': algoVersion,
       if (mode != null) 'mode': mode,
+      if (causalOrder != null) 'causal_order': causalOrder,
       if (dayStartUtc != null) 'day_start_utc': dayStartUtc,
       if (dayStartSource != null) 'day_start_source': dayStartSource,
       if (rowid != null) 'rowid': rowid,
@@ -3304,6 +3351,7 @@ class ReviewEventsCompanion extends UpdateCompanion<ReviewEvent> {
     Value<int>? intervalDaysAfter,
     Value<int>? algoVersion,
     Value<String>? mode,
+    Value<int>? causalOrder,
     Value<int?>? dayStartUtc,
     Value<String>? dayStartSource,
     Value<int>? rowid,
@@ -3320,6 +3368,7 @@ class ReviewEventsCompanion extends UpdateCompanion<ReviewEvent> {
       intervalDaysAfter: intervalDaysAfter ?? this.intervalDaysAfter,
       algoVersion: algoVersion ?? this.algoVersion,
       mode: mode ?? this.mode,
+      causalOrder: causalOrder ?? this.causalOrder,
       dayStartUtc: dayStartUtc ?? this.dayStartUtc,
       dayStartSource: dayStartSource ?? this.dayStartSource,
       rowid: rowid ?? this.rowid,
@@ -3362,6 +3411,9 @@ class ReviewEventsCompanion extends UpdateCompanion<ReviewEvent> {
     if (mode.present) {
       map['mode'] = Variable<String>(mode.value);
     }
+    if (causalOrder.present) {
+      map['causal_order'] = Variable<int>(causalOrder.value);
+    }
     if (dayStartUtc.present) {
       map['day_start_utc'] = Variable<int>(dayStartUtc.value);
     }
@@ -3388,6 +3440,7 @@ class ReviewEventsCompanion extends UpdateCompanion<ReviewEvent> {
           ..write('intervalDaysAfter: $intervalDaysAfter, ')
           ..write('algoVersion: $algoVersion, ')
           ..write('mode: $mode, ')
+          ..write('causalOrder: $causalOrder, ')
           ..write('dayStartUtc: $dayStartUtc, ')
           ..write('dayStartSource: $dayStartSource, ')
           ..write('rowid: $rowid')
@@ -8531,6 +8584,7 @@ typedef $$ReviewEventsTableCreateCompanionBuilder =
       Value<int> intervalDaysAfter,
       Value<int> algoVersion,
       Value<String> mode,
+      Value<int> causalOrder,
       Value<int?> dayStartUtc,
       Value<String> dayStartSource,
       Value<int> rowid,
@@ -8548,6 +8602,7 @@ typedef $$ReviewEventsTableUpdateCompanionBuilder =
       Value<int> intervalDaysAfter,
       Value<int> algoVersion,
       Value<String> mode,
+      Value<int> causalOrder,
       Value<int?> dayStartUtc,
       Value<String> dayStartSource,
       Value<int> rowid,
@@ -8631,6 +8686,11 @@ class $$ReviewEventsTableFilterComposer
 
   ColumnFilters<String> get mode => $composableBuilder(
     column: $table.mode,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get causalOrder => $composableBuilder(
+    column: $table.causalOrder,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -8727,6 +8787,11 @@ class $$ReviewEventsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get causalOrder => $composableBuilder(
+    column: $table.causalOrder,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get dayStartUtc => $composableBuilder(
     column: $table.dayStartUtc,
     builder: (column) => ColumnOrderings(column),
@@ -8808,6 +8873,11 @@ class $$ReviewEventsTableAnnotationComposer
   GeneratedColumn<String> get mode =>
       $composableBuilder(column: $table.mode, builder: (column) => column);
 
+  GeneratedColumn<int> get causalOrder => $composableBuilder(
+    column: $table.causalOrder,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<int> get dayStartUtc => $composableBuilder(
     column: $table.dayStartUtc,
     builder: (column) => column,
@@ -8881,6 +8951,7 @@ class $$ReviewEventsTableTableManager
                 Value<int> intervalDaysAfter = const Value.absent(),
                 Value<int> algoVersion = const Value.absent(),
                 Value<String> mode = const Value.absent(),
+                Value<int> causalOrder = const Value.absent(),
                 Value<int?> dayStartUtc = const Value.absent(),
                 Value<String> dayStartSource = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -8896,6 +8967,7 @@ class $$ReviewEventsTableTableManager
                 intervalDaysAfter: intervalDaysAfter,
                 algoVersion: algoVersion,
                 mode: mode,
+                causalOrder: causalOrder,
                 dayStartUtc: dayStartUtc,
                 dayStartSource: dayStartSource,
                 rowid: rowid,
@@ -8913,6 +8985,7 @@ class $$ReviewEventsTableTableManager
                 Value<int> intervalDaysAfter = const Value.absent(),
                 Value<int> algoVersion = const Value.absent(),
                 Value<String> mode = const Value.absent(),
+                Value<int> causalOrder = const Value.absent(),
                 Value<int?> dayStartUtc = const Value.absent(),
                 Value<String> dayStartSource = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -8928,6 +9001,7 @@ class $$ReviewEventsTableTableManager
                 intervalDaysAfter: intervalDaysAfter,
                 algoVersion: algoVersion,
                 mode: mode,
+                causalOrder: causalOrder,
                 dayStartUtc: dayStartUtc,
                 dayStartSource: dayStartSource,
                 rowid: rowid,

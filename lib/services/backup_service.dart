@@ -491,6 +491,7 @@ class BackupService {
       eventWords[event['id'] as String] = event['wordId'] as String;
       eventById[event['id'] as String] = event;
       timestamp(event, 'answeredAt', required: true);
+      number(event, 'causalOrder');
       timestamp(event, 'dayStartUtc');
       if (event['dayStartSource'] != null &&
           ![
@@ -617,6 +618,9 @@ class BackupService {
       if (e.containsKey('wordBookId')) {
         e['wordBookId'] = bookKeys[e['wordBookId']] ?? e['wordBookId'];
       }
+    }
+    for (final event in events) {
+      event.putIfAbsent('causalOrder', () => 0);
     }
     for (final e in entries) {
       e.remove('addedAt');
@@ -935,6 +939,7 @@ class BackupService {
         )..where((t) => t.id.equals(incoming.id))).getSingleOrNull();
         if (local != null) {
           if (local.wordId != incoming.wordId ||
+              local.causalOrder != incoming.causalOrder ||
               local.deviceId != incoming.deviceId ||
               local.answeredAt != incoming.answeredAt ||
               local.result != incoming.result ||
@@ -1205,6 +1210,7 @@ class BackupService {
     'intervalDaysAfter': e.intervalDaysAfter,
     'algoVersion': e.algoVersion,
     'mode': e.mode,
+    'causalOrder': e.causalOrder,
     'dayStartSource': e.dayStartSource,
     'dayStartUtc': _iso(
       e.dayStartUtc ??
@@ -1246,6 +1252,7 @@ class BackupService {
       intervalDaysAfter: _int(node['intervalDaysAfter']),
       algoVersion: _int(node['algoVersion'], fallback: 1),
       mode: _str(node['mode'], fallback: 'normal'),
+      causalOrder: _int(node['causalOrder']),
       dayStartSource: _str(
         node['dayStartSource'],
         fallback: node['dayStartUtc'] == null ? 'legacy-utc' : 'authored',

@@ -385,8 +385,11 @@ class WordRepository {
     return (db.select(db.reviewEvents)
           ..where((t) => t.wordId.equals(wordId))
           ..orderBy(<OrderClauseGenerator<$ReviewEventsTable>>[
+            (t) => OrderingTerm.desc(t.causalOrder),
             (t) =>
                 OrderingTerm(expression: t.answeredAt, mode: OrderingMode.desc),
+            (t) => OrderingTerm.desc(t.deviceId),
+            (t) => OrderingTerm.desc(t.id),
           ])
           ..limit(limit))
         .get();

@@ -145,6 +145,9 @@ class _AppShellState extends ConsumerState<AppShell>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) {
+      ref.read(ttsServiceProvider).stop();
+    }
     if (state == AppLifecycleState.resumed) {
       _refreshDailyData();
       _scheduleDueRefresh();

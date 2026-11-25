@@ -83,6 +83,7 @@ class AppDatabase extends _$AppDatabase {
         await m.addColumn(reviewEvents, reviewEvents.mode);
       }
       if (from < 3) {
+        await m.addColumn(reviewEvents, reviewEvents.causalOrder);
         await m.addColumn(reviewEvents, reviewEvents.dayStartUtc);
         await m.addColumn(reviewEvents, reviewEvents.dayStartSource);
         await m.createTable(wordFavorites);

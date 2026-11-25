@@ -11,6 +11,7 @@ import '../../services/study_session.dart';
 import '../../services/tts_service.dart';
 import '../../shared/widgets/common.dart';
 import '../word_management/word_metadata_widgets.dart';
+import '../word_management/word_detail_page.dart';
 
 /// Learning / review screen.
 ///
@@ -190,6 +191,27 @@ class _StudyPageState extends ConsumerState<StudyPage> {
               ),
             ),
             actions: <Widget>[
+              if (_session.current != null && !_session.isFinished)
+                IconButton(
+                  tooltip: '编辑当前词条',
+                  icon: const Icon(Icons.edit_outlined),
+                  onPressed: _session.isBusy
+                      ? null
+                      : () async {
+                          final wordId = _session.current!.word.id;
+                          await _tts.stop();
+                          if (!context.mounted) return;
+                          await Navigator.of(context).push<void>(
+                            MaterialPageRoute(
+                              builder: (_) => WordDetailPage(
+                                wordId: wordId,
+                                bookId: widget.bookIdOverride,
+                              ),
+                            ),
+                          );
+                          if (mounted) await _session.refreshCurrent();
+                        },
+                ),
               if (_session.current != null &&
                   !_session.isLoading &&
                   !_session.isFinished)
