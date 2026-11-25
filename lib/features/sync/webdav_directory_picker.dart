@@ -72,6 +72,7 @@ class _WebDavDirectoryDialogState extends State<_WebDavDirectoryDialog> {
     setState(() {
       _loading = true;
       _error = null;
+      _entries = const <WebDavDirectoryEntry>[];
     });
     try {
       final List<WebDavDirectoryEntry> entries = await widget.provider
@@ -193,7 +194,7 @@ class _WebDavDirectoryDialogState extends State<_WebDavDirectoryDialog> {
       ),
       actions: <Widget>[
         TextButton(
-          onPressed: _loading ? null : _createFolder,
+          onPressed: _loading || _error != null ? null : _createFolder,
           child: Text(context.l10n.newFolder),
         ),
         TextButton(
@@ -201,7 +202,7 @@ class _WebDavDirectoryDialogState extends State<_WebDavDirectoryDialog> {
           child: Text(context.l10n.commonCancel),
         ),
         TextButton(
-          onPressed: _loading ? null : () => Navigator.of(context).pop(_path),
+          onPressed: _loading || _error != null ? null : () => Navigator.of(context).pop(_path),
           child: Text(context.l10n.chooseThisFolder),
         ),
       ],
@@ -231,6 +232,12 @@ class _WebDavDirectoryDialogState extends State<_WebDavDirectoryDialog> {
           },
         ),
     ];
+    if (_error != null) {
+      return Center(child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+        Text(context.l10n.cannotReadFolder),
+        TextButton(onPressed: _load, child: Text(context.l10n.commonRefresh)),
+      ]));
+    }
     if (rows.isEmpty) {
       return Padding(
         padding: const EdgeInsets.only(top: 16),

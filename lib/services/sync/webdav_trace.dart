@@ -42,6 +42,12 @@ class WebDavTraceEntry {
     required this.method,
     required this.host,
     required this.path,
+    this.hasQuery = false,
+    this.hasFragment = false,
+    this.depth,
+    this.propfindProfile,
+    this.compatibilityMode,
+    this.serverErrorCode,
     required this.status,
     required this.durationMs,
     this.redirects = 0,
@@ -58,6 +64,12 @@ class WebDavTraceEntry {
   /// Host only — never the user info, never a query string.
   final String host;
   final String path;
+  final bool hasQuery;
+  final bool hasFragment;
+  final String? depth;
+  final String? propfindProfile;
+  final String? compatibilityMode;
+  final String? serverErrorCode;
   final int? status;
   final int durationMs;
   final int redirects;
@@ -77,6 +89,14 @@ class WebDavTraceEntry {
       ..write('method=$method ')
       ..write('host=$host ')
       ..write('path=$path ');
+    if (hasQuery) out.write('has_query=true ');
+    if (hasFragment) out.write('has_fragment=true ');
+    if (depth != null) out.write('depth=$depth ');
+    if (propfindProfile != null) out.write('profile=$propfindProfile ');
+    if (compatibilityMode != null) out.write('compatibility=$compatibilityMode ');
+    if (serverErrorCode != null) {
+      out.write('server_error=${serverErrorCode!.replaceAll(RegExp(r'[\\r\\n\\s]+'), ' ')} ');
+    }
     if (status != null) out.write('status=$status ');
     if (redirects > 0) out.write('redirects=$redirects ');
     if (conditional != null) out.write('conditional=$conditional ');

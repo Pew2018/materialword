@@ -55,6 +55,9 @@ enum SyncCapabilityStatus {
   /// The server answered, but rejected the credentials.
   authenticationFailed,
 
+  /// The server rejected the WebDAV request format; authentication is unknown.
+  requestRejected,
+
   /// Authenticated, but the configured collection cannot be reached/created.
   directoryUnavailable,
 

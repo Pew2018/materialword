@@ -79,7 +79,7 @@ class WebDavPaths {
     final String basePath = baseSegments.isEmpty
         ? '/'
         : '/${baseSegments.map(Uri.encodeComponent).join('/')}/';
-    final Uri base = parsed.replace(path: basePath, query: '', fragment: '');
+    final Uri base = parsed.replace(path: basePath);
 
     final List<String> dirSegments = <String>[];
     for (final String raw in remoteDir.split(RegExp(r'[/\\]'))) {
