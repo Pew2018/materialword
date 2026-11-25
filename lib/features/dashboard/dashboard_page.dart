@@ -10,23 +10,25 @@ import '../../core/models/enums.dart';
 import '../../core/models/study_models.dart';
 import '../../core/repositories/wordbook_repository.dart';
 import '../../services/import_service.dart';
+import '../../shared/widgets/classic_select.dart';
 import '../../shared/widgets/common.dart';
-import '../backup/backup_page.dart';
-import '../study/study_page.dart';
 import '../study/practice_page.dart';
 import '../study/sprint_page.dart';
+import '../study/study_page.dart';
 import '../word_management/import_page.dart';
-import '../word_management/quick_add_page.dart';
 
 /// "Today" screen: everything needed to start learning, all from the database.
 ///
 /// Every number here is derived from real rows — the previous version could
 /// announce "30 new words left" on an empty library because it only subtracted
 /// finished cards from the goal.
+///
+/// Deliberate restraint: one primary action (start), one secondary action
+/// (review only) and one flat list of special drills. The dashboard used to
+/// show seven buttons of four different weights plus shortcut tiles that only
+/// duplicated the navigation bar; both are gone.
 class DashboardPage extends ConsumerWidget {
-  const DashboardPage({super.key, required this.onOpenBookTab});
-
-  final VoidCallback onOpenBookTab;
+  const DashboardPage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -50,153 +52,131 @@ class DashboardPage extends ConsumerWidget {
         ref.invalidate(bookSummariesProvider);
         await ref.read(todayProgressProvider.future);
       },
-      child: ListView(
-        padding: const EdgeInsets.only(bottom: 24),
-        children: <Widget>[
-          if (progress.hasError)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-              child: ErrorBanner(
-                message: '读取学习进度失败：${progress.error}',
-                onRetry: () => ref.invalidate(todayProgressProvider),
+      child: ContentColumn(
+        child: ListView(
+          padding: const EdgeInsets.only(bottom: 24),
+          children: <Widget>[
+            if (progress.hasError)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: ErrorBanner(
+                  message: '读取学习进度失败：${progress.error}',
+                  onRetry: () => ref.invalidate(todayProgressProvider),
+                ),
               ),
+            _BookSelector(
+              books: books.value ?? const <WordBookSummary>[],
+              currentBookId: settings.value?.currentWordBookId,
+              onChanged: (String? id) async {
+                await ref
+                    .read(settingsRepositoryProvider)
+                    .save(currentWordBookId: Value<String?>(id));
+                ref.invalidate(todayProgressProvider);
+              },
             ),
-          _BookSelector(
-            books: books.value ?? const <WordBookSummary>[],
-            currentBookId: settings.value?.currentWordBookId,
-            onChanged: (String? id) async {
-              await ref
-                  .read(settingsRepositoryProvider)
-                  .save(currentWordBookId: Value<String?>(id));
-              ref.invalidate(todayProgressProvider);
-            },
-            onManage: onOpenBookTab,
-          ),
-          SettingsTile(
-            leading: const Icon(Icons.flag_outlined),
-            title: '考前冲刺',
-            subtitle: sprint?.enabled == true
-                ? '考试日期 ${sprint!.examDate} · 每轮 ${sprint.roundSize} 个'
-                : '设置考试日期与目标词书，独立安排重点练习',
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.of(
-              context,
-            ).push<void>(MaterialPageRoute(builder: (_) => const SprintPage())),
-          ),
-          if (canResume)
             SettingsTile(
-              leading: const Icon(Icons.play_circle_outline),
-              title: '继续学习',
-              subtitle: '已完成 ${resume.position} / ${resume.total} 项',
+              leading: const Icon(Icons.flag_outlined),
+              title: '考前冲刺',
+              subtitle: sprint?.enabled == true
+                  ? '考试日期 ${sprint!.examDate} · 每轮 ${sprint.roundSize} 个'
+                  : '设置考试日期与目标词书，独立安排重点练习',
               trailing: const Icon(Icons.chevron_right),
               onTap: () => Navigator.of(context).push<void>(
-                MaterialPageRoute(
-                  builder: (_) => StudyPage(
-                    reviewOnly: resume.mode == StudyMode.reviewOnly,
-                    special: resume.special,
-                    bookIdOverride: resume.bookId,
-                    useGlobalScope: resume.bookId == null,
-                  ),
-                ),
+                MaterialPageRoute(builder: (_) => const SprintPage()),
               ),
             ),
-          if (today == null)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 48),
-              child: Center(child: CircularProgressIndicator()),
-            )
-          else if (today.totalWords == 0) ...<Widget>[
-            SectionHeader(
-              title: '今日任务',
-              trailing: Text(
-                today.scopedToBook ? '范围：当前词书' : '范围：全部词书',
-                style: theme.textTheme.bodySmall,
-              ),
-            ),
-            const _FirstRunPanel(),
-          ] else ...<Widget>[
-            SectionHeader(
-              title: '今日任务',
-              trailing: Text(
-                today.scopedToBook ? '范围：当前词书' : '范围：全部词书',
-                style: theme.textTheme.bodySmall,
-              ),
-            ),
-            _TodayPanel(progress: today),
-            SectionHeader(title: '开始学习'),
-            _StartActions(progress: today),
-            if (today.backlog > 0)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: Text(
-                  '${today.backlog} 个到期单词超出今日复习上限，会顺延到明天，不会丢失。',
-                  style: theme.textTheme.bodySmall,
-                ),
-              ),
-            SectionHeader(title: '练习'),
-            const _PracticeActions(),
-            SectionHeader(title: '快捷操作'),
-            SettingsGroup(
-              children: <Widget>[
-                SettingsTile(
-                  leading: const Icon(Icons.add),
-                  title: '快速添加单词',
-                  subtitle: '输入即查离线词典，⌘N / Ctrl+N',
-                  onTap: () async {
-                    await Navigator.of(context).push<void>(
-                      MaterialPageRoute<void>(
-                        builder: (BuildContext context) => const QuickAddPage(),
-                      ),
-                    );
-                    ref.invalidate(todayProgressProvider);
-                    ref.invalidate(bookSummariesProvider);
-                  },
-                ),
-                SettingsTile(
-                  leading: const Icon(Icons.file_upload_outlined),
-                  title: '导入词书',
-                  subtitle: 'TXT / CSV / JSON，支持 HTTPS 链接',
-                  onTap: () async {
-                    await Navigator.of(context).push<void>(
-                      MaterialPageRoute<void>(
-                        builder: (BuildContext context) => const ImportPage(),
-                      ),
-                    );
-                    ref.invalidate(todayProgressProvider);
-                    ref.invalidate(bookSummariesProvider);
-                  },
-                ),
-                SettingsTile(
-                  leading: const Icon(Icons.sync_outlined),
-                  title: '同步与备份',
-                  subtitle: '导出 / 合并 JSON，跨设备同步',
-                  onTap: () => Navigator.of(context).push<void>(
-                    MaterialPageRoute<void>(
-                      builder: (BuildContext context) => const BackupPage(),
+            if (canResume)
+              SettingsTile(
+                leading: const Icon(Icons.play_circle_outline),
+                title: '继续学习',
+                subtitle: '已完成 ${resume.position} / ${resume.total} 项',
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.of(context).push<void>(
+                  MaterialPageRoute(
+                    builder: (_) => StudyPage(
+                      reviewOnly: resume.mode == StudyMode.reviewOnly,
+                      special: resume.special,
+                      bookIdOverride: resume.bookId,
+                      useGlobalScope: resume.bookId == null,
                     ),
                   ),
                 ),
-              ],
-            ),
+              ),
+            if (today == null)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 48),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (today.totalWords == 0) ...<Widget>[
+              SectionHeader(
+                title: '今日任务',
+                trailing: Text(
+                  today.scopedToBook ? '范围：当前词书' : '范围：全部词书',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ),
+              const _FirstRunPanel(),
+            ] else ...<Widget>[
+              SectionHeader(
+                title: '今日任务',
+                trailing: Text(
+                  today.scopedToBook ? '范围：当前词书' : '范围：全部词书',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ),
+              _TodayPanel(progress: today),
+              if (today.backlog > 0)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+                  child: Text(
+                    '${today.backlog} 个到期单词超出今日复习上限，会顺延到明天，不会丢失。',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ),
+              SectionHeader(title: '开始学习'),
+              _StartActions(progress: today),
+              SectionHeader(title: '专项复习'),
+              _SpecialReviewGroup(progress: today),
+              SectionHeader(title: '练习'),
+              const _PracticeActions(),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
 }
 
+Future<void> _openStudy(
+  BuildContext context,
+  WidgetRef ref, {
+  SpecialReview special = SpecialReview.none,
+  bool reviewOnly = false,
+}) async {
+  await Navigator.of(context).push<void>(
+    MaterialPageRoute<void>(
+      builder: (BuildContext context) =>
+          StudyPage(reviewOnly: reviewOnly, special: special),
+    ),
+  );
+  ref.invalidate(todayProgressProvider);
+  ref.invalidate(statisticsProvider);
+  ref.invalidate(bookSummariesProvider);
+}
+
+/// Current-book selector. The trailing "词书" text button was removed: the
+/// navigation bar already has a 词书 destination, and a second entry next to the
+/// selector only added a way to leave the page by accident.
 class _BookSelector extends StatelessWidget {
   const _BookSelector({
     required this.books,
     required this.currentBookId,
     required this.onChanged,
-    required this.onManage,
   });
 
   final List<WordBookSummary> books;
   final String? currentBookId;
   final ValueChanged<String?> onChanged;
-  final VoidCallback onManage;
 
   @override
   Widget build(BuildContext context) {
@@ -204,45 +184,38 @@ class _BookSelector extends StatelessWidget {
     final bool bookMissing =
         currentBookId != null &&
         !books.any((WordBookSummary b) => b.book.id == currentBookId);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 8, 4),
-      child: Row(
-        children: <Widget>[
-          Icon(
-            Icons.menu_book,
-            size: AppDimens.iconSizeSmall,
-            color: theme.colorScheme.primary,
-          ),
-          AppSpacing.w8,
-          Text('当前学习词书', style: theme.textTheme.bodySmall),
-          AppSpacing.w8,
-          Expanded(
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String?>(
-                isExpanded: true,
-                isDense: true,
-                value: bookMissing ? null : currentBookId,
-                hint: Text('全部词书', style: theme.textTheme.bodyLarge),
-                items: <DropdownMenuItem<String?>>[
-                  const DropdownMenuItem<String?>(
-                    value: null,
-                    child: Text('全部词书'),
-                  ),
+    final String selectedId = bookMissing ? '' : (currentBookId ?? '');
+    return Material(
+      color: theme.cardColor,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 12, 8),
+        child: Row(
+          children: <Widget>[
+            Icon(
+              Icons.menu_book,
+              size: AppDimens.iconSizeSmall,
+              color: theme.colorScheme.primary,
+            ),
+            AppSpacing.w8,
+            Text('当前学习词书', style: theme.textTheme.bodySmall),
+            AppSpacing.w12,
+            Flexible(
+              child: ClassicSelectChip<String>(
+                label: '全部词书',
+                value: selectedId,
+                options: <ClassicOption<String>>[
+                  const ClassicOption<String>(value: '', label: '全部词书'),
                   for (final WordBookSummary summary in books)
-                    DropdownMenuItem<String?>(
+                    ClassicOption<String>(
                       value: summary.book.id,
-                      child: Text(
-                        '${summary.book.name}（${summary.wordCount} 词）',
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                      label: '${summary.book.name}（${summary.wordCount} 词）',
                     ),
                 ],
-                onChanged: onChanged,
+                onChanged: (String id) => onChanged(id.isEmpty ? null : id),
               ),
             ),
-          ),
-          TextButton(onPressed: onManage, child: const Text('词书')),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -324,6 +297,8 @@ class _TodayPanel extends StatelessWidget {
   }
 }
 
+/// One primary (filled) and one secondary (outlined) action. The counts moved
+/// into the progress panel above, so the primary label never wraps.
 class _StartActions extends ConsumerWidget {
   const _StartActions({required this.progress});
 
@@ -334,7 +309,7 @@ class _StartActions extends ConsumerWidget {
     final ThemeData theme = Theme.of(context);
     if (!progress.hasWork) {
       return Padding(
-        padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
         child: Row(
           children: <Widget>[
             Icon(
@@ -354,56 +329,79 @@ class _StartActions extends ConsumerWidget {
       );
     }
 
-    Future<void> open({
-      SpecialReview special = SpecialReview.none,
-      bool reviewOnly = false,
-    }) async {
-      await Navigator.of(context).push<void>(
-        MaterialPageRoute<void>(
-          builder: (BuildContext context) =>
-              StudyPage(reviewOnly: reviewOnly, special: special),
-        ),
-      );
-      ref.invalidate(todayProgressProvider);
-      ref.invalidate(statisticsProvider);
-      ref.invalidate(bookSummariesProvider);
-    }
+    final Widget primary = Builder(
+      builder: (BuildContext context) => ElevatedButton.icon(
+        onPressed: progress.canStartNew || progress.canStartReview
+            ? () => _openStudy(context, ref)
+            : null,
+        icon: const Icon(Icons.play_arrow),
+        label: const Text('开始学习'),
+      ),
+    );
+    final Widget secondary = Builder(
+      builder: (BuildContext context) => OutlinedButton.icon(
+        onPressed: progress.canStartReview
+            ? () => _openStudy(context, ref, reviewOnly: true)
+            : null,
+        icon: const Icon(Icons.replay),
+        label: const Text('只做复习'),
+      ),
+    );
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: <Widget>[
-          ElevatedButton.icon(
-            onPressed: progress.canStartNew || progress.canStartReview
-                ? () => open()
-                : null,
-            icon: const Icon(Icons.play_arrow),
-            label: Text(
-              '开始学习（新 ${progress.newAvailableToday} · 复习 ${progress.reviewAvailableToday}）',
-            ),
-          ),
-          OutlinedButton.icon(
-            onPressed: progress.canStartReview
-                ? () => open(reviewOnly: true)
-                : null,
-            icon: const Icon(Icons.replay),
-            label: Text('只做复习（${progress.reviewAvailableToday}）'),
-          ),
-          if (progress.hardWords > 0)
-            TextButton.icon(
-              onPressed: () => open(special: SpecialReview.hard),
-              icon: const Icon(Icons.local_fire_department_outlined),
-              label: Text('困难词专项（${progress.hardWords}）'),
-            ),
-          TextButton.icon(
-            onPressed: () => open(special: SpecialReview.recentMistakes),
-            icon: const Icon(Icons.error_outline),
-            label: const Text('近期错误专项'),
-          ),
-        ],
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          if (constraints.maxWidth < 340) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[primary, AppSpacing.h8, secondary],
+            );
+          }
+          return Row(
+            children: <Widget>[
+              Expanded(flex: 3, child: primary),
+              AppSpacing.w8,
+              Expanded(flex: 2, child: secondary),
+            ],
+          );
+        },
       ),
+    );
+  }
+}
+
+/// Focused drills are list rows, not buttons: they are secondary entry points
+/// and must not compete with "开始学习" for attention.
+class _SpecialReviewGroup extends ConsumerWidget {
+  const _SpecialReviewGroup({required this.progress});
+
+  final TodayProgress progress;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return SettingsGroup(
+      children: <Widget>[
+        SettingsTile(
+          leading: const Icon(Icons.local_fire_department_outlined),
+          title: '困难词专项',
+          subtitle: progress.hardWords > 0
+              ? '${progress.hardWords} 个答错或模糊过的单词'
+              : '暂时没有困难词',
+          trailing: const Icon(Icons.chevron_right),
+          onTap: progress.hardWords > 0
+              ? () => _openStudy(context, ref, special: SpecialReview.hard)
+              : null,
+        ),
+        SettingsTile(
+          leading: const Icon(Icons.error_outline),
+          title: '近期错误专项',
+          subtitle: '按最近答错的单词集中复习',
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () =>
+              _openStudy(context, ref, special: SpecialReview.recentMistakes),
+        ),
+      ],
     );
   }
 }

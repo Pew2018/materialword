@@ -41,13 +41,9 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
         (
           id: 'github',
           label: 'GitHub 私有仓库',
-          description: '推荐使用独立的私有数据仓库 + Fine-grained PAT',
+          description: '推荐使用一个单独的数据仓库，只存放学习数据',
         ),
-        (
-          id: 'webdav',
-          label: 'WebDAV',
-          description: '自建或支持 ETag 条件写入的 WebDAV 目录',
-        ),
+        (id: 'webdav', label: 'WebDAV', description: '自建或支持安全多设备同步的 WebDAV 目录'),
       ];
 
   String _provider = 'none';
@@ -131,7 +127,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       // denied access. Either way the fix is the same — type it again.
       if (credentialNotice == null) {
         if (_provider == 'github' && (token?.isEmpty ?? true)) {
-          credentialNotice = '未读取到已保存的 GitHub Token，请重新输入后再同步。';
+          credentialNotice = '未读取到已保存的访问令牌，请重新输入后再同步。';
         } else if (_provider == 'webdav' && !hasPassword) {
           credentialNotice = '未读取到已保存的 WebDAV 密码，请重新输入后再同步。';
         }
@@ -540,7 +536,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
           '「${conflict.label.isEmpty ? conflict.entityId : conflict.label}」的 '
           '${_fieldLabel(conflict.field)} 将改回：\n'
           '${_displayValue(conflict.field, conflict.discardedValue)}\n\n'
-          '这会记录为一次新的本机编辑，并按字段版本同步到其他设备。',
+          '这会作为一次新的修改同步到其他设备。',
       confirmLabel: '恢复',
     );
     if (!ok || !mounted) return;
@@ -619,7 +615,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       context,
       title: '解除同步配置',
       message:
-          '将删除本机保存的同步配置和凭据（Token / 密码）。'
+          '将删除本机保存的同步配置和凭据（访问令牌 / 密码）。'
           '远程数据不会被删除，本地学习数据不受影响。',
       confirmLabel: '解除',
       destructive: true,
@@ -677,342 +673,349 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('数据同步')),
-      body: ListView(
-        padding: const EdgeInsets.only(bottom: 40),
-        children: <Widget>[
-          if (_error != null)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-              child: ErrorBanner(message: _error!),
-            ),
-          if (_credentialNotice != null)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-              child: NoticeBanner(message: _credentialNotice!),
-            ),
-          if (_busy)
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 12, 16, 0),
-              child: LinearProgressIndicator(minHeight: 3),
-            ),
-          if (_paused)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-              child: Material(
-                color: AppColors.hazy.withValues(alpha: 0.12),
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Text('同步已暂停', style: theme.textTheme.titleSmall),
-                      AppSpacing.h4,
-                      Text(
-                        _pausedReason ?? '本机数据来自历史恢复。确认远端如何处理之前，自动同步不会运行。',
-                        style: theme.textTheme.bodySmall,
-                      ),
-                      AppSpacing.h8,
-                      Wrap(
-                        spacing: 8,
-                        children: <Widget>[
-                          OutlinedButton(
-                            onPressed: _busy ? null : _mergeRemoteAfterRestore,
-                            child: const Text('合并远端数据'),
-                          ),
-                          TextButton(
-                            onPressed: _busy ? null : _stayPaused,
-                            child: const Text('保持本机状态'),
-                          ),
-                        ],
-                      ),
-                      Text(
-                        '不会自动用任一方的数据覆盖另一方：合并只补充缺失内容。',
-                        style: theme.textTheme.bodySmall,
-                      ),
-                    ],
-                  ),
-                ),
+      body: ContentColumn(
+        child: ListView(
+          padding: const EdgeInsets.only(bottom: 40),
+          children: <Widget>[
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: ErrorBanner(message: _error!),
               ),
-            ),
-          SectionHeader(title: '同步方式（同一时间只启用一种）'),
-          SettingsGroup(
-            children: <Widget>[
-              for (final ({String id, String label, String description}) option
-                  in _options)
-                RadioListTile<String>(
-                  dense: true,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-                  value: option.id,
-                  groupValue: _provider,
-                  onChanged: (String? value) =>
-                      _selectProvider(value ?? 'none'),
-                  title: Text(option.label),
-                  subtitle: Text(
-                    option.description,
-                    style: theme.textTheme.bodySmall,
-                  ),
-                ),
-            ],
-          ),
-          if (_provider != 'none') ...<Widget>[
-            SectionHeader(title: '连接配置'),
-            _configGroup(),
-            SectionHeader(title: '同步'),
-            SettingsGroup(
-              children: <Widget>[
-                SwitchListTile(
-                  dense: true,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-                  value: autoStart,
-                  onChanged: !canAuto || _busy
-                      ? null
-                      : (value) => _setAutoOption('autoOnStart', value),
-                  title: const Text('启动时同步'),
-                  subtitle: Text(
-                    '不阻塞启动：应用始终先显示本地数据',
-                    style: theme.textTheme.bodySmall,
-                  ),
-                ),
-                SwitchListTile(
-                  dense: true,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-                  value: autoResume,
-                  onChanged: !canAuto || _busy
-                      ? null
-                      : (value) => _setAutoOption('autoOnResume', value),
-                  title: const Text('恢复前台时同步'),
-                  subtitle: Text(
-                    '最多每分钟一次，失败退避 5–60 分钟，重启后仍保留',
-                    style: theme.textTheme.bodySmall,
-                  ),
-                ),
-                SwitchListTile(
-                  value: _fields['autoOnChange'] == 'true',
-                  onChanged: !canAuto || _busy
-                      ? null
-                      : (value) => _setAutoOption('autoOnChange', value),
-                  title: const Text('数据变化后自动同步'),
-                  subtitle: const Text('停止修改 20 秒后检查；持续背词不会每次请求网络'),
-                ),
-                SwitchListTile(
-                  value: _fields['autoAfterSession'] == 'true',
-                  onChanged: !canAuto || _busy
-                      ? null
-                      : (value) => _setAutoOption('autoAfterSession', value),
-                  title: const Text('本轮学习结束后同步'),
-                  subtitle: const Text('遵守同一冷却与退避规则，不阻塞学习'),
-                ),
-                if (!canAuto)
-                  const Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Text('本地文件仅用于手动合并；自动双向同步请选择支持条件写入的远程目标。'),
-                  ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: <Widget>[
-                      OutlinedButton.icon(
-                        onPressed: _busy ? null : _runTest,
-                        icon: const Icon(Icons.wifi_tethering),
-                        label: const Text('测试连接'),
-                      ),
-                      ElevatedButton.icon(
-                        onPressed: _busy ? null : _syncNow,
-                        icon: const Icon(Icons.sync),
-                        label: Text(_busy ? '同步中…' : '立即同步'),
-                      ),
-                      TextButton.icon(
-                        onPressed: _busy ? null : _exportBackup,
-                        icon: const Icon(Icons.save_alt),
-                        label: const Text('导出本地备份'),
-                      ),
-                    ],
-                  ),
-                ),
-                if (_testResult != null)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+            if (_credentialNotice != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: NoticeBanner(message: _credentialNotice!),
+              ),
+            if (_busy)
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: LinearProgressIndicator(minHeight: 3),
+              ),
+            if (_paused)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: Material(
+                  color: AppColors.hazy.withValues(alpha: 0.12),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: <Widget>[
-                        Row(
+                        Text('同步已暂停', style: theme.textTheme.titleSmall),
+                        AppSpacing.h4,
+                        Text(
+                          _pausedReason ?? '本机数据来自历史恢复。确认远端如何处理之前，自动同步不会运行。',
+                          style: theme.textTheme.bodySmall,
+                        ),
+                        AppSpacing.h8,
+                        Wrap(
+                          spacing: 8,
                           children: <Widget>[
-                            Icon(
-                              _testResult!.ok
-                                  ? Icons.check_circle
-                                  : Icons.error_outline,
-                              size: AppDimens.iconSizeSmall,
-                              color: _testResult!.ok
-                                  ? AppColors.known
-                                  : AppColors.unknown,
+                            OutlinedButton(
+                              onPressed: _busy
+                                  ? null
+                                  : _mergeRemoteAfterRestore,
+                              child: const Text('合并远端数据'),
                             ),
-                            AppSpacing.w8,
-                            Expanded(
-                              child: Text(
-                                _testResult!.message,
-                                style: theme.textTheme.bodyMedium,
-                              ),
+                            TextButton(
+                              onPressed: _busy ? null : _stayPaused,
+                              child: const Text('保持本机状态'),
                             ),
                           ],
                         ),
-                        for (final String detail in _testResult!.details)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: Text(
-                              detail.startsWith('NO_CONDITIONAL_WRITE')
-                                  ? detail.replaceFirst(
-                                      'NO_CONDITIONAL_WRITE:',
-                                      '注意：',
-                                    )
-                                  : '· $detail',
-                              style: theme.textTheme.bodySmall,
-                            ),
-                          ),
+                        Text(
+                          '不会自动用任一方的数据覆盖另一方：合并只补充缺失内容。',
+                          style: theme.textTheme.bodySmall,
+                        ),
                       ],
+                    ),
+                  ),
+                ),
+              ),
+            SectionHeader(title: '同步方式（同一时间只启用一种）'),
+            SettingsGroup(
+              children: <Widget>[
+                for (final ({String id, String label, String description})
+                    option
+                    in _options)
+                  RadioListTile<String>(
+                    dense: true,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                    value: option.id,
+                    groupValue: _provider,
+                    onChanged: (String? value) =>
+                        _selectProvider(value ?? 'none'),
+                    title: Text(option.label),
+                    subtitle: Text(
+                      option.description,
+                      style: theme.textTheme.bodySmall,
                     ),
                   ),
               ],
             ),
-            if (_conflicts.isNotEmpty) ...<Widget>[
-              SectionHeader(title: '同步冲突记录（本机，最多 50 条）'),
+            if (_provider != 'none') ...<Widget>[
+              SectionHeader(title: '连接配置'),
+              _configGroup(),
+              SectionHeader(title: '同步'),
               SettingsGroup(
                 children: <Widget>[
-                  for (final StoredSyncConflict conflict in _conflicts)
-                    ListTile(
-                      dense: true,
-                      title: Text(
-                        '${conflict.label.isEmpty ? conflict.entityId : conflict.label}'
-                        ' · ${_fieldLabel(conflict.field)}',
-                      ),
-                      subtitle: Text(
-                        '保留：${_displayValue(conflict.field, conflict.adoptedValue)}\n'
-                        '被覆盖：${_displayValue(conflict.field, conflict.discardedValue)}',
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodySmall,
-                      ),
-                      trailing: Wrap(
-                        spacing: 4,
+                  SwitchListTile(
+                    dense: true,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                    value: autoStart,
+                    onChanged: !canAuto || _busy
+                        ? null
+                        : (value) => _setAutoOption('autoOnStart', value),
+                    title: const Text('启动时同步'),
+                    subtitle: Text(
+                      '不阻塞启动：应用始终先显示本地数据',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ),
+                  SwitchListTile(
+                    dense: true,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                    value: autoResume,
+                    onChanged: !canAuto || _busy
+                        ? null
+                        : (value) => _setAutoOption('autoOnResume', value),
+                    title: const Text('恢复前台时同步'),
+                    subtitle: Text(
+                      '最多每分钟一次，失败退避 5–60 分钟，重启后仍保留',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ),
+                  SwitchListTile(
+                    value: _fields['autoOnChange'] == 'true',
+                    onChanged: !canAuto || _busy
+                        ? null
+                        : (value) => _setAutoOption('autoOnChange', value),
+                    title: const Text('数据变化后自动同步'),
+                    subtitle: const Text('停止修改 20 秒后检查；持续背词不会每次请求网络'),
+                  ),
+                  SwitchListTile(
+                    value: _fields['autoAfterSession'] == 'true',
+                    onChanged: !canAuto || _busy
+                        ? null
+                        : (value) => _setAutoOption('autoAfterSession', value),
+                    title: const Text('本轮学习结束后同步'),
+                    subtitle: const Text('遵守同一冷却与退避规则，不阻塞学习'),
+                  ),
+                  if (!canAuto)
+                    const Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Text('本地文件仅用于手动合并；自动双向同步请选择支持条件写入的远程目标。'),
+                    ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: <Widget>[
+                        OutlinedButton.icon(
+                          onPressed: _busy ? null : _runTest,
+                          icon: const Icon(Icons.wifi_tethering),
+                          label: const Text('测试连接'),
+                        ),
+                        ElevatedButton.icon(
+                          onPressed: _busy ? null : _syncNow,
+                          icon: const Icon(Icons.sync),
+                          label: Text(_busy ? '同步中…' : '立即同步'),
+                        ),
+                        TextButton.icon(
+                          onPressed: _busy ? null : _exportBackup,
+                          icon: const Icon(Icons.save_alt),
+                          label: const Text('导出本地备份'),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (_testResult != null)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: <Widget>[
-                          // A field this build cannot write back must not offer a
-                          // button that would only pretend to restore.
-                          if (SyncConflictResolutionService.canRestore(
-                            conflict,
-                          ))
-                            IconButton(
-                              tooltip: '恢复被覆盖的内容',
-                              icon: const Icon(Icons.undo),
-                              onPressed: _busy
-                                  ? null
-                                  : () => _restoreConflict(conflict),
-                            )
-                          else
-                            const Tooltip(
-                              message: '该字段仅用于诊断，不支持恢复',
-                              child: Icon(Icons.info_outline),
-                            ),
-                          IconButton(
-                            tooltip: '忽略这条记录',
-                            icon: const Icon(Icons.close),
-                            onPressed: _busy
-                                ? null
-                                : () => _dismissConflict(conflict),
+                          Row(
+                            children: <Widget>[
+                              Icon(
+                                _testResult!.ok
+                                    ? Icons.check_circle
+                                    : Icons.error_outline,
+                                size: AppDimens.iconSizeSmall,
+                                color: _testResult!.ok
+                                    ? AppColors.known
+                                    : AppColors.unknown,
+                              ),
+                              AppSpacing.w8,
+                              Expanded(
+                                child: Text(
+                                  _testResult!.message,
+                                  style: theme.textTheme.bodyMedium,
+                                ),
+                              ),
+                            ],
                           ),
+                          for (final String detail in _testResult!.details)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: Text(
+                                detail.startsWith('NO_CONDITIONAL_WRITE')
+                                    ? detail.replaceFirst(
+                                        'NO_CONDITIONAL_WRITE:',
+                                        '注意：',
+                                      )
+                                    : '· $detail',
+                                style: theme.textTheme.bodySmall,
+                              ),
+                            ),
                         ],
                       ),
                     ),
                 ],
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-                child: Text(
-                  '冲突由字段版本、更新时间和设备 ID 确定性地裁决。'
-                  '恢复被覆盖的内容会写成一次新的正常编辑，不会篡改历史版本；'
-                  '没有恢复按钮的记录只用于诊断，避免出现“显示已恢复但数据没变”。',
-                  style: theme.textTheme.bodySmall,
-                ),
-              ),
-            ],
-            SectionHeader(title: '同步状态'),
-            SettingsGroup(
-              children: <Widget>[
-                SettingsTile(
-                  leading: const Icon(Icons.schedule),
-                  title: '最近同步时间',
-                  subtitle: _lastSyncAt == null
-                      ? '从未同步'
-                      : formatDateTime(_lastSyncAt!),
-                ),
-                SettingsTile(
-                  leading: const Icon(Icons.info_outline),
-                  title: '最近同步结果',
-                  subtitle: _lastResult ?? '—',
-                ),
-                SettingsTile(
-                  leading: Icon(
-                    _pendingChanges == true
-                        ? Icons.cloud_upload_outlined
-                        : Icons.cloud_done_outlined,
-                  ),
-                  title: '本地待同步修改',
-                  subtitle: _pendingChanges == true ? '有本地修改尚未上传' : '本地与上次同步一致',
-                ),
-                if (_status != null)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                    child: Text(_status!, style: theme.textTheme.bodySmall),
-                  ),
-                if (remoteMissing)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                    child: OutlinedButton(
-                      onPressed: _busy ? null : _recreateRemote,
-                      child: const Text('重新创建远端数据…'),
-                    ),
-                  ),
-                for (final String note in _syncNotes)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                    child: Text('· $note', style: theme.textTheme.bodySmall),
-                  ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Text(
-                        '合并规则：单词按拼写去重；作答记录按 ID 去重并重算学习状态；'
-                        '词书关联带删除标记，旧备份不会让已删除内容复活。'
-                        '同步不会删除本地笔记，也不会覆盖较新的学习记录。',
-                        style: theme.textTheme.bodySmall,
-                      ),
-                      AppSpacing.h8,
-                      Text(
-                        '凭据只保存在系统安全存储（钥匙串/Keystore），'
-                        '不会写入数据库、备份文件或日志。',
-                        style: theme.textTheme.bodySmall,
-                      ),
-                      AppSpacing.h8,
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: TextButton.icon(
-                          onPressed: _busy ? null : _disconnect,
-                          style: TextButton.styleFrom(
-                            foregroundColor: AppColors.unknown,
-                          ),
-                          icon: const Icon(Icons.link_off),
-                          label: const Text('解除同步配置'),
+              if (_conflicts.isNotEmpty) ...<Widget>[
+                SectionHeader(title: '被覆盖的内容（最多 50 条）'),
+                SettingsGroup(
+                  children: <Widget>[
+                    for (final StoredSyncConflict conflict in _conflicts)
+                      ListTile(
+                        dense: true,
+                        title: Text(
+                          '${conflict.label.isEmpty ? conflict.entityId : conflict.label}'
+                          ' · ${_fieldLabel(conflict.field)}',
+                        ),
+                        subtitle: Text(
+                          '保留：${_displayValue(conflict.field, conflict.adoptedValue)}\n'
+                          '被覆盖：${_displayValue(conflict.field, conflict.discardedValue)}',
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall,
+                        ),
+                        trailing: Wrap(
+                          spacing: 4,
+                          children: <Widget>[
+                            // A field this build cannot write back must not offer a
+                            // button that would only pretend to restore.
+                            if (SyncConflictResolutionService.canRestore(
+                              conflict,
+                            ))
+                              IconButton(
+                                tooltip: '恢复被覆盖的内容',
+                                icon: const Icon(Icons.undo),
+                                onPressed: _busy
+                                    ? null
+                                    : () => _restoreConflict(conflict),
+                              )
+                            else
+                              const Tooltip(
+                                message: '这一项仅用于诊断，无法恢复',
+                                child: Icon(Icons.info_outline),
+                              ),
+                            IconButton(
+                              tooltip: '忽略这条记录',
+                              icon: const Icon(Icons.close),
+                              onPressed: _busy
+                                  ? null
+                                  : () => _dismissConflict(conflict),
+                            ),
+                          ],
                         ),
                       ),
-                    ],
+                  ],
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                  child: Text(
+                    '另一台设备也修改了同一项内容。MaterialWord 保留了较新的版本，'
+                    '把另一份内容留在这里备用。恢复会把它改回来，并作为一次新的修改同步到其他设备；'
+                    '没有恢复按钮的记录只用于排查问题。',
+                    style: theme.textTheme.bodySmall,
                   ),
                 ),
               ],
-            ),
+              SectionHeader(title: '同步状态'),
+              SettingsGroup(
+                children: <Widget>[
+                  SettingsTile(
+                    leading: const Icon(Icons.schedule),
+                    title: '最近同步时间',
+                    subtitle: _lastSyncAt == null
+                        ? '从未同步'
+                        : formatDateTime(_lastSyncAt!),
+                  ),
+                  SettingsTile(
+                    leading: const Icon(Icons.info_outline),
+                    title: '最近同步结果',
+                    subtitle: _lastResult ?? '—',
+                  ),
+                  SettingsTile(
+                    leading: Icon(
+                      _pendingChanges == true
+                          ? Icons.cloud_upload_outlined
+                          : Icons.cloud_done_outlined,
+                    ),
+                    title: '本地待同步修改',
+                    subtitle: _pendingChanges == true
+                        ? '有本地修改尚未上传'
+                        : '本地与上次同步一致',
+                  ),
+                  if (_status != null)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                      child: Text(_status!, style: theme.textTheme.bodySmall),
+                    ),
+                  if (remoteMissing)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                      child: OutlinedButton(
+                        onPressed: _busy ? null : _recreateRemote,
+                        child: const Text('重新创建远端数据…'),
+                      ),
+                    ),
+                  for (final String note in _syncNotes)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                      child: Text('· $note', style: theme.textTheme.bodySmall),
+                    ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          '合并规则：单词按拼写去重；作答记录按 ID 去重并重算学习状态；'
+                          '词书关联带删除标记，旧备份不会让已删除内容复活。'
+                          '同步不会删除本地笔记，也不会覆盖较新的学习记录。',
+                          style: theme.textTheme.bodySmall,
+                        ),
+                        AppSpacing.h8,
+                        Text(
+                          '凭据只保存在系统安全存储（钥匙串/Keystore），'
+                          '不会写入数据库、备份文件或日志。',
+                          style: theme.textTheme.bodySmall,
+                        ),
+                        AppSpacing.h8,
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton.icon(
+                            onPressed: _busy ? null : _disconnect,
+                            style: TextButton.styleFrom(
+                              foregroundColor: AppColors.unknown,
+                            ),
+                            icon: const Icon(Icons.link_off),
+                            label: const Text('解除同步配置'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -1072,8 +1075,8 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
                   }
                 },
                 decoration: const InputDecoration(
-                  labelText: 'Fine-grained Personal Access Token',
-                  helperText: '仅需目标仓库的 Contents 读写权限；保存在系统安全存储',
+                  labelText: '访问令牌（Access Token）',
+                  helperText: '需要该仓库的读取与写入权限；保存在系统安全存储',
                 ),
               ),
             ),
@@ -1124,8 +1127,9 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
               child: Text(
-                '只使用 HTTPS，不会关闭证书校验；认证信息不会跟随跨域重定向。'
-                '如果服务器不返回 ETag，将无法检测并发修改，自动同步可能产生冲突提示。',
+                '只使用 HTTPS，不会关闭证书校验。'
+                '如果这个服务器不能可靠地处理多设备同时修改，就无法启用自动同步；'
+                '可以先使用手动备份。',
                 style: theme.textTheme.bodySmall,
               ),
             ),

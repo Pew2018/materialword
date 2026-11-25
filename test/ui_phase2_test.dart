@@ -7,6 +7,7 @@ import 'package:materialword/app/app.dart';
 import 'package:materialword/app/navigation.dart';
 import 'package:materialword/app/providers.dart';
 import 'package:materialword/app/theme.dart';
+import 'package:materialword/shared/widgets/common.dart';
 import 'package:materialword/features/study/study_page.dart';
 import 'package:materialword/features/word_management/quick_add_page.dart';
 import 'package:materialword/features/word_management/word_management_page.dart';
@@ -133,33 +134,42 @@ void main() {
     });
   });
 
-  group('UI04 Slider 拖动不写库', () {
-    testWidgets('拖动期间数值实时变化，松手才写一次数据库', (WidgetTester tester) async {
+  group('UI04 每日目标只有一种输入方式', () {
+    testWidgets('每次点击只写一次库，数值立即生效', (WidgetTester tester) async {
       final TestEnv env = await pumpApp(tester);
       await tester.tap(find.byKey(const ValueKey<String>('nav-设置')));
       await settle(tester);
 
       final int before = (await env.settings.load()).dailyNewTarget;
-      final Finder slider = find.byType(Slider).first;
-      final Offset center = tester.getCenter(slider);
 
-      final TestGesture gesture = await tester.startGesture(center);
-      await tester.pump();
-      await gesture.moveBy(const Offset(40, 0));
-      await tester.pump();
+      // The row used to have a text field, a slider *and* two steppers for the
+      // same number. The daily-target group now has one input model only.
+      final Finder targetGroup = find.byType(SettingsGroup).first;
+      expect(
+        find.descendant(of: targetGroup, matching: find.byType(Slider)),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: targetGroup, matching: find.byType(TextField)),
+        findsNothing,
+      );
 
-      // During the drag the persisted value must not change.
-      expect((await env.settings.load()).dailyNewTarget, before);
-
-      await gesture.moveBy(const Offset(30, 0));
-      await tester.pump();
-      expect((await env.settings.load()).dailyNewTarget, before);
-
-      await gesture.up();
+      await tester.tap(find.byTooltip('增加').first);
       await settle(tester);
+      expect((await env.settings.load()).dailyNewTarget, before + 5);
 
-      final int after = (await env.settings.load()).dailyNewTarget;
-      expect(after, greaterThan(before));
+      await tester.tap(find.byTooltip('减少').first);
+      await settle(tester);
+      expect((await env.settings.load()).dailyNewTarget, before);
+
+      // An exact value is still possible through the small dialog.
+      await tester.tap(find.byTooltip('输入具体数值').first);
+      await settle(tester);
+      await tester.enterText(find.byType(TextField).last, '42');
+      await tester.tap(find.text('确定'));
+      await settle(tester);
+      expect((await env.settings.load()).dailyNewTarget, 42);
+
       expect(tester.takeException(), isNull);
       await env.dispose();
     });

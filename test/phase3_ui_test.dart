@@ -17,33 +17,64 @@ import 'helpers/test_dictionary.dart';
 import 'helpers/test_env.dart';
 
 void main() {
-  test(
-    'UI Android classic transition and native Apple transition are explicit',
-    () {
-      final theme = AppTheme.light();
-      expect(theme.useMaterial3, isFalse);
+  test('UI Android uses predictive back, Apple keeps the native slide', () {
+    final theme = AppTheme.light();
+    expect(theme.useMaterial3, isFalse);
+    // Secondary pages slide in horizontally (and follow the system back
+    // gesture on Android U+). Never "up from the bottom": that reads as a
+    // modal and was the reported "page pops in" problem.
+    expect(
+      theme.pageTransitionsTheme.builders[TargetPlatform.android],
+      isA<PredictiveBackPageTransitionsBuilder>(),
+    );
+    expect(
+      theme.pageTransitionsTheme.builders[TargetPlatform.iOS],
+      isA<CupertinoPageTransitionsBuilder>(),
+    );
+    expect(
+      theme.pageTransitionsTheme.builders[TargetPlatform.windows],
+      isA<FadeForwardsPageTransitionsBuilder>(),
+    );
+    expect(
+      File('android/app/src/main/AndroidManifest.xml').readAsStringSync(),
+      contains('android:enableOnBackInvokedCallback="true"'),
+    );
+    expect(
+      AppTheme.light(accent: Colors.teal).colorScheme.secondary,
+      Colors.teal,
+    );
+  });
+
+  test('UI navigation follows the window width, not the platform', () {
+    // Full rail, icon rail, then the phone layout. A narrow macOS window is a
+    // phone layout — it must never keep a rail that eats the content width.
+    for (final TargetPlatform platform in <TargetPlatform>[
+      TargetPlatform.macOS,
+      TargetPlatform.android,
+      TargetPlatform.iOS,
+    ]) {
       expect(
-        theme.pageTransitionsTheme.builders[TargetPlatform.android],
-        isA<FadeUpwardsPageTransitionsBuilder>(),
+        layoutFor(width: 1280, platform: platform),
+        ShellLayout.rail,
+        reason: '1280 on $platform',
       );
+      expect(layoutFor(width: 900, platform: platform), ShellLayout.rail);
       expect(
-        theme.pageTransitionsTheme.builders[TargetPlatform.iOS],
-        isA<CupertinoPageTransitionsBuilder>(),
-      );
-      expect(
-        File('android/app/src/main/AndroidManifest.xml').readAsStringSync(),
-        contains('android:enableOnBackInvokedCallback="false"'),
-      );
-      expect(
-        AppTheme.light(accent: Colors.teal).colorScheme.secondary,
-        Colors.teal,
-      );
-      expect(
-        layoutFor(width: 440, platform: TargetPlatform.macOS),
+        layoutFor(width: 800, platform: platform),
         ShellLayout.compactRail,
       );
-    },
-  );
+      expect(
+        layoutFor(width: 720, platform: platform),
+        ShellLayout.compactRail,
+      );
+      expect(
+        layoutFor(width: 640, platform: platform),
+        ShellLayout.bottomBar,
+        reason: 'narrow window on $platform must use the bottom bar',
+      );
+      expect(layoutFor(width: 412, platform: platform), ShellLayout.bottomBar);
+    }
+  });
 
   testWidgets(
     'UI bottom navigation animates colour without replacing the ink response',
@@ -66,12 +97,16 @@ void main() {
       final ink = find.descendant(of: item, matching: find.byType(InkWell));
       final inkElement = tester.element(ink);
       final widget = tester.widget<InkWell>(ink);
-      expect(widget.customBorder, isA<RoundedRectangleBorder>());
-      expect(
-        (widget.customBorder! as RoundedRectangleBorder).borderRadius,
-        BorderRadius.circular(16),
-      );
+      // Rectangular hit area: no rounded border, no pill, no clipped card.
+      expect(widget.customBorder, isNull);
       expect(widget.splashFactory, InkRipple.splashFactory);
+      // Nothing paints a persistent selection background.
+      expect(widget.highlightColor, isNot(Colors.transparent));
+      final Rect itemRect = tester.getRect(item);
+      final Material surface = tester.widget<Material>(
+        find.descendant(of: item, matching: find.byType(Material)).first,
+      );
+      expect(surface.color, isNull, reason: 'selected item has no tint');
       final label = find
           .descendant(of: item, matching: find.byType(Text))
           .first;
@@ -83,16 +118,18 @@ void main() {
       await tester.pump();
       expect(index, 1);
       expect(identical(tester.element(ink), inkElement), isTrue);
-      await tester.pump(const Duration(milliseconds: 105));
+      await tester.pump(const Duration(milliseconds: 60));
       final middle = tester.widget<Text>(label).style!.color;
       expect(middle, isNot(original));
       expect(middle, isNot(AppTheme.light().colorScheme.primary));
-      await tester.pump(const Duration(milliseconds: 120));
+      await tester.pump(AppMotion.fast);
       expect(
         tester.widget<Text>(label).style!.color,
         AppTheme.light().colorScheme.primary,
       );
       expect(identical(tester.element(ink), inkElement), isTrue);
+      // Selection changes colour only: the geometry is untouched.
+      expect(tester.getRect(item), itemRect);
       expect(tester.takeException(), isNull);
     },
   );
@@ -160,7 +197,8 @@ void main() {
       tester.view.physicalSize = const Size(550, 340);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
-      expect(find.byType(ClassicBottomNavigationBar), findsNothing);
+      // A 550dp macOS window is a phone layout: bottom bar, no rail.
+      expect(find.byType(ClassicBottomNavigationBar), findsOneWidget);
       expect(
         tester.widget<TextField>(find.byType(TextField).first).controller,
         same(controller),

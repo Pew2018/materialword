@@ -9,6 +9,7 @@ import '../../app/theme.dart';
 import '../../core/database/app_database.dart';
 import '../../core/models/enums.dart';
 import '../../core/models/sprint_plan.dart';
+import '../../shared/widgets/classic_select.dart';
 import '../../shared/widgets/common.dart';
 import 'study_page.dart';
 
@@ -404,18 +405,20 @@ class _SprintDialogState extends State<_SprintDialog> {
             icon: const Icon(Icons.event),
             label: Text('考试日期：${_values['examDate'] ?? '请选择'}'),
           ),
-          DropdownButtonFormField<String>(
-            initialValue: _values['bookId'] as String?,
-            decoration: const InputDecoration(labelText: '目标词书'),
-            items: [
+          ClassicSelect<String>(
+            label: '目标词书',
+            value: widget.books.any((b) => b.id == _values['bookId'])
+                ? _values['bookId'] as String
+                : (widget.books.isEmpty ? '' : widget.books.first.id),
+            options: <ClassicOption<String>>[
+              if (widget.books.isEmpty)
+                const ClassicOption<String>(value: '', label: '还没有词书'),
               for (final book in widget.books)
-                DropdownMenuItem(
-                  value: book.id,
-                  child: Text(book.name, overflow: TextOverflow.ellipsis),
-                ),
+                ClassicOption<String>(value: book.id, label: book.name),
             ],
-            onChanged: (v) => setState(() => _values['bookId'] = v),
-            isExpanded: true,
+            onChanged: widget.books.isEmpty
+                ? null
+                : (String v) => setState(() => _values['bookId'] = v),
           ),
           AppSpacing.h12,
           TextField(

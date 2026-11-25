@@ -1,8 +1,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- GitHub / WebDAV / HTTPS word-list import. TLS verification stays on. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Predictive back (Android 13+): the system gesture drives the page
+         transition, so the previous page is visible while dragging. Flutter's
+         PredictiveBackPageTransitionsBuilder handles the animation. -->
     <application
-        android:enableOnBackInvokedCallback="false"
+        android:enableOnBackInvokedCallback="true"
         android:label="MaterialWord"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">

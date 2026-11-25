@@ -281,162 +281,168 @@ class WordBooksPage extends ConsumerWidget {
       }
     }
 
-    return ListView(
-      padding: const EdgeInsets.only(bottom: 24),
-      children: <Widget>[
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 10, 8, 6),
-          child: Row(
-            children: <Widget>[
-              Expanded(child: Text('我的词书', style: theme.textTheme.titleLarge)),
-              TextButton.icon(
-                onPressed: openManagement,
-                icon: const Icon(
-                  Icons.table_rows_outlined,
-                  size: AppDimens.iconSizeSmall,
-                ),
-                label: const Text('全部词汇'),
-              ),
-              IconButton(
-                tooltip: '导出词书内容',
-                icon: const Icon(Icons.ios_share),
-                onPressed: () =>
-                    exportBooks(books.value ?? const <WordBookSummary>[]),
-              ),
-              IconButton(
-                tooltip: '导入词表',
-                icon: const Icon(Icons.file_upload_outlined),
-                onPressed: openImport,
-              ),
-              IconButton(
-                tooltip: '新建词书',
-                icon: const Icon(Icons.add),
-                onPressed: createBook,
-              ),
-            ],
-          ),
-        ),
-        if (books.hasError)
+    return ContentColumn(
+      child: ListView(
+        padding: const EdgeInsets.only(bottom: 24),
+        children: <Widget>[
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: ErrorBanner(
-              message: '读取词书失败：${books.error}',
-              onRetry: () => ref.invalidate(bookSummariesProvider),
-            ),
-          ),
-        if ((books.value ?? const <WordBookSummary>[]).isEmpty)
-          EmptyState(
-            icon: Icons.library_books_outlined,
-            title: '还没有词书',
-            message: '创建一个词书，然后导入你的单词表（每行一个单词即可）。',
-            action: Wrap(
-              spacing: 8,
+            padding: const EdgeInsets.fromLTRB(16, 10, 8, 6),
+            child: Row(
               children: <Widget>[
-                ElevatedButton(
-                  onPressed: createBook,
-                  child: const Text('新建词书'),
+                Expanded(
+                  child: Text('我的词书', style: theme.textTheme.titleLarge),
                 ),
-                OutlinedButton(
+                TextButton.icon(
+                  onPressed: openManagement,
+                  icon: const Icon(
+                    Icons.table_rows_outlined,
+                    size: AppDimens.iconSizeSmall,
+                  ),
+                  label: const Text('全部词汇'),
+                ),
+                IconButton(
+                  tooltip: '导出词书内容',
+                  icon: const Icon(Icons.ios_share),
+                  onPressed: () =>
+                      exportBooks(books.value ?? const <WordBookSummary>[]),
+                ),
+                IconButton(
+                  tooltip: '导入词表',
+                  icon: const Icon(Icons.file_upload_outlined),
                   onPressed: openImport,
-                  child: const Text('导入词表'),
+                ),
+                IconButton(
+                  tooltip: '新建词书',
+                  icon: const Icon(Icons.add),
+                  onPressed: createBook,
                 ),
               ],
             ),
-          )
-        else
-          SettingsGroup(
-            children: <Widget>[
-              for (final WordBookSummary summary in books.value!)
-                _BookRow(
-                  summary: summary,
-                  isCurrent: summary.book.id == currentBookId,
-                  onOpen: () async {
-                    await Navigator.of(context).push<void>(
-                      MaterialPageRoute<void>(
-                        builder: (BuildContext context) =>
-                            WordBookDetailPage(bookId: summary.book.id),
-                      ),
-                    );
-                    ref.invalidate(bookSummariesProvider);
-                    ref.invalidate(todayProgressProvider);
-                  },
-                  onSetCurrent: () async {
-                    await ref
-                        .read(settingsRepositoryProvider)
-                        .save(
-                          currentWordBookId: Value<String?>(summary.book.id),
-                        );
-                    ref.invalidate(todayProgressProvider);
-                  },
-                  onImport: () async {
-                    await Navigator.of(context).push<void>(
-                      MaterialPageRoute<void>(
-                        builder: (BuildContext context) =>
-                            ImportPage(initialBookId: summary.book.id),
-                      ),
-                    );
-                    ref.invalidate(bookSummariesProvider);
-                  },
-                  onRename: () async {
-                    final String? name = await promptForText(
-                      context,
-                      title: '重命名词书',
-                      label: '词书名称',
-                      initialValue: summary.book.name,
-                    );
-                    if (name == null || name.trim().isEmpty) return;
-                    await ref
-                        .read(wordBookRepositoryProvider)
-                        .rename(
-                          summary.book.id,
-                          name,
-                          now: ref.read(clockProvider).now(),
-                        );
-                    ref.invalidate(bookSummariesProvider);
-                  },
-                  onRefreshOnline: summary.book.sourceUrl.isEmpty
-                      ? null
-                      : () => refreshOnline(summary),
-                  onDelete: () async {
-                    final bool ok = await confirmDialog(
-                      context,
-                      title: '删除词书',
-                      message:
-                          '删除「${summary.book.name}」？单词本身和学习记录会保留，只移除词书及其关联。',
-                      confirmLabel: '删除',
-                      destructive: true,
-                    );
-                    if (!ok) return;
-                    // Deleting a book detaches up to thousands of links at once.
-                    final String? backupFailure = await ref
-                        .read(backupManagerProvider)
-                        .protectiveBackupFailure('删除词书「${summary.book.name}」');
-                    if (backupFailure != null) {
-                      if (context.mounted) {
-                        showMessage(context, backupFailure, error: true);
+          ),
+          if (books.hasError)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: ErrorBanner(
+                message: '读取词书失败：${books.error}',
+                onRetry: () => ref.invalidate(bookSummariesProvider),
+              ),
+            ),
+          if ((books.value ?? const <WordBookSummary>[]).isEmpty)
+            EmptyState(
+              icon: Icons.library_books_outlined,
+              title: '还没有词书',
+              message: '创建一个词书，然后导入你的单词表（每行一个单词即可）。',
+              action: Wrap(
+                spacing: 8,
+                children: <Widget>[
+                  ElevatedButton(
+                    onPressed: createBook,
+                    child: const Text('新建词书'),
+                  ),
+                  OutlinedButton(
+                    onPressed: openImport,
+                    child: const Text('导入词表'),
+                  ),
+                ],
+              ),
+            )
+          else
+            SettingsGroup(
+              children: <Widget>[
+                for (final WordBookSummary summary in books.value!)
+                  _BookRow(
+                    summary: summary,
+                    isCurrent: summary.book.id == currentBookId,
+                    onOpen: () async {
+                      await Navigator.of(context).push<void>(
+                        MaterialPageRoute<void>(
+                          builder: (BuildContext context) =>
+                              WordBookDetailPage(bookId: summary.book.id),
+                        ),
+                      );
+                      ref.invalidate(bookSummariesProvider);
+                      ref.invalidate(todayProgressProvider);
+                    },
+                    onSetCurrent: () async {
+                      await ref
+                          .read(settingsRepositoryProvider)
+                          .save(
+                            currentWordBookId: Value<String?>(summary.book.id),
+                          );
+                      ref.invalidate(todayProgressProvider);
+                    },
+                    onImport: () async {
+                      await Navigator.of(context).push<void>(
+                        MaterialPageRoute<void>(
+                          builder: (BuildContext context) =>
+                              ImportPage(initialBookId: summary.book.id),
+                        ),
+                      );
+                      ref.invalidate(bookSummariesProvider);
+                    },
+                    onRename: () async {
+                      final String? name = await promptForText(
+                        context,
+                        title: '重命名词书',
+                        label: '词书名称',
+                        initialValue: summary.book.name,
+                      );
+                      if (name == null || name.trim().isEmpty) return;
+                      await ref
+                          .read(wordBookRepositoryProvider)
+                          .rename(
+                            summary.book.id,
+                            name,
+                            now: ref.read(clockProvider).now(),
+                          );
+                      ref.invalidate(bookSummariesProvider);
+                    },
+                    onRefreshOnline: summary.book.sourceUrl.isEmpty
+                        ? null
+                        : () => refreshOnline(summary),
+                    onDelete: () async {
+                      final bool ok = await confirmDialog(
+                        context,
+                        title: '删除词书',
+                        message:
+                            '删除「${summary.book.name}」？单词本身和学习记录会保留，只移除词书及其关联。',
+                        confirmLabel: '删除',
+                        destructive: true,
+                      );
+                      if (!ok) return;
+                      // Deleting a book detaches up to thousands of links at once.
+                      final String? backupFailure = await ref
+                          .read(backupManagerProvider)
+                          .protectiveBackupFailure(
+                            '删除词书「${summary.book.name}」',
+                          );
+                      if (backupFailure != null) {
+                        if (context.mounted) {
+                          showMessage(context, backupFailure, error: true);
+                        }
+                        return;
                       }
-                      return;
-                    }
-                    await ref
-                        .read(wordBookRepositoryProvider)
-                        .softDelete(
-                          summary.book.id,
-                          now: ref.read(clockProvider).now(),
-                        );
-                    ref.invalidate(bookSummariesProvider);
-                    ref.invalidate(todayProgressProvider);
-                  },
-                ),
-            ],
+                      await ref
+                          .read(wordBookRepositoryProvider)
+                          .softDelete(
+                            summary.book.id,
+                            now: ref.read(clockProvider).now(),
+                          );
+                      ref.invalidate(bookSummariesProvider);
+                      ref.invalidate(todayProgressProvider);
+                    },
+                  ),
+              ],
+            ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: Text(
+              '「全部词汇」可以按词书、学习状态、困难程度筛选，并批量加入词书 / 移出 / 删除。',
+              style: theme.textTheme.bodySmall,
+            ),
           ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-          child: Text(
-            '「全部词汇」可以按词书、学习状态、困难程度筛选，并批量加入词书 / 移出 / 删除。',
-            style: theme.textTheme.bodySmall,
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

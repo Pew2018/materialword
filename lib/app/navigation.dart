@@ -56,24 +56,20 @@ const List<AppDestination> appDestinations = <AppDestination>[
 /// Which navigation chrome the current window should use.
 enum ShellLayout { bottomBar, compactRail, rail }
 
+/// Picks the navigation chrome from the *window width*, not the platform.
+///
+/// A narrow macOS window must behave like a phone: keeping an icon rail in a
+/// 500dp window cost ~76dp of content width and produced wrapped numbers and
+/// squeezed buttons. [platform] is kept in the signature because callers (and
+/// tests) already have it, but it no longer decides the layout.
 ShellLayout layoutFor({
   required double width,
   required TargetPlatform platform,
 }) {
-  final bool desktopPlatform = switch (platform) {
-    TargetPlatform.macOS ||
-    TargetPlatform.windows ||
-    TargetPlatform.linux => true,
-    _ => false,
-  };
-  if (desktopPlatform) {
-    if (width >= AppDimens.desktopBreakpoint) return ShellLayout.rail;
-    // A narrow macOS window keeps a (compact) side rail instead of dropping to
-    // a phone-style bottom bar: the pointer-driven workflow is unchanged.
+  if (width >= AppDimens.desktopBreakpoint) return ShellLayout.rail;
+  if (width >= AppDimens.railCollapseBreakpoint) {
     return ShellLayout.compactRail;
   }
-  // Tablets in landscape get the rail; phones keep the classic bottom bar.
-  if (width >= AppDimens.desktopBreakpoint) return ShellLayout.rail;
   return ShellLayout.bottomBar;
 }
 
@@ -246,12 +242,20 @@ class _AppShellState extends ConsumerState<AppShell>
     }
   }
 
+  /// Refreshes only what the *visible* page shows.
+  ///
+  /// Every database write used to invalidate the statistics aggregate and the
+  /// book summaries, so a background sync (or the 30-minute backup probe) could
+  /// rebuild the statistics page and its chart while the user was scrolling
+  /// settings. Hidden pages are refreshed when they are selected again instead.
   void _refreshDailyData() {
     if (!mounted) return;
     ref.invalidate(todayProgressProvider);
     ref.invalidate(pausedSessionProvider);
-    ref.invalidate(statisticsProvider);
-    ref.invalidate(bookSummariesProvider);
+    if (_index == 3) ref.invalidate(statisticsProvider);
+    if (_index == 0 || _index == 1 || _index == 4) {
+      ref.invalidate(bookSummariesProvider);
+    }
   }
 
   Future<void> _maybeAutoSync({required bool start}) async {
@@ -289,6 +293,20 @@ class _AppShellState extends ConsumerState<AppShell>
       _index = index;
       _built.add(index);
     });
+    // A page that was hidden while data changed recomputes once, now that it is
+    // on screen. Values stay on screen while reloading (AsyncValue keeps the
+    // previous data), so there is no loading flash.
+    switch (index) {
+      case 0:
+        ref.invalidate(todayProgressProvider);
+        ref.invalidate(pausedSessionProvider);
+        ref.invalidate(bookSummariesProvider);
+      case 1 || 4:
+        ref.invalidate(bookSummariesProvider);
+      case 3:
+        ref.invalidate(statisticsProvider);
+        ref.invalidate(bookSummariesProvider);
+    }
   }
 
   bool get _isEditingText {
@@ -336,7 +354,7 @@ class _AppShellState extends ConsumerState<AppShell>
     final bool hasRail = layout != ShellLayout.bottomBar;
 
     final List<Widget> pages = <Widget>[
-      _lazy(0, DashboardPage(onOpenBookTab: () => _select(1))),
+      _lazy(0, const DashboardPage()),
       _lazy(1, const WordBooksPage()),
       _lazy(2, DictionaryPage(searchFocusNode: _searchFocus)),
       _lazy(3, const StatisticsPage()),
@@ -441,16 +459,16 @@ class _AppShellState extends ConsumerState<AppShell>
 /// Classic Material 1/2 bottom navigation bar.
 ///
 /// Built on the official primitives ([Material], [InkWell], [Row], [Expanded],
-/// [Semantics]) because `BottomNavigationBar` cannot satisfy all of the phase-2
+/// [Semantics]) because `BottomNavigationBar` cannot satisfy all of the
 /// requirements at once:
-///  * every item gets exactly the same width (`Expanded`) and the icon/label
-///    box has a fixed height, so switching tabs cannot shift or scale anything;
-///  * each item is wrapped in its own clipped [Material], so an InkSplash can
-///    only paint inside that item — this is what removes the oversized grey
-///    circle (and the ripple that appeared to belong to a neighbouring item);
-///  * hover, focus, pressed and selected are four *separate* visual states;
-///  * tapping never leaves a permanent M3 "pill" behind: the selection is a
-///    colour/weight change only.
+///  * every item is an equal-width rectangle with a fixed 56dp height, so
+///    switching tabs cannot shift, scale or re-wrap anything;
+///  * the selected destination is expressed **only** by the active icon, the
+///    accent colour and a slightly heavier label — the background never gets a
+///    persistent tint, pill or rounded container;
+///  * the item's ink response is clipped by its own *rectangle* (no rounded
+///    `customBorder`), so a tap produces the large classic Material ripple the
+///    reference design shows, and nothing is left behind afterwards.
 class ClassicBottomNavigationBar extends StatelessWidget {
   const ClassicBottomNavigationBar({
     super.key,
@@ -512,7 +530,9 @@ class _BottomNavItem extends StatelessWidget {
         theme.bottomNavigationBarTheme.selectedItemColor ??
         theme.colorScheme.primary;
     final Color inactiveColor =
-        theme.bottomNavigationBarTheme.unselectedItemColor ?? Colors.grey;
+        theme.bottomNavigationBarTheme.unselectedItemColor ??
+        theme.textTheme.bodySmall?.color ??
+        theme.disabledColor;
     final Color color = selected ? activeColor : inactiveColor;
 
     return Semantics(
@@ -520,63 +540,52 @@ class _BottomNavItem extends StatelessWidget {
       selected: selected,
       label: destination.label,
       excludeSemantics: true,
+      // Clipped by a plain rectangle: the splash may grow into a large circle
+      // but it is cut off at the item edge, exactly like the classic bar.
       child: Material(
         type: MaterialType.transparency,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppDimens.navigationRadius),
-        ),
-        clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: onTap,
-          customBorder: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppDimens.navigationRadius),
-          ),
           splashFactory: InkRipple.splashFactory,
           canRequestFocus: true,
-          // Four distinct feedbacks: hover (pointer), focus (keyboard),
-          // highlight (pressed) and the persistent selected state.
-          hoverColor: activeColor.withValues(alpha: 0.06),
-          focusColor: activeColor.withValues(alpha: 0.14),
-          highlightColor: activeColor.withValues(alpha: 0.10),
-          splashColor: activeColor.withValues(alpha: 0.16),
+          hoverColor: activeColor.withValues(alpha: 0.04),
+          focusColor: activeColor.withValues(alpha: 0.10),
+          highlightColor: activeColor.withValues(alpha: 0.08),
+          splashColor: activeColor.withValues(alpha: 0.14),
           child: TweenAnimationBuilder<Color?>(
             tween: ColorTween(end: color),
-            duration: const Duration(milliseconds: 210),
-            curve: Curves.easeInOut,
-            builder: (context, animatedColor, _) => Tooltip(
-              message: destination.label,
-              waitDuration: const Duration(milliseconds: 700),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: <Widget>[
-                  // Fixed 24dp icon box: the icon never grows or shrinks when
-                  // the item becomes selected.
-                  SizedBox(
-                    height: AppDimens.iconSize,
-                    width: AppDimens.iconSize,
-                    child: Icon(
-                      selected ? destination.activeIcon : destination.icon,
-                      size: AppDimens.iconSize,
+            duration: AppMotion.fast,
+            curve: AppMotion.curve,
+            builder: (context, animatedColor, _) => Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: <Widget>[
+                // Fixed 24dp icon box: the icon never grows or shrinks when
+                // the item becomes selected.
+                SizedBox(
+                  height: AppDimens.iconSize,
+                  width: AppDimens.iconSize,
+                  child: Icon(
+                    selected ? destination.activeIcon : destination.icon,
+                    size: AppDimens.iconSize,
+                    color: animatedColor,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                SizedBox(
+                  height: 16,
+                  child: Text(
+                    destination.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      height: 1.1,
                       color: animatedColor,
+                      fontWeight: selected ? FontWeight.w500 : FontWeight.w400,
                     ),
                   ),
-                  const SizedBox(height: 2),
-                  SizedBox(
-                    height: 16,
-                    child: Text(
-                      destination.label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 12,
-                        height: 1.1,
-                        color: animatedColor,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
@@ -720,9 +729,9 @@ class _RailItem extends StatelessWidget {
         excludeSemantics: true,
         child: Material(
           color: selected
-              ? theme.colorScheme.primary.withValues(alpha: 0.10)
+              ? theme.colorScheme.primary.withValues(alpha: 0.06)
               : Colors.transparent,
-          borderRadius: BorderRadius.circular(AppDimens.radius),
+          borderRadius: BorderRadius.circular(AppDimens.cardRadius),
           clipBehavior: Clip.hardEdge,
           child: InkWell(
             onTap: onTap,

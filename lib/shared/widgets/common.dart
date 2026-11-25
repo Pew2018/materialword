@@ -402,6 +402,32 @@ class ContentWidth extends StatelessWidget {
   }
 }
 
+/// Keeps a scrolling page inside a readable column on wide windows.
+///
+/// A settings row or a statistics block stretched across a 1600dp window is
+/// hard to read and looks unfinished; the classic desktop treatment is a
+/// centred column with the page background on both sides.
+class ContentColumn extends StatelessWidget {
+  const ContentColumn({
+    super.key,
+    required this.child,
+    this.maxWidth = AppDimens.contentMaxWidth,
+  });
+
+  final Widget child;
+  final double maxWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: maxWidth),
+        child: child,
+      ),
+    );
+  }
+}
+
 /// Error banner with retry.
 class ErrorBanner extends StatelessWidget {
   const ErrorBanner({super.key, required this.message, this.onRetry});
@@ -554,10 +580,15 @@ Future<bool> confirmDialog(
 }
 
 void showMessage(BuildContext context, String message, {bool error = false}) {
+  // Compact layouts (phones, narrow windows) use the classic full-width bar at
+  // the bottom; only wide windows get the floating, inset variant.
+  final bool compact = MediaQuery.sizeOf(context).width < 600;
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
       content: Text(message),
       backgroundColor: error ? AppColors.unknown : null,
+      behavior: compact ? SnackBarBehavior.fixed : SnackBarBehavior.floating,
+      shape: compact ? const RoundedRectangleBorder() : null,
       duration: const Duration(seconds: 3),
     ),
   );

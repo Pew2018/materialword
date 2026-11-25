@@ -148,7 +148,7 @@ class _BackupPageState extends ConsumerState<BackupPage> {
             if (info.valid) ...<Widget>[
               Text(info.summary),
               AppSpacing.h8,
-              Text('数据版本：v${info.schemaVersion}'),
+              Text('数据格式：v${info.schemaVersion}'),
               if (info.exportedAt != null)
                 Text('创建时间：${formatDateTime(info.exportedAt!)}'),
               if (info.appVersion.isNotEmpty) Text('应用版本：${info.appVersion}'),
@@ -342,237 +342,250 @@ class _BackupPageState extends ConsumerState<BackupPage> {
       appBar: AppBar(title: const Text('备份与恢复')),
       body: RefreshIndicator(
         onRefresh: _reload,
-        child: ListView(
-          padding: const EdgeInsets.only(bottom: 32),
-          children: <Widget>[
-            if (_error != null)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                child: ErrorBanner(message: _error!),
-              ),
-            if (_busy)
-              const Padding(
-                padding: EdgeInsets.fromLTRB(16, 12, 16, 0),
-                child: LinearProgressIndicator(minHeight: 3),
-              ),
-            if (_syncPaused)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                child: Material(
-                  color: AppColors.hazy.withValues(alpha: 0.12),
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Text('同步已暂停', style: theme.textTheme.titleSmall),
-                        AppSpacing.h4,
-                        Text(
-                          '本机数据来自历史恢复，尚未与远端核对。'
-                          '在「数据同步」页确认如何处理远端数据前，自动同步不会运行。',
-                          style: theme.textTheme.bodySmall,
-                        ),
-                        AppSpacing.h8,
-                        OutlinedButton(
-                          onPressed: _busy
-                              ? null
-                              : () async {
-                                  await Navigator.of(context).push<void>(
-                                    MaterialPageRoute<void>(
-                                      builder: (BuildContext context) =>
-                                          const SyncSettingsPage(),
-                                    ),
-                                  );
-                                  await _reload();
-                                },
-                          child: const Text('处理同步'),
-                        ),
-                      ],
+        child: ContentColumn(
+          child: ListView(
+            padding: const EdgeInsets.only(bottom: 32),
+            children: <Widget>[
+              if (_error != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  child: ErrorBanner(message: _error!),
+                ),
+              if (_busy)
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  child: LinearProgressIndicator(minHeight: 3),
+                ),
+              if (_syncPaused)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  child: Material(
+                    color: AppColors.hazy.withValues(alpha: 0.12),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text('同步已暂停', style: theme.textTheme.titleSmall),
+                          AppSpacing.h4,
+                          Text(
+                            '本机数据来自历史恢复，尚未与远端核对。'
+                            '在「数据同步」页确认如何处理远端数据前，自动同步不会运行。',
+                            style: theme.textTheme.bodySmall,
+                          ),
+                          AppSpacing.h8,
+                          OutlinedButton(
+                            onPressed: _busy
+                                ? null
+                                : () async {
+                                    await Navigator.of(context).push<void>(
+                                      MaterialPageRoute<void>(
+                                        builder: (BuildContext context) =>
+                                            const SyncSettingsPage(),
+                                      ),
+                                    );
+                                    await _reload();
+                                  },
+                            child: const Text('处理同步'),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
-              ),
-            SectionHeader(title: '自动备份（本机）'),
-            SettingsGroup(
-              children: <Widget>[
-                SwitchListTile(
-                  value: _autoEnabled,
-                  onChanged: (bool value) async {
-                    await ref
-                        .read(settingsRepositoryProvider)
-                        .setAutoBackupEnabled(value);
-                    await _reload();
-                  },
-                  title: const Text('每天自动备份'),
-                  subtitle: Text(
-                    '启动、恢复前台与停留前台期间检查；只有数据变化才创建新副本，'
-                    '保留最近 $_retention 份。',
-                  ),
-                ),
-                SettingsTile(
-                  leading: const Icon(Icons.history_toggle_off),
-                  title: '上次自动备份',
-                  subtitle: _lastAuto == null
-                      ? '还没有自动备份'
-                      : formatDateTime(_lastAuto!),
-                ),
-              ],
-            ),
-            SectionHeader(title: '手动备份（JSON）'),
-            SettingsGroup(
-              children: <Widget>[
-                SettingsTile(
-                  leading: const Icon(Icons.save_alt),
-                  title: '导出到…',
-                  subtitle: '通过系统文件选择器保存到任意位置（含设备设置）',
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: _busy
-                      ? null
-                      : () => _createBackup(chooseLocation: true),
-                ),
-                SettingsTile(
-                  leading: const Icon(Icons.folder_outlined),
-                  title: '立即保存恢复副本',
-                  subtitle: '保存在本机；可直接从下方列表恢复',
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: _busy
-                      ? null
-                      : () => _createBackup(chooseLocation: false),
-                ),
-                SettingsTile(
-                  leading: const Icon(Icons.restore),
-                  title: '导入并合并',
-                  subtitle: '不会覆盖本地数据：按单词与作答记录去重后合并',
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: _busy ? null : _importMerge,
-                ),
-              ],
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: Text(
-                '备份包含词条、词书、关联（含删除标记）、作答历史、收藏、标签、'
-                '学习目标与设备设置。不包含 Token、密码或任何同步凭据。',
-                style: theme.textTheme.bodySmall,
-              ),
-            ),
-            if (_status != null)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                child: Text(_status!, style: theme.textTheme.bodyMedium),
-              ),
-            SectionHeader(title: '恢复副本（本机）'),
-            if (_backups.isEmpty)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-                child: Text(
-                  '还没有恢复副本。自动备份或「立即保存恢复副本」会在此列出。',
-                  style: theme.textTheme.bodySmall,
-                ),
-              )
-            else
+              SectionHeader(title: '自动备份（本机）'),
               SettingsGroup(
                 children: <Widget>[
-                  for (final BackupEntry entry in _backups)
-                    SettingsTile(
-                      leading: Icon(switch (entry.kind) {
-                        BackupKind.automatic => Icons.schedule,
-                        BackupKind.protective => Icons.shield_outlined,
-                        BackupKind.manual => Icons.history,
-                      }),
-                      title: formatDateTime(entry.modified),
-                      subtitle:
-                          '${entry.kind.label} · '
-                          '${(entry.bytes / 1024 / 1024).toStringAsFixed(1)} MB · '
-                          '${entry.name}',
-                      trailing: PopupMenuButton<String>(
-                        tooltip: '恢复副本操作',
-                        onSelected: (String value) {
-                          switch (value) {
-                            case 'info':
-                              _showInfo(entry);
-                            case 'verify':
-                              _showInfo(entry, verify: true);
-                            case 'merge':
-                              _mergeRestore(entry);
-                            case 'restore':
-                              _restoreSnapshot(entry);
-                            case 'export':
-                              _exportCopy(entry);
-                            case 'delete':
-                              _delete(entry);
-                          }
-                        },
-                        itemBuilder: (BuildContext context) =>
-                            const <PopupMenuEntry<String>>[
-                              PopupMenuItem<String>(
-                                value: 'info',
-                                child: Text('查看信息'),
-                              ),
-                              PopupMenuItem<String>(
-                                value: 'verify',
-                                child: Text('校验备份'),
-                              ),
-                              PopupMenuItem<String>(
-                                value: 'merge',
-                                child: Text('合并恢复（安全）'),
-                              ),
-                              PopupMenuItem<String>(
-                                value: 'restore',
-                                child: Text('恢复到该版本…'),
-                              ),
-                              PopupMenuItem<String>(
-                                value: 'export',
-                                child: Text('导出到…'),
-                              ),
-                              PopupMenuItem<String>(
-                                value: 'delete',
-                                child: Text('删除'),
-                              ),
-                            ],
-                      ),
+                  SwitchListTile(
+                    value: _autoEnabled,
+                    onChanged: (bool value) async {
+                      await ref
+                          .read(settingsRepositoryProvider)
+                          .setAutoBackupEnabled(value);
+                      await _reload();
+                    },
+                    title: const Text('每天自动备份'),
+                    subtitle: Text(
+                      '启动、恢复前台与停留前台期间检查；只有数据变化才创建新副本，'
+                      '保留最近 $_retention 份。',
                     ),
+                  ),
+                  SettingsTile(
+                    leading: const Icon(Icons.history_toggle_off),
+                    title: '上次自动备份',
+                    subtitle: _lastAuto == null
+                        ? '还没有自动备份'
+                        : formatDateTime(_lastAuto!),
+                  ),
                 ],
               ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: Text(
-                '合并恢复：只补充缺失内容，幂等、可重复执行。\n'
-                '指定版本恢复：原子替换本机数据，先自动保存保护性备份，'
-                '并暂停同步直到你决定远端如何处理。',
-                style: theme.textTheme.bodySmall,
+              SectionHeader(title: '手动备份（JSON）'),
+              SettingsGroup(
+                children: <Widget>[
+                  SettingsTile(
+                    leading: const Icon(Icons.save_alt),
+                    title: '导出到…',
+                    subtitle: '通过系统文件选择器保存到任意位置（含设备设置）',
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: _busy
+                        ? null
+                        : () => _createBackup(chooseLocation: true),
+                  ),
+                  SettingsTile(
+                    leading: const Icon(Icons.folder_outlined),
+                    title: '立即保存恢复副本',
+                    subtitle: '保存在本机；可直接从下方列表恢复',
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: _busy
+                        ? null
+                        : () => _createBackup(chooseLocation: false),
+                  ),
+                  SettingsTile(
+                    leading: const Icon(Icons.restore),
+                    title: '导入并合并',
+                    subtitle: '不会覆盖本地数据：按单词与作答记录去重后合并',
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: _busy ? null : _importMerge,
+                  ),
+                ],
               ),
-            ),
-            SectionHeader(title: '跨设备同步'),
-            SettingsGroup(
-              children: <Widget>[
-                SettingsTile(
-                  leading: const Icon(Icons.sync),
-                  title: '打开数据同步',
-                  subtitle: 'GitHub 私有仓库 / WebDAV / 本地文件',
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () async {
-                    await Navigator.of(context).push<void>(
-                      MaterialPageRoute<void>(
-                        builder: (BuildContext context) =>
-                            const SyncSettingsPage(),
-                      ),
-                    );
-                    await _reload();
-                  },
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                child: Text(
+                  '备份包含词条、词书、关联（含删除标记）、作答历史、收藏、标签、'
+                  '学习目标与设备设置。不包含账号、密码或任何同步凭据。',
+                  style: theme.textTheme.bodySmall,
                 ),
-              ],
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: Text(
-                '合并规则：作答记录按全局 ID 去重，学习状态由合并后的历史重新计算；'
-                '词书关联带版本与删除标记，因此旧备份不会让已移除的单词复活；'
-                '同一份数据重复导入不会重复计入统计。',
-                style: theme.textTheme.bodySmall,
               ),
-            ),
-          ],
+              if (_status != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  child: Text(_status!, style: theme.textTheme.bodyMedium),
+                ),
+              SectionHeader(title: '恢复副本（本机）'),
+              if (_backups.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                  child: Text(
+                    '还没有恢复副本。自动备份或「立即保存恢复副本」会在此列出。',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                )
+              else
+                SettingsGroup(
+                  children: <Widget>[
+                    for (final BackupEntry entry in _backups)
+                      SettingsTile(
+                        leading: Icon(switch (entry.kind) {
+                          BackupKind.automatic => Icons.schedule,
+                          BackupKind.protective => Icons.shield_outlined,
+                          BackupKind.manual => Icons.history,
+                        }),
+                        title: formatDateTime(entry.modified),
+                        subtitle:
+                            '${entry.kind.label} · '
+                            '${(entry.bytes / 1024 / 1024).toStringAsFixed(1)} MB · '
+                            '${entry.name}',
+                        trailing: PopupMenuButton<String>(
+                          tooltip: '恢复副本操作',
+                          onSelected: (String value) {
+                            switch (value) {
+                              case 'info':
+                                _showInfo(entry);
+                              case 'verify':
+                                _showInfo(entry, verify: true);
+                              case 'merge':
+                                _mergeRestore(entry);
+                              case 'restore':
+                                _restoreSnapshot(entry);
+                              case 'export':
+                                _exportCopy(entry);
+                              case 'delete':
+                                _delete(entry);
+                            }
+                          },
+                          itemBuilder: (BuildContext context) =>
+                              const <PopupMenuEntry<String>>[
+                                PopupMenuItem<String>(
+                                  value: 'info',
+                                  child: Text('查看信息'),
+                                ),
+                                PopupMenuItem<String>(
+                                  value: 'verify',
+                                  child: Text('校验备份'),
+                                ),
+                                PopupMenuItem<String>(
+                                  value: 'merge',
+                                  child: Text('合并恢复（安全）'),
+                                ),
+                                PopupMenuItem<String>(
+                                  value: 'restore',
+                                  child: Text('恢复到该版本…'),
+                                ),
+                                PopupMenuItem<String>(
+                                  value: 'export',
+                                  child: Text('导出到…'),
+                                ),
+                                PopupMenuItem<String>(
+                                  value: 'delete',
+                                  child: Text('删除'),
+                                ),
+                              ],
+                        ),
+                      ),
+                  ],
+                ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                child: Text(
+                  '合并恢复：只补充缺失内容，幂等、可重复执行。\n'
+                  '指定版本恢复：原子替换本机数据，先自动保存保护性备份，'
+                  '并暂停同步直到你决定远端如何处理。',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ),
+              SectionHeader(title: '跨设备同步'),
+              SettingsGroup(
+                children: <Widget>[
+                  SettingsTile(
+                    leading: const Icon(Icons.sync),
+                    title: '打开数据同步',
+                    subtitle: 'GitHub 私有仓库 / WebDAV / 本地文件',
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () async {
+                      await Navigator.of(context).push<void>(
+                        MaterialPageRoute<void>(
+                          builder: (BuildContext context) =>
+                              const SyncSettingsPage(),
+                        ),
+                      );
+                      await _reload();
+                    },
+                  ),
+                ],
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                child: Text(
+                  '合并只会补充缺失的内容，不会覆盖已有的单词和学习记录；'
+                  '同一份文件重复导入也不会重复计数。',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ),
+              ExpansionTile(
+                title: Text('合并规则（高级）', style: theme.textTheme.bodyMedium),
+                tilePadding: const EdgeInsets.symmetric(horizontal: 16),
+                childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                children: <Widget>[
+                  Text(
+                    '作答记录按全局 ID 去重，学习状态由合并后的历史重新计算；'
+                    '词书关联带版本与删除标记，因此旧备份不会让已移除的单词复活。',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

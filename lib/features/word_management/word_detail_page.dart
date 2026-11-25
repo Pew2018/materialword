@@ -256,7 +256,7 @@ class _WordDetailPageState extends ConsumerState<WordDetailPage> {
                     title: '删除单词',
                     message:
                         '从全部用户词汇中删除「${_wordRow!.word}」？所有词书都会移除它，'
-                        '作答历史作为同步墓碑保留。只想移除一个词书请用「移出词书」。',
+                        '已有学习记录会保留。只想移除一个词书请用「移出词书」。',
                     confirmLabel: '删除',
                     destructive: true,
                   );

@@ -11,6 +11,7 @@ import '../../core/models/enums.dart';
 import '../../core/models/study_models.dart';
 import '../../core/text/dictionary_text.dart';
 import '../../core/time_utils.dart';
+import '../../shared/widgets/classic_select.dart';
 import '../../shared/widgets/common.dart';
 import 'quick_add_page.dart';
 import 'word_detail_page.dart';
@@ -444,8 +445,8 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
       title: '删除单词',
       message:
           '从全部用户词汇中删除选中的 ${ids.length} 个单词？'
-          '它们会从所有词书中消失。作答历史作为同步墓碑保留，'
-          '旧备份不会让它们复活。\n\n如果只是想从某个词书移除，请用「移出词书」。',
+          '它们会从所有词书中消失。删除单词不会清除已有学习记录，'
+          '旧备份也不会让它们重新出现。\n\n如果只是想从某个词书移除，请用「移出词书」。',
       confirmLabel: '删除',
       destructive: true,
     );
@@ -597,75 +598,67 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
                     },
                   ),
                   AppSpacing.w8,
-                  _DropdownChip<String?>(
+                  ClassicSelectChip<String>(
                     label: '标签',
-                    value: _tagId,
-                    items: [
-                      const DropdownMenuItem<String?>(
-                        value: null,
-                        child: Text('全部标签'),
-                      ),
+                    icon: Icons.label_outline,
+                    value: _tagId ?? '',
+                    options: <ClassicOption<String>>[
+                      const ClassicOption<String>(value: '', label: '全部标签'),
                       for (final tag in _tags)
-                        DropdownMenuItem<String?>(
-                          value: tag.id,
-                          child: Text(tag.name),
-                        ),
+                        ClassicOption<String>(value: tag.id, label: tag.name),
                     ],
-                    onChanged: (value) {
-                      setState(() => _tagId = value);
+                    onChanged: (String value) {
+                      setState(() => _tagId = value.isEmpty ? null : value);
                       _load();
                     },
                   ),
                   AppSpacing.w8,
-                  _DropdownChip<String?>(
+                  ClassicSelectChip<String>(
                     label: '词书',
-                    value: _bookId,
-                    items: <DropdownMenuItem<String?>>[
-                      const DropdownMenuItem<String?>(
-                        value: null,
-                        child: Text('全部词书'),
-                      ),
+                    icon: Icons.menu_book_outlined,
+                    value: _bookId ?? '',
+                    options: <ClassicOption<String>>[
+                      const ClassicOption<String>(value: '', label: '全部词书'),
                       for (final WordBook book in _books)
-                        DropdownMenuItem<String?>(
-                          value: book.id,
-                          child: Text(book.name),
-                        ),
+                        ClassicOption<String>(value: book.id, label: book.name),
                     ],
-                    onChanged: (String? value) {
-                      setState(() => _bookId = value);
+                    onChanged: (String value) {
+                      setState(() => _bookId = value.isEmpty ? null : value);
                       _load();
                     },
                   ),
                   AppSpacing.w8,
-                  _DropdownChip<ManagedStageFilter>(
+                  ClassicSelectChip<ManagedStageFilter>(
                     label: '状态',
+                    icon: Icons.filter_list,
                     value: _stage,
-                    items: <DropdownMenuItem<ManagedStageFilter>>[
+                    options: <ClassicOption<ManagedStageFilter>>[
                       for (final ManagedStageFilter filter
                           in ManagedStageFilter.values)
-                        DropdownMenuItem<ManagedStageFilter>(
+                        ClassicOption<ManagedStageFilter>(
                           value: filter,
-                          child: Text(filter.label),
+                          label: filter.label,
                         ),
                     ],
-                    onChanged: (ManagedStageFilter? value) {
-                      setState(() => _stage = value ?? ManagedStageFilter.all);
+                    onChanged: (ManagedStageFilter value) {
+                      setState(() => _stage = value);
                       _load();
                     },
                   ),
                   AppSpacing.w8,
-                  _DropdownChip<ManagedSort>(
+                  ClassicSelectChip<ManagedSort>(
                     label: '排序',
+                    icon: Icons.sort,
                     value: _sort,
-                    items: <DropdownMenuItem<ManagedSort>>[
+                    options: <ClassicOption<ManagedSort>>[
                       for (final ManagedSort sort in ManagedSort.values)
-                        DropdownMenuItem<ManagedSort>(
+                        ClassicOption<ManagedSort>(
                           value: sort,
-                          child: Text(sort.label),
+                          label: sort.label,
                         ),
                     ],
-                    onChanged: (ManagedSort? value) {
-                      setState(() => _sort = value ?? ManagedSort.addedDesc);
+                    onChanged: (ManagedSort value) {
+                      setState(() => _sort = value);
                       _load();
                     },
                   ),
@@ -871,41 +864,6 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
       wordId: row.word.id,
       bookId: _bookId,
       onChanged: _load,
-    );
-  }
-}
-
-class _DropdownChip<T> extends StatelessWidget {
-  const _DropdownChip({
-    required this.label,
-    required this.value,
-    required this.items,
-    required this.onChanged,
-  });
-
-  final String label;
-  final T value;
-  final List<DropdownMenuItem<T>> items;
-  final ValueChanged<T?> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 36,
-      padding: const EdgeInsets.symmetric(horizontal: 10),
-      decoration: BoxDecoration(
-        border: Border.all(color: Theme.of(context).dividerColor),
-        borderRadius: BorderRadius.circular(AppDimens.radius),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<T>(
-          value: value,
-          isDense: true,
-          items: items,
-          onChanged: onChanged,
-          hint: Text(label),
-        ),
-      ),
     );
   }
 }

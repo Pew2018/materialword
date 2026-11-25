@@ -7,6 +7,7 @@ import '../../app/theme.dart';
 import '../../core/database/app_database.dart';
 import '../../services/import_service.dart';
 import '../../services/word_intake_service.dart';
+import '../../shared/widgets/classic_select.dart';
 import '../../shared/widgets/common.dart';
 
 /// Wordbook import: pick a TXT / CSV / JSON file (or fetch an HTTPS link), see a
@@ -408,19 +409,22 @@ class _ImportPageState extends ConsumerState<ImportPage> {
                         if (!_createNew)
                           Padding(
                             padding: const EdgeInsets.only(left: 16, bottom: 8),
-                            child: DropdownButtonFormField<String>(
-                              initialValue: _bookId,
-                              decoration: const InputDecoration(
-                                labelText: '词书',
-                              ),
-                              items: <DropdownMenuItem<String>>[
+                            child: ClassicSelect<String>(
+                              label: '词书',
+                              value: _bookId ?? '',
+                              options: <ClassicOption<String>>[
+                                if (_bookId == null)
+                                  const ClassicOption<String>(
+                                    value: '',
+                                    label: '请选择词书',
+                                  ),
                                 for (final WordBook book in _books)
-                                  DropdownMenuItem<String>(
+                                  ClassicOption<String>(
                                     value: book.id,
-                                    child: Text(book.name),
+                                    label: book.name,
                                   ),
                               ],
-                              onChanged: (String? value) {
+                              onChanged: (String value) {
                                 setState(() => _bookId = value);
                                 _refreshStats();
                               },

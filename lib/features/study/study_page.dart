@@ -240,7 +240,10 @@ class _StudyPageState extends ConsumerState<StudyPage>
               child: LinearProgressIndicator(
                 value: _session.progress,
                 minHeight: 3,
-                backgroundColor: Colors.black26,
+                // Works on the light (accent) and dark app bar alike.
+                backgroundColor:
+                    (theme.appBarTheme.foregroundColor ?? Colors.white)
+                        .withValues(alpha: 0.24),
                 valueColor: AlwaysStoppedAnimation<Color>(
                   theme.colorScheme.onPrimary,
                 ),
@@ -735,6 +738,11 @@ class _LabeledBlock extends StatelessWidget {
 }
 
 /// Pinned bottom action area.
+///
+/// A plain surface with a single hairline divider — not a floating card with a
+/// second button inside it. The reveal button is a 40dp classic button inside a
+/// 48dp touch target, capped at a readable width on desktop instead of
+/// stretching across the whole window.
 class _AnswerBar extends StatelessWidget {
   const _AnswerBar({
     required this.revealed,
@@ -755,49 +763,105 @@ class _AnswerBar extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     return Material(
       color: theme.cardColor,
-      elevation: 8,
       child: SafeArea(
         top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-          child: revealed
-              ? Row(
-                  children: <Widget>[
-                    _AnswerButton(
-                      label: AnswerResult.unknown.label,
-                      color: AppColors.unknown,
-                      shortcut: desktop ? '1' : null,
-                      onPressed: busy
-                          ? null
-                          : () => onAnswer(AnswerResult.unknown),
-                    ),
-                    AppSpacing.w8,
-                    _AnswerButton(
-                      label: AnswerResult.hazy.label,
-                      color: AppColors.hazy,
-                      shortcut: desktop ? '2' : null,
-                      onPressed: busy
-                          ? null
-                          : () => onAnswer(AnswerResult.hazy),
-                    ),
-                    AppSpacing.w8,
-                    _AnswerButton(
-                      label: AnswerResult.known.label,
-                      color: AppColors.known,
-                      shortcut: desktop ? '3' : null,
-                      onPressed: busy
-                          ? null
-                          : () => onAnswer(AnswerResult.known),
-                    ),
-                  ],
-                )
-              : SizedBox(
-                  height: 48,
-                  child: ElevatedButton(
-                    onPressed: onReveal,
-                    child: Text(desktop ? '显示释义（Space）' : '显示释义'),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Divider(height: 1, color: theme.dividerColor),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: revealed ? AppDimens.actionBarMaxWidth : 420,
                   ),
+                  child: revealed
+                      ? Row(
+                          children: <Widget>[
+                            _AnswerButton(
+                              label: AnswerResult.unknown.label,
+                              color: AppColors.unknown,
+                              shortcut: desktop ? '1' : null,
+                              onPressed: busy
+                                  ? null
+                                  : () => onAnswer(AnswerResult.unknown),
+                            ),
+                            AppSpacing.w8,
+                            _AnswerButton(
+                              label: AnswerResult.hazy.label,
+                              color: AppColors.hazy,
+                              shortcut: desktop ? '2' : null,
+                              onPressed: busy
+                                  ? null
+                                  : () => onAnswer(AnswerResult.hazy),
+                            ),
+                            AppSpacing.w8,
+                            _AnswerButton(
+                              label: AnswerResult.known.label,
+                              color: AppColors.known,
+                              shortcut: desktop ? '3' : null,
+                              onPressed: busy
+                                  ? null
+                                  : () => onAnswer(AnswerResult.known),
+                            ),
+                          ],
+                        )
+                      : Row(
+                          children: <Widget>[
+                            Expanded(
+                              child: ElevatedButton(
+                                onPressed: onReveal,
+                                style: ElevatedButton.styleFrom(
+                                  minimumSize: const Size.fromHeight(40),
+                                ),
+                                child: const Text('显示释义'),
+                              ),
+                            ),
+                            // The shortcut lives next to the action, never
+                            // inside its label: "显示释义（Space）" read like a
+                            // developer tool.
+                            if (desktop) ...<Widget>[
+                              AppSpacing.w8,
+                              const _KeyHint('Space'),
+                            ],
+                          ],
+                        ),
                 ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Small keycap shown on desktop only.
+class _KeyHint extends StatelessWidget {
+  const _KeyHint(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Tooltip(
+      message: '按 $label 键显示释义',
+      child: Container(
+        height: 24,
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          border: Border.all(color: theme.dividerColor),
+          borderRadius: BorderRadius.circular(AppDimens.chipRadius),
+        ),
+        child: Text(
+          label,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.textTheme.bodySmall?.color,
+            fontSize: 11,
+          ),
         ),
       ),
     );
@@ -821,16 +885,17 @@ class _AnswerButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return Expanded(
       child: SizedBox(
-        height: 52,
+        height: 48,
         child: ElevatedButton(
           onPressed: onPressed,
           style: ElevatedButton.styleFrom(
             backgroundColor: color,
             foregroundColor: Colors.white,
-            elevation: 2,
+            elevation: 1,
             padding: EdgeInsets.zero,
+            minimumSize: const Size.fromHeight(48),
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(AppDimens.radius),
+              borderRadius: BorderRadius.circular(AppDimens.buttonRadius),
             ),
           ),
           child: Column(

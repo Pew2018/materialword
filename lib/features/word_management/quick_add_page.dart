@@ -11,6 +11,7 @@ import '../../core/text/dictionary_text.dart';
 import '../../services/dictionary_service.dart';
 import '../../services/import_service.dart';
 import '../../services/word_intake_service.dart';
+import '../../shared/widgets/classic_select.dart';
 import '../../shared/widgets/common.dart';
 
 /// Quick add: type a word, the offline dictionary fills in everything it knows,
@@ -653,7 +654,7 @@ class _QuickAddPageState extends ConsumerState<QuickAddPage> {
                   AppSpacing.h16,
                   Text(
                     '默认沿用上次选择的词书；已有单词会保留原有释义、笔记和学习进度，'
-                    '只有你实际修改的字段才会覆盖。',
+                    '只有你实际修改过的内容才会覆盖。',
                     style: theme.textTheme.bodySmall,
                   ),
                 ],
@@ -788,21 +789,22 @@ class _BookField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bool known = books.any((WordBook book) => book.id == bookId);
     return Row(
       children: <Widget>[
         Expanded(
-          child: DropdownButtonFormField<String>(
-            initialValue: bookId,
-            isExpanded: true,
-            decoration: const InputDecoration(labelText: '目标词书'),
-            items: <DropdownMenuItem<String>>[
+          child: ClassicSelect<String>(
+            label: '目标词书',
+            value: known ? bookId! : (books.isEmpty ? '' : books.first.id),
+            options: <ClassicOption<String>>[
+              if (books.isEmpty)
+                const ClassicOption<String>(value: '', label: '还没有词书'),
               for (final WordBook book in books)
-                DropdownMenuItem<String>(
-                  value: book.id,
-                  child: Text(book.name),
-                ),
+                ClassicOption<String>(value: book.id, label: book.name),
             ],
-            onChanged: onChanged,
+            onChanged: books.isEmpty
+                ? null
+                : (String value) => onChanged(value),
           ),
         ),
         AppSpacing.w8,

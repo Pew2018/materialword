@@ -52,10 +52,15 @@ class AppDimens {
   static const double twoLineItemHeight = 72;
   static const double iconSize = 24;
   static const double iconSizeSmall = 20;
-  static const double radius = 6;
-  static const double buttonRadius = 10;
-  static const double primaryButtonRadius = 12;
-  static const double navigationRadius = 16;
+
+  // Shape scale. Classic Material 1/2 is nearly square: buttons are 2dp,
+  // surfaces (fields, menus, dialogs) 4dp, cards 2dp. Nothing above 4dp is a
+  // button or a card in this app — a pill is never the right answer.
+  static const double buttonRadius = 2;
+  static const double radius = 4;
+  static const double cardRadius = 2;
+  static const double chipRadius = 2;
+
   static const double gutter = 16;
   static const double compactGutter = 12;
   static const double minTouchTarget = 48;
@@ -63,11 +68,15 @@ class AppDimens {
   static const double fabSize = 56;
   static const double sectionHeaderHeight = 40;
 
-  /// Below this width we treat the window as a phone.
+  /// Mini / small tablet width: below this the full side rail would eat the
+  /// content, so only an icon rail is used.
   static const double desktopBreakpoint = 900;
 
-  /// Narrow desktop window: icons + labels still fit, list stays readable.
-  static const double compactRailBreakpoint = 720;
+  /// Below this width even the icon rail costs too much horizontal space: the
+  /// window switches to the phone layout (bottom navigation) regardless of the
+  /// platform, so a narrow macOS window is a phone layout, not a squeezed
+  /// desktop one.
+  static const double railCollapseBreakpoint = 720;
 
   /// Above this width a list/detail two-column layout is comfortable.
   static const double twoPaneBreakpoint = 1040;
@@ -75,6 +84,20 @@ class AppDimens {
   static const double navRailWidth = 220;
   static const double navRailCompactWidth = 76;
   static const double contentMaxWidth = 880;
+
+  /// Comfortable reading width for a pinned action bar on desktop.
+  static const double actionBarMaxWidth = 720;
+}
+
+/// Motion tokens: three durations, one standard curve, so state changes feel
+/// like one app instead of a dozen ad-hoc timings.
+class AppMotion {
+  const AppMotion._();
+
+  static const Duration fast = Duration(milliseconds: 140);
+  static const Duration standard = Duration(milliseconds: 200);
+  static const Duration page = Duration(milliseconds: 240);
+  static const Curve curve = Curves.easeInOut;
 }
 
 /// A classic Material Design 2 accent colour.
@@ -243,13 +266,17 @@ class AppTheme {
 
     final ThemeData base2 = ThemeData(
       useMaterial3: false,
+      // Secondary pages slide in horizontally with a short travel and a subtle
+      // fade — never "up from the bottom", which reads like a modal. Android
+      // additionally follows the system predictive-back gesture (the builder
+      // falls back to the same horizontal fade when the gesture is not used).
       pageTransitionsTheme: const PageTransitionsTheme(
         builders: {
-          TargetPlatform.android: FadeUpwardsPageTransitionsBuilder(),
+          TargetPlatform.android: PredictiveBackPageTransitionsBuilder(),
           TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
           TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
-          TargetPlatform.windows: FadeUpwardsPageTransitionsBuilder(),
-          TargetPlatform.linux: FadeUpwardsPageTransitionsBuilder(),
+          TargetPlatform.windows: FadeForwardsPageTransitionsBuilder(),
+          TargetPlatform.linux: FadeForwardsPageTransitionsBuilder(),
         },
       ),
       brightness: brightness,
@@ -313,11 +340,11 @@ class AppTheme {
         ),
       ),
       cardTheme: CardThemeData(
-        elevation: 0,
+        elevation: 1,
         margin: EdgeInsets.zero,
         color: surface,
         shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.all(Radius.circular(AppDimens.radius)),
+          borderRadius: BorderRadius.all(Radius.circular(AppDimens.cardRadius)),
         ),
       ),
       dividerTheme: DividerThemeData(color: divider, thickness: 1, space: 1),
@@ -326,9 +353,9 @@ class AppTheme {
         textColor: textPrimary,
         minVerticalPadding: 8,
         selectedColor: primary,
-        selectedTileColor: primary.withValues(alpha: 0.08),
+        selectedTileColor: primary.withValues(alpha: 0.06),
         shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.all(Radius.circular(AppDimens.radius)),
+          borderRadius: BorderRadius.all(Radius.circular(AppDimens.cardRadius)),
         ),
       ),
       bottomNavigationBarTheme: BottomNavigationBarThemeData(
@@ -351,7 +378,7 @@ class AppTheme {
           backgroundColor: primary,
           foregroundColor: onPrimary,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppDimens.primaryButtonRadius),
+            borderRadius: BorderRadius.circular(AppDimens.buttonRadius),
           ),
           textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
         ),
@@ -501,7 +528,7 @@ class AppTheme {
         side: BorderSide(color: divider),
         labelStyle: textTheme.bodySmall,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppDimens.radius),
+          borderRadius: BorderRadius.circular(AppDimens.chipRadius),
         ),
       ),
     );

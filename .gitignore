@@ -80,3 +80,6 @@ dist/
 
 # Local benchmark logs and scratch output.
 work/
+
+# Golden failure dumps (local runs and CI artifacts)
+test/failures/
