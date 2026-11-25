@@ -1,14 +1,21 @@
+import 'dart:convert';
+
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../app/app_info.dart';
 import '../../app/providers.dart';
 import '../../app/theme.dart';
 import '../../core/database/app_database.dart';
 import '../../core/models/enums.dart';
 import '../../core/repositories/wordbook_repository.dart';
+import '../../services/diagnostics_service.dart';
 import '../../services/tts_service.dart';
+
+import 'package:file_picker/file_picker.dart';
+
 import '../../shared/widgets/common.dart';
 import '../backup/backup_page.dart';
 import '../sync/sync_settings_page.dart';
@@ -233,6 +240,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             ),
           ],
         ),
+        SectionHeader(title: '诊断'),
+        const _DiagnosticsSection(),
         SectionHeader(title: '关于'),
         SettingsGroup(
           children: <Widget>[
@@ -242,16 +251,34 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
                   Text(
-                    'MaterialWord 1.1.0（Phase 2）',
+                    'MaterialWord $appVersion',
                     style: theme.textTheme.bodyMedium,
                   ),
                   AppSpacing.h4,
                   Text(
-                    '离线优先的英语单词学习工具。内置词典来自 ECDICT（MIT 许可），'
-                    '学习记录保存在本机 SQLite，同步时只传输合并后的数据。',
+                    '离线优先的英语单词学习工具。学习记录保存在本机 SQLite，'
+                    '同步时只传输合并后的数据，凭据只存放在系统安全存储。',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                  AppSpacing.h8,
+                  Text(
+                    '内置词典：ECDICT（$dictionaryLicense 许可，$dictionaryEntryCount 条词条）。'
+                    '界面为 Material Design 2 经典样式。',
                     style: theme.textTheme.bodySmall,
                   ),
                 ],
+              ),
+            ),
+            SettingsTile(
+              leading: const Icon(Icons.description_outlined),
+              title: '开源许可证',
+              subtitle: 'Flutter、Drift、ECDICT 及其他依赖',
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => showLicensePage(
+                context: context,
+                applicationName: 'MaterialWord',
+                applicationVersion: appVersion,
+                applicationLegalese: 'ECDICT 词典数据以 MIT 许可分发。',
               ),
             ),
           ],
@@ -745,6 +772,104 @@ class _TtsRateSettingState extends State<_TtsRateSetting> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Opt-in diagnostics: off by default, bounded, redacted, exportable.
+class _DiagnosticsSection extends ConsumerStatefulWidget {
+  const _DiagnosticsSection();
+
+  @override
+  ConsumerState<_DiagnosticsSection> createState() =>
+      _DiagnosticsSectionState();
+}
+
+class _DiagnosticsSectionState extends ConsumerState<_DiagnosticsSection> {
+  bool _enabled = DiagnosticsService.instance.enabled;
+  bool _busy = false;
+
+  Future<void> _export() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final String report = await DiagnosticsService.instance.buildReport(
+        ref.read(databaseProvider),
+        runtime: <String, Object?>{
+          'appVersion': appVersion,
+          'buildCommit': buildCommit,
+          'flutterVersion': '3.50.1',
+          'dartVersion': '3.14.0',
+          'diagnosticsEnabled': _enabled,
+        },
+      );
+      final Uri? result = await FilePicker.saveFile(
+        fileName: 'materialword-diagnostics.txt',
+        bytes: utf8.encode(report),
+        mimeType: 'text/plain',
+        dialogTitle: '保存诊断信息',
+      );
+      if (!mounted) return;
+      showMessage(context, result == null ? '已取消导出' : '诊断信息已导出（不含凭据与学习内容）');
+    } catch (e) {
+      if (!mounted) return;
+      showMessage(context, '导出失败：$e', error: true);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return SettingsGroup(
+      children: <Widget>[
+        SwitchListTile(
+          value: _enabled,
+          title: const Text('记录详细诊断日志'),
+          subtitle: const Text('默认关闭；开启后只保留最近 400 条、24 小时，自动脱敏'),
+          onChanged: (bool value) async {
+            await DiagnosticsService.instance.setEnabled(
+              ref.read(databaseProvider),
+              value,
+            );
+            if (mounted) setState(() => _enabled = value);
+          },
+        ),
+        SettingsTile(
+          leading: const Icon(Icons.bug_report_outlined),
+          title: '导出诊断信息',
+          subtitle: '版本、commit、数据库与词典统计、同步状态；不含凭据和学习内容',
+          trailing: _busy
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.save_alt),
+          onTap: _busy ? null : _export,
+        ),
+        SettingsTile(
+          leading: const Icon(Icons.delete_sweep_outlined),
+          title: '清除已记录的诊断日志',
+          subtitle: DiagnosticsService.instance.entries.isEmpty
+              ? '当前没有记录'
+              : '${DiagnosticsService.instance.entries.length} 条记录',
+          onTap: () {
+            DiagnosticsService.instance.clear();
+            setState(() {});
+            showMessage(context, '已清除诊断日志');
+          },
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+          child: Text(
+            '诊断信息不会包含 Token、密码、认证头、词条内容或个人笔记；'
+            '同步配置只记录方式，不记录地址、账号或路径。',
+            style: theme.textTheme.bodySmall,
+          ),
+        ),
+      ],
     );
   }
 }

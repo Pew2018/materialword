@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
@@ -26,6 +27,7 @@ class _BackupPageState extends ConsumerState<BackupPage> {
   String? _status;
   String? _lastBackup;
   String? _error;
+  List<File> _backups = const <File>[];
 
   static const String _lastBackupKey = 'last_backup_at';
 
@@ -33,6 +35,74 @@ class _BackupPageState extends ConsumerState<BackupPage> {
   void initState() {
     super.initState();
     _loadLastBackup();
+    _loadBackups();
+  }
+
+  /// The five rolling recovery copies this device keeps. They live in the app
+  /// documents directory, so the list shows exactly what "恢复副本" means —
+  /// and lets the user take one out or delete it.
+  Future<void> _loadBackups() async {
+    final Directory dir = Directory(await _appDirectory());
+    final List<File> files =
+        dir
+            .listSync()
+            .whereType<File>()
+            .where(
+              (File file) =>
+                  file.path.contains('materialword-backup-') &&
+                  file.path.endsWith('.json'),
+            )
+            .toList()
+          ..sort((File a, File b) => b.path.compareTo(a.path));
+    if (!mounted) return;
+    setState(() => _backups = files);
+  }
+
+  Future<void> _exportExisting(File file) async {
+    try {
+      await FilePicker.saveFile(
+        fileName: file.uri.pathSegments.last,
+        bytes: await file.readAsBytes(),
+        mimeType: 'application/json',
+        dialogTitle: '导出恢复副本',
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = '导出失败：$e');
+    }
+  }
+
+  Future<void> _deleteBackup(File file) async {
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        title: const Text('删除这份恢复副本？'),
+        content: Text(
+          '${file.uri.pathSegments.last}\n\n只会删除这个本机文件；'
+          '数据库里的学习数据不受影响。',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await file.delete();
+      await _loadBackups();
+      if (!mounted) return;
+      setState(() => _status = '已删除恢复副本');
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = '删除失败：$e');
+    }
   }
 
   Future<void> _loadLastBackup() async {
@@ -95,6 +165,7 @@ class _BackupPageState extends ConsumerState<BackupPage> {
           .read(databaseProvider)
           .writeMeta(_lastBackupKey, now.toIso8601String());
       await _loadLastBackup();
+      await _loadBackups();
       if (!mounted) return;
       setState(() {
         _busy = false;
@@ -230,6 +301,46 @@ class _BackupPageState extends ConsumerState<BackupPage> {
               ],
             ),
           ),
+          SectionHeader(title: '恢复副本（本机，最多 5 份）'),
+          if (_backups.isEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+              child: Text(
+                '还没有恢复副本。点上面的「保存恢复副本」会在高危操作前留存一份。',
+                style: theme.textTheme.bodySmall,
+              ),
+            )
+          else
+            SettingsGroup(
+              children: <Widget>[
+                for (final File file in _backups)
+                  SettingsTile(
+                    leading: const Icon(Icons.history),
+                    title: formatDateTime(file.statSync().modified),
+                    subtitle:
+                        '${(file.lengthSync() / 1024 / 1024).toStringAsFixed(1)} MB'
+                        ' · ${file.uri.pathSegments.last}',
+                    trailing: PopupMenuButton<String>(
+                      tooltip: '恢复副本操作',
+                      onSelected: (String value) {
+                        if (value == 'export') _exportExisting(file);
+                        if (value == 'delete') _deleteBackup(file);
+                      },
+                      itemBuilder: (BuildContext context) =>
+                          const <PopupMenuEntry<String>>[
+                            PopupMenuItem<String>(
+                              value: 'export',
+                              child: Text('导出到…'),
+                            ),
+                            PopupMenuItem<String>(
+                              value: 'delete',
+                              child: Text('删除'),
+                            ),
+                          ],
+                    ),
+                  ),
+              ],
+            ),
           SectionHeader(title: '跨设备同步'),
           SettingsGroup(
             children: <Widget>[

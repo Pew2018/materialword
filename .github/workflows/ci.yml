@@ -107,7 +107,8 @@ jobs:
         # disabled TLS verification.
         run: |
           for attempt in 1 2 3; do
-            if flutter build apk --release --target-platform android-arm64; then
+            if flutter build apk --release --target-platform android-arm64 \
+              --dart-define=GIT_COMMIT="$GITHUB_SHA"; then
               exit 0
             fi
             if [ "$attempt" = 3 ]; then
@@ -123,10 +124,14 @@ jobs:
           APK=build/app/outputs/flutter-apk/app-release.apk
           test -f "$APK" || { echo "APK missing" >&2; exit 1; }
           unzip -l "$APK" > apk-contents.txt
+          echo "native libraries in the APK:"
+          awk '/lib\// {print "  " $4}' apk-contents.txt | sort
+          # The Flutter engine must be arm64-only: a v7a/x86_64 libflutter.so
+          # means the target-platform filter silently stopped working.
           grep -q 'lib/arm64-v8a/libflutter.so' apk-contents.txt \
-            || { echo "APK has no arm64 engine" >&2; exit 1; }
-          if grep -q 'lib/armeabi-v7a/' apk-contents.txt; then
-            echo "APK unexpectedly contains 32-bit libraries" >&2
+            || { echo "APK has no arm64 Flutter engine" >&2; exit 1; }
+          if grep -Eq 'lib/(armeabi-v7a|x86|x86_64)/libflutter\.so' apk-contents.txt; then
+            echo "APK contains a non-arm64 Flutter engine" >&2
             exit 1
           fi
           BUILD_TOOLS="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
@@ -186,7 +191,7 @@ jobs:
           } > dist/build-info-macos.txt
 
       - name: Build macOS release
-        run: flutter build macos --release
+        run: flutter build macos --release --dart-define=GIT_COMMIT="$GITHUB_SHA"
 
       # The build succeeding proves nothing about the bundle starting. These two
       # steps are the regression gate for the Phase 2 launch failure: a
@@ -292,7 +297,7 @@ jobs:
       - run: dart run build_runner build
 
       - name: Build iOS without code signing
-        run: flutter build ios --release --no-codesign
+        run: flutter build ios --release --no-codesign --dart-define=GIT_COMMIT="$GITHUB_SHA"
 
       - name: Collect build report
         run: |

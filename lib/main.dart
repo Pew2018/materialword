@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app/app.dart';
 import 'app/providers.dart';
 import 'core/database/app_database.dart';
+import 'services/diagnostics_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,6 +28,10 @@ Future<void> main() async {
   );
 
   unawaited(_repairDictionaryTextAfterFirstFrame(database));
+  // Restores the (default off) diagnostics switch before the first sync runs.
+  unawaited(
+    DiagnosticsService.instance.load(database).catchError((Object _) => false),
+  );
 }
 
 /// Rewrites dictionary rows written by older builds (literal `\n` escapes).

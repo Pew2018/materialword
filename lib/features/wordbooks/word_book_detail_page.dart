@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -6,6 +9,7 @@ import '../../app/theme.dart';
 import '../../core/database/app_database.dart';
 import '../../core/models/enums.dart';
 import '../../core/repositories/word_repository.dart';
+import '../../services/wordbook_export.dart';
 import '../../shared/widgets/common.dart';
 import '../word_management/import_page.dart';
 import '../word_management/quick_add_page.dart';
@@ -60,6 +64,41 @@ class _WordBookDetailPageState extends ConsumerState<WordBookDetailPage> {
     super.dispose();
   }
 
+  /// Writes the book's *content* to a user-chosen file. Not a backup: learning
+  /// history stays in the database and in the real backup file.
+  Future<void> _export(WordBookExportFormat format) async {
+    final WordBook? book = _book;
+    if (book == null) return;
+    try {
+      final List<Word> words = await ref
+          .read(wordBookRepositoryProvider)
+          .wordsInBook(widget.bookId);
+      final String body = WordBookExporter.encode(words, format);
+      final String safeName = book.name.replaceAll(
+        RegExp(r'[\\/:*?"<>|]'),
+        '_',
+      );
+      final Uri? saved = await FilePicker.saveFile(
+        fileName: '$safeName.${format.extension}',
+        bytes: utf8.encode(body),
+        mimeType: switch (format) {
+          WordBookExportFormat.txt => 'text/plain',
+          WordBookExportFormat.csv => 'text/csv',
+          WordBookExportFormat.json => 'application/json',
+        },
+        dialogTitle: '导出词书内容',
+      );
+      if (!mounted) return;
+      showMessage(
+        context,
+        saved == null ? '已取消导出' : '已导出 ${words.length} 个单词（不含学习记录）',
+      );
+    } catch (e) {
+      if (!mounted) return;
+      showMessage(context, '导出失败：$e', error: true);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
@@ -109,6 +148,20 @@ class _WordBookDetailPageState extends ConsumerState<WordBookDetailPage> {
               );
               ref.invalidate(bookSummariesProvider);
             },
+          ),
+          PopupMenuButton<WordBookExportFormat>(
+            tooltip: '导出词书内容',
+            icon: const Icon(Icons.ios_share),
+            onSelected: _export,
+            itemBuilder: (BuildContext context) =>
+                <PopupMenuEntry<WordBookExportFormat>>[
+                  for (final WordBookExportFormat format
+                      in WordBookExportFormat.values)
+                    PopupMenuItem<WordBookExportFormat>(
+                      value: format,
+                      child: Text(format.label),
+                    ),
+                ],
           ),
         ],
       ),

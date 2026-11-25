@@ -57,8 +57,32 @@ class PlatformGoldenFileComparator extends LocalFileComparator {
   Uri resolveReference(Uri golden) =>
       hasVariant(golden) ? variantUri(golden, platformTag) : golden;
 
+  /// Where a first-run candidate is written so a human can review it.
+  static Uri candidateUri(Uri golden, String platform) {
+    final String path = golden.path;
+    final int slash = path.lastIndexOf('/');
+    final String name = path.substring(slash + 1);
+    final int dot = name.lastIndexOf('.');
+    final String stem = dot <= 0 ? name : name.substring(0, dot);
+    return Uri.parse('failures/$stem.$platform.candidate.png');
+  }
+
   @override
-  Future<bool> compare(Uint8List imageBytes, Uri golden) {
+  Future<bool> compare(Uint8List imageBytes, Uri golden) async {
+    if (!hasVariant(golden) && !_fileFor(golden).existsSync()) {
+      // First run on a rasteriser we have no reference for. Never accept the
+      // image silently: write it out for review, then fail with instructions.
+      final Uri candidate = candidateUri(golden, platformTag);
+      final File file = _fileFor(candidate);
+      file.parent.createSync(recursive: true);
+      file.writeAsBytesSync(imageBytes, flush: true);
+      fail(
+        'No golden reference for $platformTag yet: "$golden".\n'
+        'A candidate was written to ${file.path}. Review it visually against the '
+        'other platforms\' references, then commit it as '
+        '"${variantUri(golden, platformTag).path}" to accept it.',
+      );
+    }
     return super.compare(imageBytes, resolveReference(golden));
   }
 

@@ -13,6 +13,7 @@ import '../../services/import_service.dart';
 import '../../shared/widgets/common.dart';
 import '../backup/backup_page.dart';
 import '../study/study_page.dart';
+import '../study/practice_page.dart';
 import '../study/sprint_page.dart';
 import '../word_management/import_page.dart';
 import '../word_management/quick_add_page.dart';
@@ -132,6 +133,8 @@ class DashboardPage extends ConsumerWidget {
                   style: theme.textTheme.bodySmall,
                 ),
               ),
+            SectionHeader(title: '练习'),
+            const _PracticeActions(),
             SectionHeader(title: '快捷操作'),
             SettingsGroup(
               children: <Widget>[
@@ -401,6 +404,52 @@ class _StartActions extends ConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Practice entry points. Available even when the daily target is finished:
+/// drills are a different activity from the scheduled queue, they consume no
+/// daily allowance and they never move a word's long-term interval.
+class _PracticeActions extends ConsumerWidget {
+  const _PracticeActions();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ThemeData theme = Theme.of(context);
+    final String? bookId = ref.watch(activeBookIdProvider);
+    return SettingsGroup(
+      children: <Widget>[
+        for (final PracticeKind kind in PracticeKind.values)
+          SettingsTile(
+            leading: Icon(switch (kind) {
+              PracticeKind.spelling => Icons.keyboard_outlined,
+              PracticeKind.dictation => Icons.hearing_outlined,
+              PracticeKind.choice => Icons.checklist_outlined,
+              PracticeKind.cloze => Icons.short_text_outlined,
+            }),
+            title: kind.label,
+            subtitle: kind == PracticeKind.cloze
+                ? '${kind.description}（只用词条自带例句）'
+                : kind.description,
+            onTap: () async {
+              await Navigator.of(context).push<void>(
+                MaterialPageRoute<void>(
+                  builder: (BuildContext context) =>
+                      PracticePage(kind: kind, bookId: bookId),
+                ),
+              );
+              ref.invalidate(statisticsProvider);
+            },
+          ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+          child: Text(
+            '练习不会占用每日新词/复习额度，也不会改变长期复习间隔。',
+            style: theme.textTheme.bodySmall,
+          ),
+        ),
+      ],
     );
   }
 }

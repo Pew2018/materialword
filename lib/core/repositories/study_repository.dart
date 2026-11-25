@@ -209,6 +209,68 @@ SELECT $wordColumnsWithState
     return _toWordWithState(rows);
   }
 
+  /// Candidate words for a practice drill, plus a distractor pool.
+  ///
+  /// Only words with a Chinese meaning can be drilled (it is the prompt), and a
+  /// cloze exercise additionally requires the word to appear in its own example
+  /// sentence — examples are never invented to fill a gap. Words the user has
+  /// already answered come first (most recent, then hardest); never-answered
+  /// words fill up the rest so a fresh library is not a dead end.
+  Future<PracticeBatch> practiceBatch({
+    required DateTime now,
+    String? bookId,
+    PracticeKind kind = PracticeKind.spelling,
+    int limit = 20,
+  }) async {
+    final List<Variable<Object>> variables = <Variable<Object>>[];
+    if (bookId != null) variables.add(Variable<String>(bookId));
+    variables.add(Variable<int>(math.max(limit * 6, 60)));
+    final List<QueryRow> rows = await db
+        .customSelect(
+          '''
+SELECT $wordColumnsWithState
+  FROM words w
+  $_stateJoin
+ WHERE w.deleted_at IS NULL
+   AND w.translation != ''
+   ${_bookFilter(active: bookId != null)}
+ ORDER BY CASE WHEN ls.last_studied_at IS NULL THEN 1 ELSE 0 END,
+          ls.last_studied_at DESC,
+          (COALESCE(ls.wrong_count, 0) * 2 + COALESCE(ls.hazy_count, 0)) DESC,
+          w.normalized
+ LIMIT ?''',
+          variables: variables,
+          readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
+            db.words,
+            db.learningStates,
+            db.wordBookEntries,
+          },
+        )
+        .get();
+    final pool = _toWordWithState(rows).map((row) => row.word).toList();
+    final eligible = kind == PracticeKind.cloze
+        ? pool.where((Word w) => clozeSentenceFor(w) != null).toList()
+        : pool;
+    final words = eligible.take(limit).toList();
+    // The distractor pool is the whole candidate set: a word that is drilled
+    // later in the same round is still a perfectly good wrong option now.
+    return PracticeBatch(kind: kind, words: words, pool: pool);
+  }
+
+  /// The sentence used by a cloze drill: the word's own example if it really
+  /// contains the word (word-boundary, case-insensitive). Returns null when
+  /// there is no usable example, in which case the drill skips the word instead
+  /// of fabricating data.
+  static String? clozeSentenceFor(Word word) {
+    final String example = word.example.trim();
+    if (example.isEmpty || word.word.trim().isEmpty) return null;
+    final RegExp pattern = RegExp(
+      '(?<![A-Za-z])${RegExp.escape(word.word.trim())}(?![A-Za-z])',
+      caseSensitive: false,
+    );
+    return pattern.hasMatch(example) ? example : null;
+  }
+
   Future<DateTime?> nextDueAfter(DateTime now) async {
     final row = await db
         .customSelect(
@@ -712,6 +774,24 @@ SELECT COUNT(*) AS c
         repeatInSession: false,
       );
     }
+    if (ReviewEventMode.isPractice(mode)) {
+      // A drill is a real answer — recorded, undoable, synced and counted — but
+      // it must not act as a long-term recall measurement. Stage, interval and
+      // next-review date stay exactly as they were; only the per-result counters
+      // move, so accuracy and the hard-word ranking still reflect what happened.
+      return ScheduleOutcome(
+        stage: current.stage,
+        correctCount:
+            current.correctCount + (result == AnswerResult.known ? 1 : 0),
+        hazyCount: current.hazyCount + (result == AnswerResult.hazy ? 1 : 0),
+        wrongCount:
+            current.wrongCount + (result == AnswerResult.unknown ? 1 : 0),
+        streak: current.streak,
+        intervalDays: current.intervalDays,
+        nextReviewAt: previousNext ?? now,
+        repeatInSession: false,
+      );
+    }
     final outcome = scheduler.schedule(
       current: current,
       result: result,
@@ -1023,6 +1103,145 @@ SELECT COALESCE(SUM(CASE WHEN re.result = 2 THEN 1 ELSE 0 END), 0) AS correct,
         )
         .getSingle();
 
+    // Real answers split by source: normal sessions, the explicit special
+    // queues, the practice drills and same-round repeats. Management events and
+    // undone answers are excluded by `_realAnswer`.
+    final List<QueryRow> modeRows = await db
+        .customSelect(
+          '''
+SELECT CASE
+         WHEN re.mode LIKE 'practice-%' THEN 'practice'
+         WHEN re.mode = 'repeat' THEN 'repeat'
+         WHEN re.mode LIKE 'special-%' THEN 'special'
+         ELSE 'normal'
+       END AS bucket,
+       re.mode AS mode,
+       COUNT(*) AS total
+  FROM words w
+  JOIN review_events re ON re.word_id = w.id
+ WHERE w.deleted_at IS NULL AND ${_realAnswer('re')}
+ $bookClause
+ GROUP BY bucket, re.mode''',
+          variables: variables,
+          readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
+            db.words,
+            db.reviewEvents,
+          },
+        )
+        .get();
+    int normal = 0, special = 0, practice = 0, repeat = 0;
+    final Map<PracticeKind, int> practiceByKind = <PracticeKind, int>{};
+    for (final QueryRow row in modeRows) {
+      final int total = row.read<int>('total');
+      switch (row.read<String>('bucket')) {
+        case 'practice':
+          practice += total;
+          final String mode = row.read<String>('mode');
+          final PracticeKind kind = PracticeKind.fromCode(
+            mode.substring(ReviewEventMode.practicePrefix.length),
+          );
+          practiceByKind[kind] = (practiceByKind[kind] ?? 0) + total;
+        case 'repeat':
+          repeat += total;
+        case 'special':
+          special += total;
+        default:
+          normal += total;
+      }
+    }
+
+    final QueryRow distinctRow = await db
+        .customSelect(
+          '''
+SELECT COUNT(DISTINCT re.word_id) AS c
+  FROM words w
+  JOIN review_events re ON re.word_id = w.id
+ WHERE w.deleted_at IS NULL AND ${_realAnswer('re')}
+ $bookClause''',
+          variables: variables,
+          readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
+            db.words,
+            db.reviewEvents,
+          },
+        )
+        .getSingle();
+
+    final QueryRow undoRow = await db
+        .customSelect(
+          '''
+SELECT COUNT(*) AS c
+  FROM words w
+  JOIN review_events undo ON undo.word_id = w.id
+ WHERE w.deleted_at IS NULL AND undo.mode LIKE 'undo:%'
+ $bookClause''',
+          variables: variables,
+          readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
+            db.words,
+            db.reviewEvents,
+          },
+        )
+        .getSingle();
+
+    final List<Variable<Object>> trendVariables = <Variable<Object>>[
+      ...variables,
+    ];
+    trendVariables.insert(
+      0,
+      Variable<String>(_dayKey(now.subtract(const Duration(days: 29)))),
+    );
+    final List<QueryRow> trendRows = await db
+        .customSelect(
+          '''
+SELECT re.local_day AS day,
+       COUNT(*) AS answers,
+       COALESCE(SUM(CASE WHEN re.result = 2 THEN 1 ELSE 0 END), 0) AS correct
+  FROM words w
+  JOIN review_events re ON re.word_id = w.id
+ WHERE w.deleted_at IS NULL AND ${_realAnswer('re')}
+   AND re.local_day >= ?
+ $bookClause
+ GROUP BY re.local_day
+ ORDER BY re.local_day''',
+          variables: trendVariables,
+          readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
+            db.words,
+            db.reviewEvents,
+          },
+        )
+        .get();
+    final List<DailyAnswers> trend30 = <DailyAnswers>[
+      for (final QueryRow row in trendRows)
+        DailyAnswers(
+          day: row.read<String>('day'),
+          answers: row.read<int>('answers'),
+          correct: row.read<int>('correct'),
+        ),
+    ];
+    final Set<String> lastSeven = <String>{
+      for (int i = 0; i < 7; i++) _dayKey(now.subtract(Duration(days: 6 - i))),
+    };
+
+    final QueryRow todayRow = await db
+        .customSelect(
+          '''
+SELECT COUNT(*) AS answers,
+       COALESCE(SUM(CASE WHEN re.result = 2 THEN 1 ELSE 0 END), 0) AS correct
+  FROM words w
+  JOIN review_events re ON re.word_id = w.id
+ WHERE w.deleted_at IS NULL AND ${_realAnswer('re')}
+   AND re.local_day = ?
+ $bookClause''',
+          variables: <Variable<Object>>[
+            Variable<String>(_dayKey(now)),
+            ...variables,
+          ],
+          readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
+            db.words,
+            db.reviewEvents,
+          },
+        )
+        .getSingle();
+
     return StudyStatistics(
       totalWords: await totalCount(bookId: bookId),
       learnedWords: await learnedCount(bookId: bookId),
@@ -1034,7 +1253,69 @@ SELECT COALESCE(SUM(CASE WHEN re.result = 2 THEN 1 ELSE 0 END), 0) AS correct,
       hardWords: await hardWords(bookId: bookId, limit: 30),
       lastStudyDay: lastDay.readNullable<String>('day'),
       scopedToBook: bookId != null,
+      todayAnswers: todayRow.read<int>('answers'),
+      todayCorrect: todayRow.read<int>('correct'),
+      distinctAnsweredWords: distinctRow.read<int>('c'),
+      undoneAnswers: undoRow.read<int>('c'),
+      breakdown: AnswerBreakdown(
+        normal: normal,
+        special: special,
+        practice: practice,
+        repeat: repeat,
+        practiceByKind: practiceByKind,
+      ),
+      trend30: trend30,
+      trend7: trend30
+          .where((DailyAnswers d) => lastSeven.contains(d.day))
+          .toList(),
+      dueForecast: await _dueForecast(now: now, bookId: bookId),
     );
+  }
+
+  /// Words falling due on each of the next seven local days (today included).
+  /// Local-day buckets are computed in Dart from the stored UTC instants so a
+  /// timezone change cannot shift a whole column sideways.
+  Future<List<DueForecastDay>> _dueForecast({
+    required DateTime now,
+    String? bookId,
+  }) async {
+    final List<Variable<Object>> variables = <Variable<Object>>[];
+    if (bookId != null) variables.add(Variable<String>(bookId));
+    final List<QueryRow> rows = await db
+        .customSelect(
+          '''
+SELECT ls.next_review_at AS due
+  FROM words w
+  JOIN learning_states ls ON ls.word_id = w.id
+ WHERE w.deleted_at IS NULL AND ls.stage != 0 AND ls.next_review_at IS NOT NULL
+ ${_bookFilter(active: bookId != null)}''',
+          variables: variables,
+          readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
+            db.words,
+            db.learningStates,
+            db.wordBookEntries,
+          },
+        )
+        .get();
+    final DateTime start = startOfLocalDay(now);
+    final List<DueForecastDay> forecast = <DueForecastDay>[
+      for (int i = 0; i < 7; i++)
+        DueForecastDay(day: _dayKey(start.add(Duration(days: i))), count: 0),
+    ];
+    final Map<String, int> index = <String, int>{
+      for (int i = 0; i < forecast.length; i++) forecast[i].day: i,
+    };
+    for (final QueryRow row in rows) {
+      final int due = row.read<int>('due');
+      final int? slot =
+          index[_dayKey(DateTime.fromMillisecondsSinceEpoch(due))];
+      if (slot == null) continue;
+      forecast[slot] = DueForecastDay(
+        day: forecast[slot].day,
+        count: forecast[slot].count + 1,
+      );
+    }
+    return forecast;
   }
 
   // ------------------------------------------------------ word management

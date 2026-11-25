@@ -3,7 +3,7 @@ description: "MaterialWord — offline English vocabulary learning (Flutter, Mat
 publish_to: 'none'
 
 # Version is also stored in backups and shown in Settings.
-version: 1.1.0+2
+version: 1.2.0+3
 
 environment:
   sdk: ^3.14.0

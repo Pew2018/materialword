@@ -137,6 +137,32 @@ enum SpecialReview {
       );
 }
 
+/// Explicit practice drills. They reuse the same event log, statistics and sync
+/// path as ordinary answers, but a practice answer never moves the long-term
+/// review ladder: spelling a word correctly today says nothing about whether it
+/// is still known in 14 days.
+enum PracticeKind {
+  spelling('spelling', '拼写练习', '看中文释义，输入英文单词'),
+  dictation('dictation', '听写练习', '听发音，输入英文单词'),
+  choice('choice', '选择题', '从选项中选出正确单词'),
+  cloze('cloze', '例句挖空', '根据例句语境补全单词');
+
+  const PracticeKind(this.code, this.label, this.description);
+
+  final String code;
+  final String label;
+  final String description;
+
+  static PracticeKind fromCode(String? code) => PracticeKind.values.firstWhere(
+    (PracticeKind v) => v.code == code,
+    orElse: () => PracticeKind.spelling,
+  );
+
+  /// Whether the drill asks the user to type the word (so text normalisation
+  /// and case rules apply) instead of picking an option.
+  bool get isTyped => this != PracticeKind.choice;
+}
+
 /// Explicit event semantics.
 ///
 /// Everything that changes learning state goes through [ReviewEvents] so that
@@ -164,13 +190,21 @@ class ReviewEventMode {
   static const String repeat = 'repeat';
   static const String undoPrefix = 'undo:';
 
+  /// Practice drills prefix their events with this, so replay can keep the
+  /// long-term interval untouched while still writing a real, syncable event.
+  static const String practicePrefix = 'practice-';
+
   static bool isManagement(String mode) =>
       mode == reset ||
       mode == manualMastered ||
       mode == manualUnmastered ||
       mode.startsWith(undoPrefix);
 
+  static bool isPractice(String mode) => mode.startsWith(practicePrefix);
+
   static bool isReset(String? value) => value == reset;
+
+  static String forPractice(PracticeKind kind) => '$practicePrefix${kind.code}';
 
   static String forSpecial(SpecialReview review) => switch (review) {
     SpecialReview.hard => specialHard,

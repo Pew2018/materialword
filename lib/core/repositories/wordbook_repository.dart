@@ -285,6 +285,28 @@ SELECT COUNT(*) AS c
     return row.read<int>('c');
   }
 
+  /// Every live word of one book, alphabetically. Used by the exports; a book
+  /// export is deliberately *not* a learning backup (no events, states or
+  /// settings), and the UI says so.
+  Future<List<Word>> wordsInBook(String bookId) async {
+    final List<QueryRow> rows = await db
+        .customSelect(
+          '''
+SELECT w.*
+  FROM words w
+  JOIN word_book_entries e ON e.word_id = w.id
+ WHERE e.word_book_id = ? AND e.deleted_at IS NULL AND w.deleted_at IS NULL
+ ORDER BY w.normalized, w.id''',
+          variables: <Variable<Object>>[Variable<String>(bookId)],
+          readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
+            db.wordBookEntries,
+            db.words,
+          },
+        )
+        .get();
+    return rows.map((QueryRow row) => db.words.map(row.data)).toList();
+  }
+
   Future<void> _cleanupUnusedWord(String wordId) async {
     final List<WordBookEntry> links = await (db.select(
       db.wordBookEntries,

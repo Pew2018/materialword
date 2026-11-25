@@ -59,6 +59,27 @@ class StudyCard {
   );
 }
 
+/// Candidate words and distractors for one practice drill.
+class PracticeBatch {
+  const PracticeBatch({
+    required this.kind,
+    required this.words,
+    required this.pool,
+  });
+
+  const PracticeBatch.empty(this.kind)
+    : words = const <Word>[],
+      pool = const <Word>[];
+
+  final PracticeKind kind;
+
+  /// Words the drill will actually ask about.
+  final List<Word> words;
+
+  /// Remaining words of the same scope, used as multiple-choice distractors.
+  final List<Word> pool;
+}
+
 /// The queue the session will walk through.
 class StudyQueue {
   const StudyQueue({
@@ -199,6 +220,50 @@ class TodayProgress {
   String get scopeLabel => scopedToBook ? '当前词书' : '全部词书';
 }
 
+/// Answers recorded on one local day (device time zone).
+class DailyAnswers {
+  const DailyAnswers({
+    required this.day,
+    required this.answers,
+    required this.correct,
+  });
+
+  /// `yyyy-MM-dd`, the same key stored on the event.
+  final String day;
+  final int answers;
+  final int correct;
+
+  double? get accuracy => answers == 0 ? null : correct / answers;
+}
+
+/// How many words fall due on a given local day (next 7 days).
+class DueForecastDay {
+  const DueForecastDay({required this.day, required this.count});
+
+  final String day;
+  final int count;
+}
+
+/// How the recorded answers split by source. These are *real* answers only:
+/// manual management events and undone answers are counted separately.
+class AnswerBreakdown {
+  const AnswerBreakdown({
+    this.normal = 0,
+    this.special = 0,
+    this.practice = 0,
+    this.repeat = 0,
+    this.practiceByKind = const <PracticeKind, int>{},
+  });
+
+  final int normal;
+  final int special;
+  final int practice;
+  final int repeat;
+  final Map<PracticeKind, int> practiceByKind;
+
+  int get total => normal + special + practice + repeat;
+}
+
 /// Aggregated numbers for the statistics screen.
 class StudyStatistics {
   const StudyStatistics({
@@ -212,6 +277,14 @@ class StudyStatistics {
     required this.hardWords,
     required this.lastStudyDay,
     this.scopedToBook = false,
+    this.todayAnswers = 0,
+    this.todayCorrect = 0,
+    this.distinctAnsweredWords = 0,
+    this.undoneAnswers = 0,
+    this.breakdown = const AnswerBreakdown(),
+    this.trend7 = const <DailyAnswers>[],
+    this.trend30 = const <DailyAnswers>[],
+    this.dueForecast = const <DueForecastDay>[],
   });
 
   const StudyStatistics.empty()
@@ -224,7 +297,15 @@ class StudyStatistics {
       wrongCount = 0,
       hardWords = const <WordWithState>[],
       lastStudyDay = null,
-      scopedToBook = false;
+      scopedToBook = false,
+      todayAnswers = 0,
+      todayCorrect = 0,
+      distinctAnsweredWords = 0,
+      undoneAnswers = 0,
+      breakdown = const AnswerBreakdown(),
+      trend7 = const <DailyAnswers>[],
+      trend30 = const <DailyAnswers>[],
+      dueForecast = const <DueForecastDay>[];
 
   final int totalWords;
   final int learnedWords;
@@ -236,6 +317,24 @@ class StudyStatistics {
   final List<WordWithState> hardWords;
   final String? lastStudyDay;
   final bool scopedToBook;
+
+  /// Attempts (not words) recorded today, across every source.
+  final int todayAnswers;
+  final int todayCorrect;
+
+  /// Distinct words that have at least one real answer.
+  final int distinctAnsweredWords;
+
+  /// Undo events — answers that were explicitly reverted and are therefore not
+  /// part of any accuracy number above.
+  final int undoneAnswers;
+
+  final AnswerBreakdown breakdown;
+  final List<DailyAnswers> trend7;
+  final List<DailyAnswers> trend30;
+
+  /// Words falling due on each of the next seven local days.
+  final List<DueForecastDay> dueForecast;
 
   int get unlearnedWords => (totalWords - learnedWords).clamp(0, totalWords);
   int get totalAnswers => correctCount + hazyCount + wrongCount;

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/providers.dart';
 import '../../app/theme.dart';
+import '../../core/models/enums.dart';
 import '../../core/models/study_models.dart';
 import '../../core/repositories/word_repository.dart';
 import '../../core/repositories/wordbook_repository.dart';
@@ -159,6 +160,28 @@ class StatisticsPage extends ConsumerWidget {
                     ),
                     Expanded(
                       child: StatBlock(
+                        value: '${data.todayAnswers}',
+                        label: '今日实际作答',
+                      ),
+                    ),
+                    Expanded(
+                      child: StatBlock(
+                        value: data.todayAnswers == 0
+                            ? '—'
+                            : '${(data.todayCorrect / data.todayAnswers * 100).round()}%',
+                        label: data.todayAnswers == 0 ? '正确率（无记录）' : '今日正确率',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                child: Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: StatBlock(
                         value: '${data.correctCount}',
                         label: '累计正确',
                       ),
@@ -170,11 +193,123 @@ class StatisticsPage extends ConsumerWidget {
                         color: data.wrongCount > 0 ? AppColors.unknown : null,
                       ),
                     ),
+                    Expanded(
+                      child: StatBlock(
+                        value: '${data.hazyCount}',
+                        label: '累计模糊',
+                        color: AppColors.hazy,
+                      ),
+                    ),
+                    Expanded(
+                      child: StatBlock(
+                        value: '${data.distinctAnsweredWords}',
+                        label: '独立词条',
+                      ),
+                    ),
                   ],
                 ),
               ),
             ],
           ),
+          SectionHeader(title: '作答构成（累计）'),
+          SettingsGroup(
+            children: <Widget>[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    _LineRow(
+                      label: '普通学习/复习',
+                      value: '${data.breakdown.normal} 次',
+                    ),
+                    _LineRow(
+                      label: '专项复习（困难/错误/词书/收藏/冲刺）',
+                      value: '${data.breakdown.special} 次',
+                    ),
+                    _LineRow(
+                      label: '练习模式',
+                      value: '${data.breakdown.practice} 次',
+                    ),
+                    for (final PracticeKind kind in PracticeKind.values)
+                      if ((data.breakdown.practiceByKind[kind] ?? 0) > 0)
+                        _LineRow(
+                          label: '　· ${kind.label}',
+                          value: '${data.breakdown.practiceByKind[kind]} 次',
+                          subtle: true,
+                        ),
+                    _LineRow(
+                      label: '同轮复练',
+                      value: '${data.breakdown.repeat} 次',
+                    ),
+                    _LineRow(
+                      label: '独立词条（有真实作答）',
+                      value: '${data.distinctAnsweredWords} 个',
+                    ),
+                    _LineRow(
+                      label: '已撤销作答（不计入统计）',
+                      value: '${data.undoneAnswers} 次',
+                    ),
+                    AppSpacing.h8,
+                    Text(
+                      '练习模式真实计次，但不改变长期复习间隔；人工掌握/重置属于管理事件，不计入作答。',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          SectionHeader(title: '近 7 天作答'),
+          SettingsGroup(
+            children: <Widget>[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                child: _TrendChart(points: data.trend7),
+              ),
+            ],
+          ),
+          SectionHeader(title: '未来 7 天到期复习'),
+          SettingsGroup(
+            children: <Widget>[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    for (final DueForecastDay day in data.dueForecast)
+                      _LineRow(label: day.day, value: '${day.count} 个'),
+                    if (data.dueForecast.isEmpty)
+                      Text('没有计划中的到期复习。', style: theme.textTheme.bodySmall),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if ((books.value ?? const <WordBookSummary>[])
+              .isNotEmpty) ...<Widget>[
+            SectionHeader(title: '词书完成度'),
+            SettingsGroup(
+              children: <Widget>[
+                for (final WordBookSummary book
+                    in (books.value ?? const <WordBookSummary>[]).take(20))
+                  SettingsTile(
+                    title: book.book.name,
+                    subtitle:
+                        '${book.wordCount} 词 · 已学 ${book.learnedCount} · 到期 ${book.dueCount}',
+                    trailing: Text(
+                      '${(book.progress * 100).round()}%',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                    onTap: () => ref
+                        .read(statisticsBookFilterProvider.notifier)
+                        .select(book.book.id),
+                  ),
+              ],
+            ),
+          ],
           SectionHeader(title: '字词表现'),
           SettingsGroup(
             children: <Widget>[
@@ -193,15 +328,14 @@ class StatisticsPage extends ConsumerWidget {
                         ),
                         Expanded(
                           child: StatBlock(
-                            value: '${data.hazyCount}',
-                            label: '累计模糊',
-                            color: AppColors.hazy,
+                            value: data.lastStudyDay ?? '—',
+                            label: '最近学习日',
                           ),
                         ),
                         Expanded(
                           child: StatBlock(
-                            value: data.lastStudyDay ?? '—',
-                            label: '最近学习日',
+                            value: '${data.undoneAnswers}',
+                            label: '已撤销',
                           ),
                         ),
                       ],
@@ -241,6 +375,94 @@ class StatisticsPage extends ConsumerWidget {
             ),
           ],
         ],
+      ],
+    );
+  }
+}
+
+/// "label ————— value" row used by the breakdown and forecast blocks.
+class _LineRow extends StatelessWidget {
+  const _LineRow({
+    required this.label,
+    required this.value,
+    this.subtle = false,
+  });
+
+  final String label;
+  final String value;
+  final bool subtle;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: Text(
+              label,
+              style: subtle
+                  ? theme.textTheme.bodySmall
+                  : theme.textTheme.bodyMedium,
+            ),
+          ),
+          Text(
+            value,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Seven daily bars. Deliberately a plain widget — no chart package, no
+/// animation, and it scales to the available width.
+class _TrendChart extends StatelessWidget {
+  const _TrendChart({required this.points});
+
+  final List<DailyAnswers> points;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    if (points.isEmpty) {
+      return Text('最近 7 天还没有作答记录。', style: theme.textTheme.bodySmall);
+    }
+    final int max = points
+        .map((DailyAnswers p) => p.answers)
+        .fold<int>(0, (int a, int b) => a > b ? a : b);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: <Widget>[
+        for (final DailyAnswers point in points)
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Text('${point.answers}', style: theme.textTheme.bodySmall),
+                  const SizedBox(height: 4),
+                  Container(
+                    height: max == 0 ? 2 : 6 + 54 * (point.answers / max),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primary.withValues(alpha: 0.75),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    point.day.substring(5),
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            ),
+          ),
       ],
     );
   }

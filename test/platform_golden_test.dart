@@ -76,4 +76,34 @@ void main() {
     expect(variant.readAsBytesSync(), <int>[7, 8, 9]);
     expect(shared.readAsBytesSync(), <int>[1, 2, 3]);
   });
+
+  test('a missing reference writes a review candidate and fails', () async {
+    final Directory dir = Directory.systemTemp.createTempSync('mw_golden_');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    Directory('${dir.path}/goldens').createSync();
+    final _RecordingComparator comparator = _RecordingComparator(
+      Uri.file('${dir.path}/sample_test.dart'),
+    );
+    final Uri golden = Uri.parse('goldens/unknown.png');
+    final Uint8List image = Uint8List.fromList(<int>[1, 2, 3, 4]);
+
+    // The recording subclass bypasses the check, so exercise the base class.
+    final PlatformGoldenFileComparator base = PlatformGoldenFileComparator(
+      Uri.file('${dir.path}/sample_test.dart'),
+    );
+    await expectLater(
+      base.compare(image, golden),
+      throwsA(
+        // `fail()` reports a TestFailure, which is what turns the golden test
+        // red; the candidate image is the actionable part.
+        predicate((Object e) => '$e'.contains('No golden reference')),
+      ),
+    );
+    final File candidate = File(
+      '${dir.path}/failures/unknown.${PlatformGoldenFileComparator.platformTag}.candidate.png',
+    );
+    expect(candidate.existsSync(), isTrue);
+    expect(candidate.readAsBytesSync(), image);
+    expect(comparator.hasVariant(golden), isFalse);
+  });
 }

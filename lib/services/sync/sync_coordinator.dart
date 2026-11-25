@@ -8,6 +8,7 @@ import '../../core/repositories/settings_repository.dart';
 import '../../core/repositories/study_repository.dart';
 import '../../core/time_utils.dart';
 import '../backup_service.dart';
+import '../diagnostics_service.dart';
 import 'credential_store.dart';
 import 'github_sync_provider.dart';
 import 'local_file_sync_provider.dart';
@@ -286,9 +287,20 @@ class SyncCoordinator {
       }
       throw const SyncException('同步未能完成：多次出现并发冲突，请稍后再试');
     } on SyncException catch (e) {
+      DiagnosticsService.instance.log(
+        'sync',
+        'failed: ${e.message} (retryable: ${e.retryable})',
+        error: true,
+      );
       await _recordFailure(clock.now(), message: '同步失败：${e.message}');
       rethrow;
     } catch (e) {
+      // The exception *type* only: the message may embed a URL with credentials.
+      DiagnosticsService.instance.log(
+        'sync',
+        'failed with ${e.runtimeType}',
+        error: true,
+      );
       await _recordFailure(clock.now());
       throw SyncException('同步失败：$e');
     } finally {

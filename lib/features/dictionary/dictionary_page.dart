@@ -8,6 +8,7 @@ import '../../app/theme.dart';
 import '../../core/database/app_database.dart';
 import '../../core/repositories/word_repository.dart';
 import '../../services/dictionary_service.dart';
+import '../../services/word_form_guesser.dart';
 import '../../shared/widgets/common.dart';
 
 /// Offline dictionary search. Words can be pushed straight into the current book.
@@ -32,6 +33,47 @@ class _DictionaryPageState extends ConsumerState<DictionaryPage> {
   bool _searching = false;
   String? _error;
   String _term = '';
+  List<WordFormCandidate> _forms = const <WordFormCandidate>[];
+  List<String> _recent = const <String>[];
+  static const String _recentKey = 'dictionary_recent_searches';
+  static const int _recentLimit = 8;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRecent();
+  }
+
+  Future<void> _loadRecent() async {
+    final String? raw = await ref.read(databaseProvider).readMeta(_recentKey);
+    if (!mounted || raw == null) return;
+    final List<String> terms = raw
+        .split('\n')
+        .map((String value) => value.trim())
+        .where((String value) => value.isNotEmpty)
+        .toList();
+    setState(() => _recent = terms);
+  }
+
+  /// Recent searches are a local convenience only: they are never synced and
+  /// never leave the device.
+  Future<void> _remember(String term) async {
+    final String value = term.trim();
+    if (value.isEmpty) return;
+    final List<String> next = <String>[
+      value,
+      ..._recent.where(
+        (String item) => item.toLowerCase() != value.toLowerCase(),
+      ),
+    ].take(_recentLimit).toList();
+    await ref.read(databaseProvider).writeMeta(_recentKey, next.join('\n'));
+    if (mounted) setState(() => _recent = next);
+  }
+
+  Future<void> _clearRecent() async {
+    await ref.read(databaseProvider).deleteMeta(_recentKey);
+    if (mounted) setState(() => _recent = const <String>[]);
+  }
 
   @override
   void dispose() {
@@ -64,6 +106,7 @@ class _DictionaryPageState extends ConsumerState<DictionaryPage> {
       if (term.isEmpty) {
         _results = const <DictionaryEntry>[];
         _mine = const <WordWithState>[];
+        _forms = const <WordFormCandidate>[];
       }
     });
     if (term.isEmpty) return;
@@ -79,13 +122,32 @@ class _DictionaryPageState extends ConsumerState<DictionaryPage> {
       final List<WordWithState> mine = await ref
           .read(wordRepositoryProvider)
           .listWords(query: term, limit: 20);
+      // Base-form hints are only ever shown when the candidate really exists in
+      // the dictionary; the app never invents a relation or merges two entries.
+      final List<WordFormCandidate> forms = <WordFormCandidate>[];
+      final String needle = term.toLowerCase();
+      final bool exact = found.any(
+        (DictionaryEntry entry) => entry.display.toLowerCase() == needle,
+      );
+      if (!exact && WordFormGuesser.candidates(term).isNotEmpty) {
+        for (final WordFormCandidate candidate in WordFormGuesser.candidates(
+          term,
+        )) {
+          final DictionaryEntry? lemma = await dictionary.lookup(
+            candidate.lemma,
+          );
+          if (lemma != null && forms.length < 3) forms.add(candidate);
+        }
+      }
       if (!mounted || !_generation.isCurrent(generation)) return;
       setState(() {
         _results = found;
         _mine = mine;
+        _forms = forms;
         _searching = false;
         _error = null;
       });
+      await _remember(term);
     } catch (e) {
       if (!mounted || !_generation.isCurrent(generation)) return;
       setState(() {
@@ -204,9 +266,31 @@ class _DictionaryPageState extends ConsumerState<DictionaryPage> {
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
             child: ErrorBanner(message: _error!, onRetry: () => _run(_term)),
           ),
-        if (_term.isEmpty)
+        if (_term.isEmpty) ...<Widget>[
+          if (_recent.isNotEmpty) ...<Widget>[
+            SectionHeader(
+              title: '最近搜索',
+              trailing: TextButton(
+                onPressed: _clearRecent,
+                child: const Text('清除历史'),
+              ),
+            ),
+            SettingsGroup(
+              children: <Widget>[
+                for (final String term in _recent)
+                  SettingsTile(
+                    leading: const Icon(Icons.history),
+                    title: term,
+                    onTap: () {
+                      _query.text = term;
+                      _onChanged(term);
+                    },
+                  ),
+              ],
+            ),
+          ],
           const Padding(
-            padding: EdgeInsets.only(top: 40, left: 16, right: 16),
+            padding: EdgeInsets.only(top: 24, left: 16, right: 16),
             child: EmptyState(
               icon: Icons.menu_book_outlined,
               title: '离线词典',
@@ -214,8 +298,25 @@ class _DictionaryPageState extends ConsumerState<DictionaryPage> {
                   '内置 ECDICT 精简词库（约 2.6 万词，覆盖中高考、四六级、考研、'
                   '雅思托福 GRE）。输入单词开始查询，可直接加入当前词书。',
             ),
-          )
-        else ...<Widget>[
+          ),
+        ] else ...<Widget>[
+          if (_forms.isNotEmpty) ...<Widget>[
+            SectionHeader(title: '原型词候选'),
+            SettingsGroup(
+              children: <Widget>[
+                for (final WordFormCandidate candidate in _forms)
+                  SettingsTile(
+                    leading: const Icon(Icons.subdirectory_arrow_right),
+                    title: candidate.lemma,
+                    subtitle: '可能是该词的${candidate.relation}形式；两个词条不会被合并',
+                    onTap: () {
+                      _query.text = candidate.lemma;
+                      _onChanged(candidate.lemma);
+                    },
+                  ),
+              ],
+            ),
+          ],
           if (_mine.isNotEmpty) ...<Widget>[
             SectionHeader(title: '我的词条（${_mine.length}）'),
             SettingsGroup(
