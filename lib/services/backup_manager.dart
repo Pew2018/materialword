@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:drift/drift.dart' show QueryRow;
+import 'package:drift/drift.dart' show QueryRow, Value;
 import 'package:file_picker/file_picker.dart';
 
 import '../core/database/app_database.dart';
@@ -97,6 +97,7 @@ class RestoreOutcome {
     required this.clearedWords,
     required this.clearedEvents,
     required this.syncPaused,
+    this.currentBookCleared = false,
   });
 
   final MergeReport report;
@@ -104,6 +105,10 @@ class RestoreOutcome {
   final int clearedWords;
   final int clearedEvents;
   final bool syncPaused;
+
+  /// True when the device-local book selection pointed at a book the snapshot
+  /// does not contain, so it was cleared instead of leaving a dangling id.
+  final bool currentBookCleared;
 
   String get summary =>
       '已恢复 ${report.newWords + report.updatedWords} 个词条、'
@@ -289,16 +294,24 @@ class BackupManager {
   ///     the exact previous state);
   ///  3. active sessions and sync bookkeeping are invalidated;
   ///  4. sync stays paused until the user decides how to treat the remote.
+  ///
+  /// Shared settings (daily targets, study mode, sprint plan and their version)
+  /// are restored **unconditionally** from the snapshot: a point-in-time restore
+  /// that kept today's targets while restoring yesterday's words would not be a
+  /// restore. Merge restore keeps the version rules; this one does not. See
+  /// [BackupService.mergeValidatedInTransaction]'s `forceSharedSettings`.
   Future<RestoreOutcome> restoreSnapshot(
     File file, {
     bool applyDeviceSettings = true,
     Future<void> Function()? afterClear,
+    Future<void> Function()? afterMerge,
   }) async {
     final Map<String, Object?> dataset = await backup.readDataset(file.path);
     final File protective = await createBackup(kind: BackupKind.protective);
 
     int clearedWords = 0;
     int clearedEvents = 0;
+    bool currentBookCleared = false;
     late MergeReport report;
     await db.transaction(() async {
       clearedWords = await _count(db.words.actualTableName);
@@ -310,7 +323,15 @@ class BackupManager {
       report = await backup.mergeValidatedInTransaction(
         dataset,
         now: clock.now(),
+        forceSharedSettings: true,
       );
+      // The restored snapshot may not contain the book this device had
+      // selected. A dangling `currentWordBookId` would silently filter the
+      // whole app against a book that no longer exists.
+      currentBookCleared = await _clearDanglingCurrentBook();
+      // Test-only seam: a crash here happens *after* the snapshot's settings
+      // were written and must still roll both data and settings back.
+      if (afterMerge != null) await afterMerge();
       await db.deleteMeta(StudySession.persistenceKey);
       await db.deleteMeta(PracticeSession.persistenceKey);
       await db.deleteMeta(SettingsRepository.pendingRebuildKey);
@@ -335,7 +356,25 @@ class BackupManager {
       clearedWords: clearedWords,
       clearedEvents: clearedEvents,
       syncPaused: true,
+      currentBookCleared: currentBookCleared,
     );
+  }
+
+  /// Clears the device-local book selection when it does not resolve to a live
+  /// book after the restore. A `sprintPlan.bookId` that points at a missing book
+  /// is left alone on purpose: the sprint screen already explains it and asks the
+  /// user to pick again, and silently rewriting the plan would change shared
+  /// settings behind their back.
+  Future<bool> _clearDanglingCurrentBook() async {
+    final StudySettingsRow current = await settings.load();
+    final String? bookId = current.currentWordBookId;
+    if (bookId == null) return false;
+    final WordBook? book = await (db.select(
+      db.wordBooks,
+    )..where((t) => t.id.equals(bookId))).getSingleOrNull();
+    if (book != null && book.deletedAt == null) return false;
+    await settings.save(currentWordBookId: const Value<String?>(null));
+    return true;
   }
 
   /// Automatic backup: at most once per interval, only when the data actually
