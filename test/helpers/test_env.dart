@@ -7,10 +7,16 @@ import 'package:materialword/core/repositories/settings_repository.dart';
 import 'package:materialword/core/repositories/study_repository.dart';
 import 'package:materialword/core/repositories/word_repository.dart';
 import 'package:materialword/core/repositories/wordbook_repository.dart';
+import 'package:materialword/core/repositories/word_metadata_repository.dart';
 import 'package:materialword/core/time_utils.dart';
 import 'package:materialword/services/backup_service.dart';
+import 'package:materialword/services/backup_manager.dart';
 import 'package:materialword/services/import_service.dart';
 import 'package:materialword/services/study_session.dart';
+import 'package:materialword/services/sync/credential_store.dart';
+import 'package:materialword/services/sync/sync_coordinator.dart';
+import 'package:materialword/services/word_intake_service.dart';
+import 'package:materialword/services/dictionary_service.dart';
 
 /// Deterministic clock: tests decide exactly what "now" is.
 class FixedClock extends Clock {
@@ -42,6 +48,12 @@ class TestEnv {
   late final WordBookRepository books = WordBookRepository(db);
   late final StudyRepository study = StudyRepository(db);
   late final SettingsRepository settings = SettingsRepository(db);
+  late final WordMetadataRepository metadata = WordMetadataRepository(db);
+  late final WordIntakeService intake = WordIntakeService(
+    db: db,
+    words: words,
+    wordBooks: books,
+  );
   late final BackupService backup = BackupService(
     db: db,
     study: study,
@@ -49,8 +61,37 @@ class TestEnv {
     settings: settings,
   );
 
-  ImportService importService({bool withDictionary = false}) =>
-      ImportService(words: words, wordBooks: books);
+  /// Recovery copies live in a per-test directory, never in the user's home.
+  late final Directory backupDirectory = Directory.systemTemp.createTempSync(
+    'mw_backups',
+  );
+
+  late final BackupManager backups = BackupManager(
+    db: db,
+    backup: backup,
+    study: study,
+    settings: settings,
+    directory: () async => backupDirectory,
+    clock: clock,
+  );
+
+  late final SyncCoordinator coordinator = SyncCoordinator(
+    db: db,
+    backup: backup,
+    study: study,
+    settings: settings,
+    credentials: InMemoryCredentialStore(),
+    clock: clock,
+  );
+
+  ImportService importService({
+    bool withDictionary = false,
+    DictionaryService? dictionary,
+  }) => ImportService(
+    words: words,
+    wordBooks: books,
+    dictionary: dictionary ?? (withDictionary ? null : null),
+  );
 
   StudySession session() => StudySession(study, settings, clock);
 
@@ -93,6 +134,13 @@ class TestEnv {
 
   Future<void> dispose() async {
     await db.close();
+    if (backupDirectory.existsSync()) {
+      try {
+        backupDirectory.deleteSync(recursive: true);
+      } catch (_) {
+        // A test may have made the directory read-only on purpose.
+      }
+    }
     if (filePath != null) {
       final Directory dir = Directory(filePath!).parent;
       if (dir.existsSync()) dir.deleteSync(recursive: true);

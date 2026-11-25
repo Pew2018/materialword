@@ -6,6 +6,7 @@ import '../../app/providers.dart';
 import '../../app/theme.dart';
 import '../../core/database/app_database.dart';
 import '../../services/import_service.dart';
+import '../../services/word_intake_service.dart';
 import '../../shared/widgets/common.dart';
 
 /// Wordbook import: pick a TXT / CSV / JSON file (or fetch an HTTPS link), see a
@@ -24,12 +25,19 @@ class _ImportPageState extends ConsumerState<ImportPage> {
   final TextEditingController _url = TextEditingController();
 
   ImportPreview? _preview;
+  ImportPreviewStats? _stats;
   List<WordBook> _books = const <WordBook>[];
   String? _bookId;
   bool _createNew = false;
   bool _busy = false;
   String? _error;
   ImportOutcome? _outcome;
+
+  /// Bumped for every parse. A commit only accepts the preview that matches the
+  /// current source, so "preview A, then import B" cannot happen.
+  int _previewGeneration = 0;
+  int _statsGeneration = 0;
+  int _downloadGeneration = 0;
 
   @override
   void initState() {
@@ -80,11 +88,7 @@ class _ImportPageState extends ConsumerState<ImportPage> {
           .read(importServiceProvider)
           .parseFile(path, fileName: file.name);
       if (!mounted) return;
-      setState(() {
-        _busy = false;
-        _preview = preview;
-        _newBookName.text = preview.detectedBookName;
-      });
+      await _acceptPreview(preview);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -94,9 +98,45 @@ class _ImportPageState extends ConsumerState<ImportPage> {
     }
   }
 
+  /// Stores a preview and computes its read-only statistics. The preview is
+  /// discarded when a newer parse starts, which is what keeps a stale file from
+  /// being committed after the user picks another one.
+  Future<void> _acceptPreview(ImportPreview preview) async {
+    final int generation = ++_previewGeneration;
+    final int statsGeneration = ++_statsGeneration;
+    final ImportPreviewStats stats = await ref
+        .read(importServiceProvider)
+        .analyze(preview, bookId: _createNew ? null : _bookId);
+    if (!mounted || generation != _previewGeneration) return;
+    setState(() {
+      _busy = false;
+      _preview = preview;
+      if (statsGeneration == _statsGeneration) _stats = stats;
+      if (_newBookName.text.trim().isEmpty) {
+        _newBookName.text = preview.detectedBookName;
+      }
+    });
+  }
+
+  /// Recomputes the read-only "what would this do" numbers after the target
+  /// book changes. Runs outside any write transaction.
+  Future<void> _refreshStats() async {
+    final ImportPreview? preview = _preview;
+    if (preview == null) {
+      return;
+    }
+    final int generation = ++_statsGeneration;
+    final ImportPreviewStats stats = await ref
+        .read(importServiceProvider)
+        .analyze(preview, bookId: _createNew ? null : _bookId);
+    if (!mounted || generation != _statsGeneration) return;
+    setState(() => _stats = stats);
+  }
+
   Future<void> _fetchUrl() async {
     final String url = _url.text.trim();
     if (url.isEmpty) return;
+    final int generation = ++_downloadGeneration;
     setState(() {
       _busy = true;
       _error = null;
@@ -106,14 +146,10 @@ class _ImportPageState extends ConsumerState<ImportPage> {
       final ImportPreview preview = await ref
           .read(importServiceProvider)
           .fetchUrl(url);
-      if (!mounted) return;
-      setState(() {
-        _busy = false;
-        _preview = preview;
-        _newBookName.text = preview.detectedBookName;
-      });
+      if (!mounted || generation != _downloadGeneration) return;
+      await _acceptPreview(preview);
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || generation != _downloadGeneration) return;
       setState(() {
         _busy = false;
         _error = '下载/解析失败：$e';
@@ -121,50 +157,67 @@ class _ImportPageState extends ConsumerState<ImportPage> {
     }
   }
 
+  void _cancelDownload() {
+    _downloadGeneration++;
+    ref.read(importServiceProvider).cancel();
+    setState(() {
+      _busy = false;
+      _error = '已取消下载，未写入任何数据';
+    });
+  }
+
   Future<void> _commit() async {
     final ImportPreview? preview = _preview;
     if (preview == null || preview.entries.isEmpty) return;
+    if (!_createNew && _bookId == null) {
+      setState(() => _error = '请选择目标词书');
+      return;
+    }
+    final int generation = _previewGeneration;
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
       final DateTime now = ref.read(clockProvider).now();
-      String bookId;
-      if (_createNew) {
-        final String name = _newBookName.text.trim().isEmpty
-            ? preview.detectedBookName
-            : _newBookName.text.trim();
-        final WordBook book = await ref
-            .read(wordBookRepositoryProvider)
-            .ensureBook(
-              name: name,
-              sourceType: preview.sourceUrl.isEmpty ? 'file' : 'url',
-              sourceUrl: preview.sourceUrl,
-              now: now,
-            );
-        bookId = book.id;
-      } else {
-        bookId = _bookId!;
-      }
+      final String name = _newBookName.text.trim().isEmpty
+          ? preview.detectedBookName
+          : _newBookName.text.trim();
+      // The book and the words are created in the same transaction inside the
+      // service, so a failure cannot leave an empty book behind.
       final ImportOutcome outcome = await ref
           .read(importServiceProvider)
-          .commit(preview: preview, bookId: bookId, now: now);
+          .commit(
+            preview: preview,
+            bookId: _createNew ? null : _bookId,
+            newBookName: _createNew ? name : null,
+            sourceType: preview.sourceUrl.isEmpty ? 'file' : 'url',
+            sourceUrl: preview.sourceUrl,
+            now: now,
+          );
+      if (!mounted || generation != _previewGeneration) return;
       ref.invalidate(todayProgressProvider);
       ref.invalidate(bookSummariesProvider);
       ref.invalidate(statisticsProvider);
-      if (!mounted) return;
       setState(() {
         _busy = false;
         _outcome = outcome;
         _preview = null;
+        _stats = null;
+      });
+      await _loadBooks();
+    } on WordIntakeException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _error = '${e.message}（未修改任何数据）';
       });
       await _loadBooks();
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _error = '导入失败（未修改任何已有数据）：$e';
+        _error = '导入失败（事务已回滚，未修改任何数据）：$e';
       });
     }
   }
@@ -221,15 +274,23 @@ class _ImportPageState extends ConsumerState<ImportPage> {
                             child: TextField(
                               controller: _url,
                               decoration: const InputDecoration(
-                                labelText: 'HTTPS 链接（TXT / JSON）',
+                                labelText: 'HTTPS 链接（TXT / CSV / JSON）',
                                 hintText: 'https://example.com/cet6.txt',
                               ),
+                              onChanged: (_) {
+                                if (_preview != null) {
+                                  setState(() {
+                                    _preview = null;
+                                    _stats = null;
+                                  });
+                                }
+                              },
                             ),
                           ),
                           AppSpacing.w12,
                           OutlinedButton(
-                            onPressed: _busy ? null : _fetchUrl,
-                            child: const Text('下载'),
+                            onPressed: _busy ? _cancelDownload : _fetchUrl,
+                            child: Text(_busy ? '取消下载' : '下载'),
                           ),
                         ],
                       ),
@@ -251,6 +312,24 @@ class _ImportPageState extends ConsumerState<ImportPage> {
                               value: '${_preview!.validCount}',
                               label: '有效单词',
                             ),
+                            if (_stats != null) ...<Widget>[
+                              StatBlock(
+                                value: '${_stats!.newWords}',
+                                label: '本机没有',
+                              ),
+                              StatBlock(
+                                value: '${_stats!.existingWords}',
+                                label: '本机已有',
+                              ),
+                              StatBlock(
+                                value: '${_stats!.restorableWords}',
+                                label: '可恢复',
+                              ),
+                              StatBlock(
+                                value: '${_stats!.linkAdds}',
+                                label: '将新增关联',
+                              ),
+                            ],
                             StatBlock(
                               value: '${_preview!.duplicateCount}',
                               label: '文件内重复',
@@ -263,8 +342,31 @@ class _ImportPageState extends ConsumerState<ImportPage> {
                               value: _preview!.format.toUpperCase(),
                               label: '格式',
                             ),
+                            StatBlock(
+                              value: '${_preview!.sectionCount}',
+                              label: '词书数',
+                            ),
                           ],
                         ),
+                        if (_preview!.droppedRows > 0) ...<Widget>[
+                          AppSpacing.h12,
+                          Text(
+                            '文件共有 ${_preview!.totalRows} 行，其中 '
+                            '${_preview!.droppedRows} 行不会被导入（见下方原因）。',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: AppColors.unknown,
+                            ),
+                          ),
+                        ],
+                        if (_stats != null &&
+                            _stats!.restorableWords > 0) ...<Widget>[
+                          AppSpacing.h8,
+                          Text(
+                            '其中 ${_stats!.restorableWords} 个曾被你删除：本次是明确导入，'
+                            '会恢复这些词条并保留原有学习记录。在线刷新不会恢复它们。',
+                            style: theme.textTheme.bodySmall,
+                          ),
+                        ],
                         if (_preview!.issues.isNotEmpty) ...<Widget>[
                           AppSpacing.h16,
                           Text(
@@ -297,8 +399,10 @@ class _ImportPageState extends ConsumerState<ImportPage> {
                           groupValue: _createNew,
                           onChanged: _books.isEmpty
                               ? null
-                              : (bool? v) =>
-                                    setState(() => _createNew = v ?? false),
+                              : (bool? v) {
+                                  setState(() => _createNew = v ?? false);
+                                  _refreshStats();
+                                },
                           title: const Text('加入已有词书'),
                         ),
                         if (!_createNew)
@@ -316,16 +420,20 @@ class _ImportPageState extends ConsumerState<ImportPage> {
                                     child: Text(book.name),
                                   ),
                               ],
-                              onChanged: (String? value) =>
-                                  setState(() => _bookId = value),
+                              onChanged: (String? value) {
+                                setState(() => _bookId = value);
+                                _refreshStats();
+                              },
                             ),
                           ),
                         RadioListTile<bool>(
                           dense: true,
                           value: true,
                           groupValue: _createNew,
-                          onChanged: (bool? v) =>
-                              setState(() => _createNew = v ?? true),
+                          onChanged: (bool? v) {
+                            setState(() => _createNew = v ?? true);
+                            _refreshStats();
+                          },
                           title: const Text('新建词书'),
                         ),
                         if (_createNew)

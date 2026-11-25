@@ -16,13 +16,17 @@ import '../core/repositories/wordbook_repository.dart';
 import '../core/repositories/word_metadata_repository.dart';
 import '../core/time_utils.dart';
 import '../services/backup_service.dart';
+import '../services/backup_files.dart';
+import '../services/backup_manager.dart';
 import '../services/dictionary_service.dart';
 import '../services/import_service.dart';
+import '../services/word_intake_service.dart';
 import '../services/sync/credential_store.dart';
 import '../services/sync/github_sync_provider.dart';
 import '../services/sync/local_file_sync_provider.dart';
 import '../services/sync/sync_coordinator.dart';
 import '../services/sync/auto_sync_service.dart';
+import '../services/sync/conflict_store.dart';
 import '../services/sync/sync_provider.dart';
 import '../services/sync/webdav_sync_provider.dart';
 import '../services/screen_awake.dart';
@@ -78,6 +82,24 @@ final Provider<BackupService> backupServiceProvider = Provider<BackupService>(
   ),
 );
 
+/// Recovery copies: creation, retention, automatic scheduling, protective
+/// backups and both restore modes.
+final backupManagerProvider = Provider<BackupManager>(
+  (Ref ref) => BackupManager(
+    db: ref.watch(databaseProvider),
+    backup: ref.watch(backupServiceProvider),
+    study: ref.watch(studyRepositoryProvider),
+    settings: ref.watch(settingsRepositoryProvider),
+    directory: BackupPaths.appDirectory,
+    clock: ref.watch(clockProvider),
+  ),
+);
+
+final Provider<SyncConflictStore> syncConflictStoreProvider =
+    Provider<SyncConflictStore>(
+      (Ref ref) => SyncConflictStore(ref.watch(databaseProvider)),
+    );
+
 /// Dictionary loading is lazy: the bundled SQLite file is only copied/opened the
 /// first time a screen (or the quick-add flow) actually needs a lookup.
 final FutureProvider<DictionaryService> dictionaryProvider =
@@ -97,6 +119,16 @@ final Provider<ImportService> importServiceProvider = Provider<ImportService>((
     dictionary: dictionary.value,
   );
 });
+
+/// The single write path for adding, re-adding and importing words.
+final Provider<WordIntakeService> wordIntakeProvider =
+    Provider<WordIntakeService>(
+      (Ref ref) => WordIntakeService(
+        db: ref.watch(databaseProvider),
+        words: ref.watch(wordRepositoryProvider),
+        wordBooks: ref.watch(wordBookRepositoryProvider),
+      ),
+    );
 
 final StreamProvider<StudySettingsRow> settingsProvider =
     StreamProvider<StudySettingsRow>(

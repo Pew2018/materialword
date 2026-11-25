@@ -6,6 +6,7 @@ import '../../app/providers.dart';
 import '../../app/theme.dart';
 import '../../core/time_utils.dart';
 import '../../services/backup_files.dart';
+import '../../services/sync/conflict_store.dart';
 import '../../services/sync/credential_store.dart';
 import '../../services/sync/github_sync_provider.dart';
 import '../../services/sync/local_file_sync_provider.dart';
@@ -70,6 +71,9 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
   bool? _pendingChanges;
   SyncTestResult? _testResult;
   List<String> _syncNotes = const <String>[];
+  bool _paused = false;
+  String? _pausedReason;
+  List<StoredSyncConflict> _conflicts = const <StoredSyncConflict>[];
 
   @override
   void initState() {
@@ -113,6 +117,11 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
     } catch (_) {
       pending = true;
     }
+    final bool paused = await settings.syncPaused();
+    final String? pausedReason = await settings.syncPausedReason();
+    final List<StoredSyncConflict> conflicts = await ref
+        .read(syncConflictStoreProvider)
+        .list();
     if (!mounted) return;
     setState(() {
       _provider = (config?['provider'] as String?) ?? 'none';
@@ -143,6 +152,9 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       _lastSyncAt = lastAt;
       _lastResult = lastResult;
       _pendingChanges = pending;
+      _paused = paused;
+      _pausedReason = pausedReason;
+      _conflicts = conflicts;
       _loaded = true;
     });
   }
@@ -417,6 +429,206 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
     }
   }
 
+  /// Explicit user decision after a point-in-time restore: merge the remote into
+  /// this device (never the other way round automatically).
+  Future<void> _mergeRemoteAfterRestore() async {
+    if (_busy) return;
+    final bool ok = await confirmDialog(
+      context,
+      title: '合并远端数据？',
+      message:
+          '会解除同步暂停，并把远端设备的数据合并到本机（只补充缺失内容，'
+          '不删除本机内容）。合并结果会随后上传，因此远端会包含本机恢复后的数据。',
+      confirmLabel: '合并',
+    );
+    if (!ok || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      final settings = ref.read(settingsRepositoryProvider);
+      await settings.setSyncPaused(false);
+      final provider = ref
+          .read(syncCoordinatorProvider)
+          .providerFromConfig(await settings.syncConfig());
+      if (provider == null) {
+        setState(() {
+          _busy = false;
+          _error = '尚未配置同步目标';
+        });
+        await _load();
+        return;
+      }
+      final report = await ref
+          .read(syncCoordinatorProvider)
+          .sync(provider, resumeAfterRestore: true);
+      ref.invalidate(todayProgressProvider);
+      ref.invalidate(bookSummariesProvider);
+      ref.invalidate(statisticsProvider);
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _status = report.message;
+      });
+      await _load();
+    } on SyncException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _error = e.message;
+      });
+      await _load();
+    }
+  }
+
+  Future<void> _stayPaused() async {
+    setState(() => _status = '同步保持暂停，远端数据未被修改');
+    await _load();
+  }
+
+  /// The remote file disappeared after a successful sync. Re-creating it uploads
+  /// the whole local dataset, so it needs an explicit confirmation.
+  Future<void> _recreateRemote() async {
+    final Map<String, Object?>? config = await ref
+        .read(settingsRepositoryProvider)
+        .syncConfig();
+    if (!mounted) return;
+    final provider = ref
+        .read(syncCoordinatorProvider)
+        .providerFromConfig(config);
+    if (provider == null) return;
+    final bool ok = await confirmDialog(
+      context,
+      title: '重新创建远端数据？',
+      message:
+          '远端数据文件已不存在（可能是仓库文件被删除，或权限/路径变化）。'
+          '继续会把本机当前数据重新上传到该位置。\n\n'
+          '如果你并不想删除远端数据，请先取消并检查仓库与配置。',
+      confirmLabel: '重新上传',
+      destructive: true,
+    );
+    if (!ok || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      final report = await ref
+          .read(syncCoordinatorProvider)
+          .sync(provider, allowRemoteRecreate: true);
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _status = report.message;
+        _error = null;
+      });
+      await _load();
+    } on SyncException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _error = e.message;
+      });
+    }
+  }
+
+  /// Restoring the discarded value is a **new normal edit**, so the existing
+  /// field-version rules decide who wins on the next sync.
+  Future<void> _restoreConflict(StoredSyncConflict conflict) async {
+    final bool ok = await confirmDialog(
+      context,
+      title: '恢复被覆盖的内容？',
+      message:
+          '「${conflict.label.isEmpty ? conflict.entityId : conflict.label}」的 '
+          '${_fieldLabel(conflict.field)} 将改回：\n'
+          '${_displayValue(conflict.discardedValue)}\n\n'
+          '这会记录为一次新的本机编辑，并按字段版本同步到其他设备。',
+      confirmLabel: '恢复',
+    );
+    if (!ok || !mounted) return;
+    try {
+      final now = ref.read(clockProvider).now();
+      if (conflict.kind == 'word') {
+        if (conflict.field == 'deletedAt') {
+          if (conflict.discardedValue == null) {
+            await ref
+                .read(wordRepositoryProvider)
+                .softDelete(conflict.entityId, now: now);
+          } else {
+            await ref
+                .read(wordIntakeProvider)
+                .reviveById(conflict.entityId, now: now);
+          }
+        } else {
+          final String? text = conflict.discardedValue?.toString();
+          await ref
+              .read(wordRepositoryProvider)
+              .updateContent(
+                conflict.entityId,
+                phonetic: conflict.field == 'phonetic' ? text : null,
+                partOfSpeech: conflict.field == 'partOfSpeech' ? text : null,
+                translation: conflict.field == 'translation' ? text : null,
+                definition: conflict.field == 'definition' ? text : null,
+                example: conflict.field == 'example' ? text : null,
+                phrase: conflict.field == 'phrase' ? text : null,
+                note: conflict.field == 'note' ? text : null,
+                text: conflict.field == 'word' ? text : null,
+                now: now,
+              );
+        }
+      } else if (conflict.field == 'name') {
+        await ref
+            .read(wordBookRepositoryProvider)
+            .rename(
+              conflict.entityId,
+              conflict.discardedValue?.toString() ?? '',
+              now: now,
+            );
+      } else if (conflict.field == 'description') {
+        await ref
+            .read(wordBookRepositoryProvider)
+            .updateDescription(
+              conflict.entityId,
+              conflict.discardedValue?.toString() ?? '',
+              now: now,
+            );
+      } else {
+        setState(() => _error = '该字段不支持在此恢复：${conflict.field}');
+        return;
+      }
+      await ref.read(syncConflictStoreProvider).dismiss(conflict.id);
+      ref.invalidate(todayProgressProvider);
+      ref.invalidate(bookSummariesProvider);
+      if (!mounted) return;
+      setState(() => _status = '已恢复为另一份内容（将作为一次新的编辑同步）');
+      await _load();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = '恢复失败：$e');
+    }
+  }
+
+  Future<void> _dismissConflict(StoredSyncConflict conflict) async {
+    await ref.read(syncConflictStoreProvider).dismiss(conflict.id);
+    await _load();
+  }
+
+  String _fieldLabel(String field) => switch (field) {
+    'word' => '单词',
+    'phonetic' => '音标',
+    'partOfSpeech' => '词性',
+    'translation' => '释义',
+    'definition' => '英文释义',
+    'example' => '例句',
+    'phrase' => '短语',
+    'note' => '笔记',
+    'deletedAt' => '删除状态',
+    'name' => '词书名称',
+    'description' => '词书描述',
+    _ => field,
+  };
+
+  String _displayValue(Object? value) {
+    if (value == null) return '（空）';
+    if (value is String) return value.isEmpty ? '（空）' : value;
+    return '$value';
+  }
+
   Future<void> _exportBackup() async {
     if (_busy) return;
     setState(() => _busy = true);
@@ -504,6 +716,45 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
             const Padding(
               padding: EdgeInsets.fromLTRB(16, 12, 16, 0),
               child: LinearProgressIndicator(minHeight: 3),
+            ),
+          if (_paused)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: Material(
+                color: AppColors.hazy.withValues(alpha: 0.12),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text('同步已暂停', style: theme.textTheme.titleSmall),
+                      AppSpacing.h4,
+                      Text(
+                        _pausedReason ?? '本机数据来自历史恢复。确认远端如何处理之前，自动同步不会运行。',
+                        style: theme.textTheme.bodySmall,
+                      ),
+                      AppSpacing.h8,
+                      Wrap(
+                        spacing: 8,
+                        children: <Widget>[
+                          OutlinedButton(
+                            onPressed: _busy ? null : _mergeRemoteAfterRestore,
+                            child: const Text('合并远端数据'),
+                          ),
+                          TextButton(
+                            onPressed: _busy ? null : _stayPaused,
+                            child: const Text('保持本机状态'),
+                          ),
+                        ],
+                      ),
+                      Text(
+                        '不会自动用任一方的数据覆盖另一方：合并只补充缺失内容。',
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
           SectionHeader(title: '同步方式（同一时间只启用一种）'),
           SettingsGroup(
@@ -646,6 +897,55 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
                   ),
               ],
             ),
+            if (_conflicts.isNotEmpty) ...<Widget>[
+              SectionHeader(title: '同步冲突记录（本机，最多 50 条）'),
+              SettingsGroup(
+                children: <Widget>[
+                  for (final StoredSyncConflict conflict in _conflicts)
+                    ListTile(
+                      dense: true,
+                      title: Text(
+                        '${conflict.label.isEmpty ? conflict.entityId : conflict.label}'
+                        ' · ${_fieldLabel(conflict.field)}',
+                      ),
+                      subtitle: Text(
+                        '保留：${_displayValue(conflict.adoptedValue)}\n'
+                        '被覆盖：${_displayValue(conflict.discardedValue)}',
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall,
+                      ),
+                      trailing: Wrap(
+                        spacing: 4,
+                        children: <Widget>[
+                          IconButton(
+                            tooltip: '恢复被覆盖的内容',
+                            icon: const Icon(Icons.undo),
+                            onPressed: _busy
+                                ? null
+                                : () => _restoreConflict(conflict),
+                          ),
+                          IconButton(
+                            tooltip: '忽略这条记录',
+                            icon: const Icon(Icons.close),
+                            onPressed: _busy
+                                ? null
+                                : () => _dismissConflict(conflict),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                child: Text(
+                  '冲突由字段版本、更新时间和设备 ID 确定性地裁决。'
+                  '恢复被覆盖的内容会写成一次新的正常编辑，不会篡改历史版本。',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ),
+            ],
             SectionHeader(title: '同步状态'),
             SettingsGroup(
               children: <Widget>[
@@ -674,6 +974,14 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
                     child: Text(_status!, style: theme.textTheme.bodySmall),
+                  ),
+                if (_error != null && _error!.contains('远程数据文件已被删除'))
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                    child: OutlinedButton(
+                      onPressed: _busy ? null : _recreateRemote,
+                      child: const Text('重新创建远端数据…'),
+                    ),
                   ),
                 for (final String note in _syncNotes)
                   Padding(

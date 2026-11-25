@@ -326,6 +326,33 @@ class GitHubSyncProvider implements SyncProvider {
     }
   }
 
+  /// Metadata-only probe: the Contents API response carries the blob `sha`
+  /// without the base64 payload when the file is small, and for a large file the
+  /// same request still returns the `sha` plus `encoding: none`. Either way this
+  /// is a few hundred bytes instead of the whole dataset.
+  @override
+  Future<String?> remoteRevision() async {
+    if (!isConfigured) return null;
+    final String? token = await _token();
+    if (token == null) return null;
+    final response = await _get(
+      _contentsUri.replace(queryParameters: {'ref': branch}),
+      token,
+    );
+    if (response.statusCode == 404) return null;
+    if (response.statusCode != 200) _raise(response, '检查远程版本');
+    try {
+      final Object? node = jsonDecode(response.body);
+      if (node is Map<String, dynamic>) {
+        final Object? sha = node['sha'];
+        return sha is String && sha.isNotEmpty ? sha : null;
+      }
+      return null;
+    } on FormatException {
+      throw const SyncDataException('GitHub 返回的版本信息无效');
+    }
+  }
+
   @override
   Future<SyncPayload?> download() async {
     if (!isConfigured) {

@@ -12,6 +12,7 @@ import '../features/word_management/quick_add_page.dart';
 import '../features/word_management/word_management_page.dart';
 import '../features/wordbooks/wordbooks_page.dart';
 import '../services/diagnostics_service.dart';
+import '../services/backup_manager.dart';
 import 'providers.dart';
 import 'theme.dart';
 
@@ -100,6 +101,8 @@ class _AppShellState extends ConsumerState<AppShell>
   StreamSubscription<dynamic>? _databaseChanges;
   int _dueGeneration = 0;
   bool _autoSyncStarted = false;
+  Timer? _autoBackupTimer;
+  bool _autoBackupRunning = false;
 
   @override
   void initState() {
@@ -128,9 +131,11 @@ class _AppShellState extends ConsumerState<AppShell>
         _scheduleDueRefresh();
       });
     });
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) => _maybeAutoSync(start: true),
-    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _maybeAutoSync(start: true);
+      _runAutoBackup(reason: 'start');
+    });
+    _scheduleAutoBackupChecks();
   }
 
   @override
@@ -140,9 +145,50 @@ class _AppShellState extends ConsumerState<AppShell>
     _dueTimer?.cancel();
     _duePlanTimer?.cancel();
     _dueGeneration++;
+    _autoBackupTimer?.cancel();
     _databaseChanges?.cancel();
     _searchFocus.dispose();
     super.dispose();
+  }
+
+  /// Automatic local backups are checked at start-up, on resume and every half
+  /// hour while the app stays open. The manager decides whether a backup is due
+  /// (interval + data actually changed); this timer only asks.
+  void _scheduleAutoBackupChecks() {
+    _autoBackupTimer?.cancel();
+    _autoBackupTimer = Timer.periodic(
+      const Duration(minutes: 30),
+      (_) => _runAutoBackup(reason: 'timer'),
+    );
+  }
+
+  Future<void> _runAutoBackup({required String reason}) async {
+    if (_autoBackupRunning || !mounted) return;
+    _autoBackupRunning = true;
+    try {
+      await ref.read(backupManagerProvider).cleanupTempFiles();
+      final AutoBackupResult result = await ref
+          .read(backupManagerProvider)
+          .autoBackupIfDue();
+      if (result.created) {
+        DiagnosticsService.instance.log(
+          'backup',
+          'automatic backup created ($reason)',
+        );
+      } else if (result.error != null) {
+        // Never surfaced as a modal: a failed background backup must not
+        // interrupt studying. The backup page shows the last successful time.
+        DiagnosticsService.instance.log(
+          'backup',
+          'automatic backup failed ($reason): ${result.error}',
+          error: true,
+        );
+      }
+    } catch (_) {
+      // Housekeeping failures are logged, never thrown into the UI.
+    } finally {
+      _autoBackupRunning = false;
+    }
   }
 
   @override
@@ -160,6 +206,7 @@ class _AppShellState extends ConsumerState<AppShell>
       _refreshDailyData();
       _scheduleDueRefresh();
       _maybeAutoSync(start: false);
+      _runAutoBackup(reason: 'resume');
     }
   }
 

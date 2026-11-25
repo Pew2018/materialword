@@ -44,7 +44,26 @@
 - [x] `flutter analyze` 通过；`dart format` 已应用
 - [x] Android ARM64、macOS、iOS 构建由 GitHub Actions 执行（本机无 Xcode / Gradle 依赖下载受限）
 
-## Phase 3（实施中）
+## Phase 5（已完成核心数据功能）
+
+范围与证据见 [phase5-audit.md](phase5-audit.md)、[phase5-verification.md](phase5-verification.md)
+与 [phase5-acceptance-matrix.md](phase5-acceptance-matrix.md)。只对实际测试项标记通过。
+
+- [x] 统一新增/重新新增/批量新增入口（`WordIntakeService`），删除后可显式恢复，
+      保留 UUID、aliases、笔记与学习记录；ADD01–ADD14。
+- [x] 导入事务边界、超限拒绝（20 000）、严格编码校验、流式下载与字节上限、预览统计、
+      在线刷新差异预览与不复活已删词条；IMP01–IMP19。
+- [x] 词书字段协议统一（`phrase`/`examTags`/`bncRank`/`frqRank`）、版本化 JSON、
+      多词书导出与真实往返；EXP01–EXP12。
+- [x] 原子备份、自动备份、保护性备份、内部副本直接恢复、指定版本恢复与恢复后同步隔离；
+      BAK01–BAK21。
+- [x] 同步状态区分、前台远端探测、GitHub 远端缺失策略、冲突留痕与恢复、三设备收敛；
+      SYNC01–SYNC24。
+- [x] 词条合并批量身份解析（等价性测试）、导入导出开销、文件型 SQLite 基准；PERF01–PERF06。
+- [ ] 最终 UI 精修（下一阶段）：视觉细节、动效、真机交互打磨。
+- [ ] 真实 GitHub / WebDAV 账号联调与三平台真机人工验收（需外部凭据与设备）。
+
+## Phase 3（历史，部分项在 Phase 4/5 完成）
 
 全部 3A–3I 范围由 [phase3-audit.md](phase3-audit.md) 跟踪；只对实际测试项标记通过。
 

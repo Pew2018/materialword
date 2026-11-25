@@ -2,8 +2,22 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:path_provider/path_provider.dart';
 
 import 'backup_service.dart';
+
+/// Where recovery copies live. One place so the page, the manager and the
+/// automatic scheduler cannot disagree about the directory.
+class BackupPaths {
+  const BackupPaths._();
+
+  static Future<Directory> appDirectory() async {
+    final Directory docs = await getApplicationDocumentsDirectory();
+    final Directory dir = Directory('${docs.path}/MaterialWord');
+    if (!dir.existsSync()) dir.createSync(recursive: true);
+    return dir;
+  }
+}
 
 /// A picked Android document is handled by the plugin, never as a raw content URI.
 /// No long-lived SAF grant or security-scoped bookmark is claimed by this manual workflow.
@@ -13,8 +27,16 @@ class BackupFiles {
 
   Future<bool> export({required DateTime now}) async {
     final json = await backup.exportToJson(now: now);
+    return exportWithJson(json);
+  }
+
+  /// Saves an already encoded backup document through the system dialog.
+  Future<bool> exportWithJson(
+    String json, {
+    String fileName = 'materialword-backup.json',
+  }) async {
     final result = await FilePicker.saveFile(
-      fileName: 'materialword-backup.json',
+      fileName: fileName,
       bytes: utf8.encode(json),
       mimeType: 'application/json',
       dialogTitle: '保存备份文件',

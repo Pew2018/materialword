@@ -7,10 +7,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app/providers.dart';
 import '../../app/theme.dart';
 import '../../core/database/app_database.dart';
-import '../../core/repositories/word_repository.dart';
 import '../../core/text/dictionary_text.dart';
 import '../../services/dictionary_service.dart';
 import '../../services/import_service.dart';
+import '../../services/word_intake_service.dart';
 import '../../shared/widgets/common.dart';
 
 /// Quick add: type a word, the offline dictionary fills in everything it knows,
@@ -245,91 +245,86 @@ class _QuickAddPageState extends ConsumerState<QuickAddPage> {
     });
 
     final DateTime now = ref.read(clockProvider).now();
+    WordIntakeResult result;
     try {
-      final AppDatabase db = ref.read(databaseProvider);
-      final WordRepository words = ref.read(wordRepositoryProvider);
-      late String wordId;
-      late bool existed;
-      late int linked;
-
-      // One transaction: either the word and its book link exist together, or
-      // neither does.
-      await db.transaction(() async {
-        final Word? existing = await words.byNormalized(
-          text,
-          includeDeleted: true,
-        );
-        existed = existing != null;
-        String? valueFor(String field, TextEditingController controller) {
-          if (_dirty.contains(field)) return controller.text;
-          // Not edited by the user: leave whatever is stored untouched. This is
-          // what preserves an existing meaning / note when re-adding a word.
-          return existing == null ? controller.text : null;
-        }
-
-        final Word word;
-        if (existing == null) {
-          word = await words.ensureWord(
-            text: text,
-            phonetic: _phonetic.text,
-            partOfSpeech: _pos.text,
-            translation: _translation.text,
-            definition: _definition.text,
-            example: _example.text,
-            note: _note.text,
-            source: 'manual',
-            examTags: _lookup?.examTags ?? '',
-            bncRank: _lookup?.bncRank ?? 0,
-            frqRank: _lookup?.frqRank ?? 0,
+      // One transaction (inside the intake service): the word, its field
+      // versions and the book link exist together or not at all.
+      result = await ref
+          .read(wordIntakeProvider)
+          .add(
+            WordIntakeRequest(
+              text: text,
+              user: _userContent(),
+              dictionary: _dictionaryContent(),
+              source: 'manual',
+              examTags: _lookup?.examTags ?? '',
+              bncRank: _lookup?.bncRank ?? 0,
+              frqRank: _lookup?.frqRank ?? 0,
+              allowRevive: true,
+            ),
+            bookId: _bookId,
             now: now,
           );
-        } else {
-          word = await words.updateContent(
-            existing.id,
-            text: text,
-            phonetic: valueFor('phonetic', _phonetic),
-            partOfSpeech: valueFor('pos', _pos),
-            translation: valueFor('translation', _translation),
-            definition: valueFor('definition', _definition),
-            example: valueFor('example', _example),
-            note: valueFor('note', _note),
-            now: now,
-          );
-        }
-        wordId = word.id;
-        linked = await ref.read(wordBookRepositoryProvider).addWords(
-          _bookId!,
-          <String>[wordId],
-          now: now,
-        );
-      });
-
-      await ref.read(databaseProvider).writeMeta(_lastBookKey, _bookId!);
-      ref.invalidate(todayProgressProvider);
-      ref.invalidate(bookSummariesProvider);
-      ref.invalidate(statisticsProvider);
+    } on WordIntakeException catch (e) {
       if (!mounted) return;
-      final String message = existed
-          ? (linked > 0 ? '单词已存在，已加入词书（进度与笔记保留）' : '该单词已在词书中')
-          : '已添加「$text」';
       setState(() {
-        _status = message;
         _saving = false;
+        _error = e.message;
       });
-      showMessage(context, message);
-      if (continueAdding) {
-        _clearForm();
-      } else {
-        Navigator.of(context).pop();
-      }
+      if (e.message.contains('词书已被删除')) await _loadBooks();
+      return;
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _saving = false;
         _error = '保存失败：$e';
       });
+      return;
+    }
+
+    // The data is committed at this point. A failure while refreshing caches or
+    // remembering the last book must never be reported as "save failed".
+    final String message = result.describe();
+    try {
+      await ref.read(databaseProvider).writeMeta(_lastBookKey, _bookId!);
+      ref.invalidate(todayProgressProvider);
+      ref.invalidate(bookSummariesProvider);
+      ref.invalidate(statisticsProvider);
+    } catch (_) {
+      // Non-fatal: the row is already stored; the next refresh will pick it up.
+    }
+    if (!mounted) return;
+    setState(() {
+      _status = message;
+      _saving = false;
+    });
+    showMessage(context, message);
+    if (continueAdding) {
+      _clearForm();
+    } else {
+      Navigator.of(context).pop();
     }
   }
+
+  /// Only fields the user actually typed in. `null` means "leave as stored";
+  /// an empty string means "the user cleared it".
+  WordContent _userContent() => WordContent(
+    phonetic: _dirty.contains('phonetic') ? _phonetic.text : null,
+    partOfSpeech: _dirty.contains('pos') ? _pos.text : null,
+    translation: _dirty.contains('translation') ? _translation.text : null,
+    definition: _dirty.contains('definition') ? _definition.text : null,
+    example: _dirty.contains('example') ? _example.text : null,
+    note: _dirty.contains('note') ? _note.text : null,
+  );
+
+  /// Auto-filled dictionary values. They only ever fill empty fields, so they
+  /// can never overwrite a stored meaning or a manual edit.
+  WordContent _dictionaryContent() => WordContent(
+    phonetic: _dirty.contains('phonetic') ? null : _phonetic.text,
+    partOfSpeech: _dirty.contains('pos') ? null : _pos.text,
+    translation: _dirty.contains('translation') ? null : _translation.text,
+    definition: _dirty.contains('definition') ? null : _definition.text,
+  );
 
   void _clearForm() {
     _word.clear();

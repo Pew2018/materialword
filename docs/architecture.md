@@ -80,3 +80,22 @@ TabBar、Ripple）。答题三级颜色独立，不随强调色变化。
 词条/词书字段版本与持久身份别名支持跨设备重命名、不同字段并发和明确删除/恢复。`WordMetadataRepository` 管理真实收藏和多标签，`WordMetadataSync` 在备份事务内校验、映射与合并，取消/移除保留版本化记录。管理界面的搜索、计数、分页和筛选全部选择使用同一条件。
 
 完整 Phase 3 仍在实施；作者日界及旧状态/UTC 回退的来源优先级已通过双时区进程测试；临时资源条件写入探测通过真实 HTTPS 服务测试。真实用户服务及完整平台验证仍待完成。
+
+## Phase 4 / Phase 5 新增边界
+
+- `WordIntakeService`（`services/word_intake_service.dart`）是**唯一**的词条写入入口。
+  页面只组装 `WordIntakeRequest`（显式用户值 / 文件内容 / 词典数据三层，各自权限不同），
+  由它在一个事务里完成查重、显式恢复、字段级版本、词书关联与结果分类。快速添加、批量粘贴、
+  文件导入、在线词书刷新、词典页都走这里，因此"删除后无法重新添加"这类语义不会再分叉。
+- `BackupManager`（`services/backup_manager.dart`）拥有恢复副本的完整生命周期：
+  原子创建、列表、校验、删除、导出、合并恢复、指定版本恢复、保留策略、自动备份与
+  保护性备份。`BackupPage` 只渲染与确认。
+- `ContentSyncRepository.mergeWithStamps` 接受调用方已加载的字段版本，使批量合并不必每词
+  查询一次；`saveVersionsBulk` / `rememberAll` 批量落盘。`mergeDataset(legacyWordMerge: true)`
+  保留逐词实现，用于等价性对照。
+- `SyncConflictStore`（`app_meta.sync_conflicts_v1`）记录字段冲突，不新增表、不进同步。
+- 同步层新增 `SyncStage` 细粒度阶段、`SyncPartialException` / `SyncRemoteMissingException`、
+  `SyncProvider.remoteRevision()` 与 `SyncCoordinator.remoteChanged()`；自动同步增加
+  `autoOnForeground` 周期探测，恢复前台时也会先做一次探测。
+- 备份协议新增 v4（仅备份文件携带 `deviceSettings`）；同步数据集保持 v3，避免旧客户端
+  收到无法读取的版本。数据库 Schema 仍为 3，本阶段没有迁移。

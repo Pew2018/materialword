@@ -6,9 +6,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app/providers.dart';
 import '../../app/theme.dart';
 import '../../core/database/app_database.dart';
-import '../../core/repositories/word_repository.dart';
+import '../../core/repositories/word_repository.dart' show WordWithState;
 import '../../services/dictionary_service.dart';
 import '../../services/word_form_guesser.dart';
+import '../../services/word_intake_service.dart';
 import '../../shared/widgets/common.dart';
 
 /// Offline dictionary search. Words can be pushed straight into the current book.
@@ -184,39 +185,32 @@ class _DictionaryPageState extends ConsumerState<DictionaryPage> {
         }
       }
       final DateTime now = ref.read(clockProvider).now();
-      final WordRepository words = ref.read(wordRepositoryProvider);
-      final Word? existing = await words.byNormalized(
-        entry.display,
-        includeDeleted: true,
-      );
-      final Word word =
-          existing ??
-          await words.ensureWord(
-            text: entry.display,
-            phonetic: entry.phonetic,
-            partOfSpeech: entry.partOfSpeech,
-            translation: entry.translation,
-            definition: entry.definition,
-            source: 'dictionary',
-            examTags: entry.examTags,
-            bncRank: entry.bncRank,
-            frqRank: entry.frqRank,
+      // One path for every "add this word" action, so a deleted word is
+      // restored (not silently skipped) and the book link is written in the
+      // same transaction.
+      final WordIntakeResult result = await ref
+          .read(wordIntakeProvider)
+          .add(
+            WordIntakeRequest(
+              text: entry.display,
+              dictionary: WordContent(
+                phonetic: entry.phonetic,
+                partOfSpeech: entry.partOfSpeech,
+                translation: entry.translation,
+                definition: entry.definition,
+              ),
+              source: 'dictionary',
+              examTags: entry.examTags,
+              bncRank: entry.bncRank,
+              frqRank: entry.frqRank,
+            ),
+            bookId: bookId,
             now: now,
           );
-      final int linked = await ref.read(wordBookRepositoryProvider).addWords(
-        bookId,
-        <String>[word.id],
-        now: now,
-      );
       ref.invalidate(bookSummariesProvider);
       ref.invalidate(todayProgressProvider);
       if (!mounted) return;
-      showMessage(
-        context,
-        existing != null
-            ? (linked > 0 ? '已把已有词条加入词书（进度保留）' : '该词条已在词书中')
-            : '已加入词书：${entry.display}',
-      );
+      showMessage(context, result.describe());
       await _run(_term);
     } catch (e) {
       if (!mounted) return;

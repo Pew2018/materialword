@@ -486,6 +486,18 @@ class WebDavSyncProvider implements SyncProvider {
     }
   }
 
+  /// PROPFIND only: returns the strong ETag without transferring the document.
+  @override
+  Future<String?> remoteRevision() async {
+    if (!isConfigured || !isSecure) return null;
+    final probe = await _propfind(_fileUri, 'PROPFIND');
+    if (probe.status == 404) return null;
+    if (probe.status != 207 && probe.status != 200) {
+      _raise(http.Response('', probe.status), '检查远程版本');
+    }
+    return probe.etag;
+  }
+
   @override
   Future<SyncPayload?> download() async {
     if (!isConfigured || !isSecure) {

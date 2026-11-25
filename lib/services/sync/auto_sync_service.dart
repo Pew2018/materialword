@@ -7,14 +7,24 @@ import 'sync_coordinator.dart';
 
 /// Debounce local edits while the app is alive and in the foreground.
 /// No OS background scheduling, and no network work is awaited by a screen.
+///
+/// Besides the debounced "this device changed" trigger, a low-frequency
+/// foreground poll asks the remote whether *it* changed. The poll is a metadata
+/// request ([SyncProvider.remoteRevision]), not a download, and it inherits the
+/// same cooldown/backoff state, so there is no request storm.
 class AutoSyncService {
   AutoSyncService({required this.db, required this.coordinator});
   final AppDatabase db;
   final SyncCoordinator coordinator;
   static const debounce = Duration(seconds: 20);
+
+  /// Foreground remote check. Five minutes is frequent enough for a second
+  /// device's edits to show up while the app sits open, and far from polling.
+  static const Duration foregroundPoll = Duration(minutes: 5);
   StreamSubscription<dynamic>? _data;
   StreamSubscription<dynamic>? _plan;
   Timer? _timer;
+  Timer? _poll;
   bool _foreground = true,
       _started = false,
       _disposed = false,
@@ -46,6 +56,7 @@ class AutoSyncService {
               (t) => t.key.isIn([
                 SettingsRepository.sharedVersionKey,
                 SettingsRepository.syncConfigKey,
+                SettingsRepository.syncPausedKey,
               ]),
             ))
             .watch()
@@ -59,6 +70,8 @@ class AutoSyncService {
               _planFingerprint = fingerprint;
               if (!_sessionEndPending) _schedule(debounce);
             });
+    _poll?.cancel();
+    _poll = Timer.periodic(foregroundPoll, (_) => _runForegroundCheck());
   }
 
   void setForeground(bool foreground) {
@@ -67,7 +80,33 @@ class AutoSyncService {
       _timer?.cancel();
     } else {
       _schedule(debounce);
+      _runForegroundCheck();
     }
+  }
+
+  /// Runs the cheap remote-version check now (start-up / resume / timer).
+  void _runForegroundCheck() {
+    if (_disposed || !_foreground || _working) return;
+    unawaited(_foregroundCheck());
+  }
+
+  Future<void> _foregroundCheck() async {
+    try {
+      final report = await coordinator.autoSync(trigger: 'foreground');
+      if (report != null && report.ok) {
+        _onSynced?.call(report);
+      }
+    } catch (_) {
+      // Silent by design: the sync page shows the persistent failure state.
+    }
+  }
+
+  /// Called after a successful automatic sync so the UI can refresh. Kept as a
+  /// callback to avoid importing Flutter into the service.
+  void Function(SyncReport report)? _onSynced;
+
+  void setOnSynced(void Function(SyncReport report)? callback) {
+    _onSynced = callback;
   }
 
   void requestSessionEnd() {
@@ -119,6 +158,7 @@ class AutoSyncService {
   void dispose() {
     _disposed = true;
     _timer?.cancel();
+    _poll?.cancel();
     _data?.cancel();
     _plan?.cancel();
   }

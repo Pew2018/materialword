@@ -357,6 +357,16 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
     );
     if (!ok) return;
     if (!mounted) return;
+    // A batch reset changes a lot of derived state at once: keep a recovery
+    // copy first, and abort if it cannot be written.
+    final String? backupFailure = await ref
+        .read(backupManagerProvider)
+        .protectiveBackupFailure('批量重置学习进度');
+    if (backupFailure != null) {
+      if (mounted) showMessage(context, backupFailure, error: true);
+      return;
+    }
+    if (!mounted) return;
     await _runBatch(() async {
       await ref
           .read(studyRepositoryProvider)
@@ -440,6 +450,14 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
       destructive: true,
     );
     if (!ok) return;
+    if (!mounted) return;
+    final String? backupFailure = await ref
+        .read(backupManagerProvider)
+        .protectiveBackupFailure('批量删除词条');
+    if (backupFailure != null) {
+      if (mounted) showMessage(context, backupFailure, error: true);
+      return;
+    }
     if (!mounted) return;
     await _runBatch(() async {
       final deleted = await ref

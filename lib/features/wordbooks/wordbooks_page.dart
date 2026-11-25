@@ -1,11 +1,16 @@
+import 'dart:convert';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/providers.dart';
 import '../../app/theme.dart';
+import '../../core/database/app_database.dart';
 import '../../core/repositories/wordbook_repository.dart';
 import '../../services/import_service.dart';
+import '../../services/wordbook_export.dart';
 import '../../shared/widgets/common.dart';
 import '../word_management/import_page.dart';
 import '../word_management/word_management_page.dart';
@@ -53,20 +58,49 @@ class WordBooksPage extends ConsumerWidget {
       final String url = summary.book.sourceUrl;
       if (url.isEmpty) return;
       try {
-        final ImportPreview preview = await ref
-            .read(importServiceProvider)
-            .fetchUrl(url);
+        final ImportService service = ref.read(importServiceProvider);
+        final ImportPreview preview = await service.fetchUrl(url);
+        final ImportPreviewStats stats = await service.analyze(
+          preview,
+          bookId: summary.book.id,
+        );
+        final Set<String> sourceKeys = <String>{
+          for (final ParsedEntry entry in preview.entries) entry.key,
+        };
+        final List<Word> localWords = await ref
+            .read(wordBookRepositoryProvider)
+            .wordsInBook(summary.book.id);
+        final int localOnly = localWords
+            .where((Word word) => !sourceKeys.contains(word.normalized))
+            .length;
         if (!context.mounted) return;
         final bool? ok = await showDialog<bool>(
           context: context,
           builder: (BuildContext context) => AlertDialog(
             title: const Text('刷新在线词书'),
-            content: Text(
-              '来源：$url\n\n'
-              '本次解析到 ${preview.validCount} 个单词'
-              '${preview.duplicateCount > 0 ? '（文件内重复 ${preview.duplicateCount} 个）' : ''}。\n\n'
-              '刷新只会新增缺失的单词：不会删除本地词条、不会覆盖个人笔记、'
-              '不会重置任何学习进度。',
+            content: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: <String>[
+                  '来源：$url',
+                  '',
+                  '在线词书共 ${preview.validCount} 个词条。',
+                  '· 本机已有：${stats.existingWords} 个',
+                  '· 将新增：${stats.newWords} 个',
+                  '· 文件内重复：${preview.duplicateCount} 个',
+                  '· 无效词条：${preview.invalidCount} 个',
+                  if (preview.droppedRows > 0)
+                    '· 不会导入的行：${preview.droppedRows} 行',
+                  if (stats.restorableWords > 0)
+                    '· 你曾删除、本次不会自动恢复：${stats.restorableWords} 个',
+                  '· 来源已移除、仍保留在本机：$localOnly 个',
+                  '',
+                  '刷新只新增缺失的单词：不删除本机词条、不恢复你主动删除的词条、'
+                      '不覆盖个人笔记与自定义释义、不重置任何学习进度。'
+                      '取消不会修改任何数据。',
+                ].map((String line) => Text(line)).toList(),
+              ),
             ),
             actions: <Widget>[
               TextButton(
@@ -75,23 +109,27 @@ class WordBooksPage extends ConsumerWidget {
               ),
               TextButton(
                 onPressed: () => Navigator.of(context).pop(true),
-                child: const Text('预览并合并'),
+                child: const Text('确认刷新'),
               ),
             ],
           ),
         );
         if (ok != true) return;
-        final ImportOutcome outcome = await ref
-            .read(importServiceProvider)
-            .commit(
-              preview: preview,
-              bookId: summary.book.id,
-              now: ref.read(clockProvider).now(),
-            );
+        final ImportOutcome outcome = await service.commit(
+          preview: preview,
+          bookId: summary.book.id,
+          sourceType: 'url',
+          sourceUrl: url,
+          allowRevive: false,
+          now: ref.read(clockProvider).now(),
+        );
         ref.invalidate(bookSummariesProvider);
         ref.invalidate(todayProgressProvider);
         if (!context.mounted) return;
         showMessage(context, '在线词书刷新完成：${outcome.summary}');
+      } on ImportCancelledException {
+        if (!context.mounted) return;
+        showMessage(context, '已取消刷新，未修改任何数据');
       } catch (e) {
         if (!context.mounted) return;
         showMessage(context, '刷新失败：$e', error: true);
@@ -106,6 +144,141 @@ class WordBooksPage extends ConsumerWidget {
       );
       ref.invalidate(bookSummariesProvider);
       ref.invalidate(todayProgressProvider);
+    }
+
+    /// Export one book, the selected books, or every book. Book membership is
+    /// preserved in JSON/CSV so re-importing does not create duplicates.
+    Future<void> exportBooks(List<WordBookSummary> all) async {
+      if (all.isEmpty) {
+        showMessage(context, '还没有可导出的词书');
+        return;
+      }
+      final Set<String> selected = <String>{
+        for (final WordBookSummary summary in all) summary.book.id,
+      };
+      final bool? confirmed = await showDialog<bool>(
+        context: context,
+        builder: (BuildContext context) => StatefulBuilder(
+          builder:
+              (
+                BuildContext context,
+                void Function(void Function()) setDialogState,
+              ) => AlertDialog(
+                title: const Text('导出词书内容'),
+                content: SizedBox(
+                  width: 420,
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        for (final WordBookSummary summary in all)
+                          CheckboxListTile(
+                            dense: true,
+                            value: selected.contains(summary.book.id),
+                            onChanged: (bool? value) => setDialogState(() {
+                              if (value == true) {
+                                selected.add(summary.book.id);
+                              } else {
+                                selected.remove(summary.book.id);
+                              }
+                            }),
+                            title: Text(summary.book.name),
+                            subtitle: Text('${summary.wordCount} 个单词'),
+                          ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          '只导出词条内容：不含学习记录、笔记历史与同步凭据。'
+                          '需要完整备份请到「设置 → 备份与恢复」。',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                actions: <Widget>[
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(false),
+                    child: const Text('取消'),
+                  ),
+                  TextButton(
+                    onPressed: selected.isEmpty
+                        ? null
+                        : () => Navigator.of(context).pop(true),
+                    child: Text('导出 ${selected.length} 个词书'),
+                  ),
+                ],
+              ),
+        ),
+      );
+      if (confirmed != true || !context.mounted) return;
+      final WordBookExportFormat? format =
+          await showDialog<WordBookExportFormat>(
+            context: context,
+            builder: (BuildContext context) => SimpleDialog(
+              title: const Text('选择格式'),
+              children: <Widget>[
+                for (final WordBookExportFormat format
+                    in WordBookExportFormat.values)
+                  SimpleDialogOption(
+                    onPressed: () => Navigator.of(context).pop(format),
+                    child: Text(format.label),
+                  ),
+              ],
+            ),
+          );
+      if (format == null || !context.mounted) return;
+      try {
+        final List<WordBookExport> exports = <WordBookExport>[];
+        for (final WordBookSummary summary in all) {
+          if (!selected.contains(summary.book.id)) continue;
+          exports.add(
+            WordBookExport(
+              book: summary.book,
+              words: await ref
+                  .read(wordBookRepositoryProvider)
+                  .wordsInBook(summary.book.id),
+            ),
+          );
+        }
+        final String body = exports.length == 1
+            ? WordBookExporter.encodeBook(
+                exports.first,
+                format,
+                exportedAt: ref.read(clockProvider).now(),
+              )
+            : WordBookExporter.encodeBooks(
+                exports,
+                format,
+                exportedAt: ref.read(clockProvider).now(),
+              );
+        final String fileName = exports.length == 1
+            ? '${exports.first.book.name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_')}.${format.extension}'
+            : 'materialword-wordbooks-${exports.length}.${format.extension}';
+        final Uri? saved = await FilePicker.saveFile(
+          fileName: fileName,
+          bytes: utf8.encode(body),
+          mimeType: switch (format) {
+            WordBookExportFormat.txt => 'text/plain',
+            WordBookExportFormat.csv => 'text/csv',
+            WordBookExportFormat.json => 'application/json',
+          },
+          dialogTitle: '导出词书内容',
+        );
+        if (!context.mounted) return;
+        final int total = exports.fold<int>(
+          0,
+          (int sum, WordBookExport export) => sum + export.words.length,
+        );
+        showMessage(
+          context,
+          saved == null
+              ? '已取消导出'
+              : '已导出 ${exports.length} 个词书、$total 条词条内容（不含学习记录）',
+        );
+      } catch (e) {
+        if (!context.mounted) return;
+        showMessage(context, '导出失败：$e', error: true);
+      }
     }
 
     return ListView(
@@ -123,6 +296,12 @@ class WordBooksPage extends ConsumerWidget {
                   size: AppDimens.iconSizeSmall,
                 ),
                 label: const Text('全部词汇'),
+              ),
+              IconButton(
+                tooltip: '导出词书内容',
+                icon: const Icon(Icons.ios_share),
+                onPressed: () =>
+                    exportBooks(books.value ?? const <WordBookSummary>[]),
               ),
               IconButton(
                 tooltip: '导入词表',
@@ -228,6 +407,16 @@ class WordBooksPage extends ConsumerWidget {
                       destructive: true,
                     );
                     if (!ok) return;
+                    // Deleting a book detaches up to thousands of links at once.
+                    final String? backupFailure = await ref
+                        .read(backupManagerProvider)
+                        .protectiveBackupFailure('删除词书「${summary.book.name}」');
+                    if (backupFailure != null) {
+                      if (context.mounted) {
+                        showMessage(context, backupFailure, error: true);
+                      }
+                      return;
+                    }
                     await ref
                         .read(wordBookRepositoryProvider)
                         .softDelete(

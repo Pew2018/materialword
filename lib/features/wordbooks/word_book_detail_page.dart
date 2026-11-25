@@ -73,7 +73,11 @@ class _WordBookDetailPageState extends ConsumerState<WordBookDetailPage> {
       final List<Word> words = await ref
           .read(wordBookRepositoryProvider)
           .wordsInBook(widget.bookId);
-      final String body = WordBookExporter.encode(words, format);
+      final String body = WordBookExporter.encodeBook(
+        WordBookExport(book: book, words: words),
+        format,
+        exportedAt: ref.read(clockProvider).now(),
+      );
       final String safeName = book.name.replaceAll(
         RegExp(r'[\\/:*?"<>|]'),
         '_',

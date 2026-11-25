@@ -71,6 +71,28 @@ class SyncConflictException extends SyncException {
     : super(retryable: true);
 }
 
+/// The merge was applied locally but the upload/verification did not finish.
+///
+/// This exists so a partial run can never be reported as "nothing happened":
+/// the local database *did* change, and the user must know the remote is behind.
+class SyncPartialException extends SyncException {
+  const SyncPartialException(
+    super.message, {
+    this.mergeSummary = '',
+    this.localChanged = false,
+    this.uploaded = false,
+  }) : super(retryable: true);
+
+  final String mergeSummary;
+  final bool localChanged;
+  final bool uploaded;
+}
+
+/// The remote dataset is missing although this target was synced before.
+class SyncRemoteMissingException extends SyncException {
+  const SyncRemoteMissingException([super.message = '远程数据文件已被删除，已停止自动同步']);
+}
+
 /// The remote document itself is unusable (corrupt, wrong kind, too new).
 class SyncDataException extends SyncException {
   const SyncDataException(super.message, {this.remoteVersion});
@@ -97,6 +119,14 @@ abstract class SyncProvider {
   bool get supportsConditionalWrites;
 
   Future<SyncTestResult> testConnection();
+
+  /// Cheap "has the remote changed?" probe used by the foreground check.
+  ///
+  /// Returns the same opaque revision [download] would return, or null when the
+  /// provider cannot answer without a full download. Implementations must not
+  /// transfer the dataset: a polling loop that re-downloads 40 MB every few
+  /// minutes is not acceptable.
+  Future<String?> remoteRevision() async => null;
 
   /// Returns the remote dataset, or null when the remote has no data yet.
   Future<SyncPayload?> download();
@@ -137,6 +167,9 @@ class UnimplementedSyncProvider implements SyncProvider {
   bool get supportsConditionalWrites => false;
 
   Never _fail() => throw SyncException('$label 未配置：请先在「数据同步」页面填写连接信息。');
+
+  @override
+  Future<String?> remoteRevision() async => null;
 
   @override
   Future<SyncPayload?> download() async => _fail();

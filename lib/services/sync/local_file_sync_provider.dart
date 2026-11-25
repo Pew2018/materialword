@@ -91,6 +91,20 @@ class LocalFileSyncProvider implements SyncProvider {
   /// `v1:<sha256>` over the raw bytes. Deterministic and independent of mtime.
   static String revisionOf(List<int> bytes) => 'v1:${sha256.convert(bytes)}';
 
+  /// Content hash of the file: detecting a change requires reading it, which is
+  /// cheap for a local file and never touches the network.
+  @override
+  Future<String?> remoteRevision() async {
+    _validatePath();
+    final File file = File(filePath);
+    if (!file.existsSync()) return null;
+    try {
+      return revisionOf(await file.readAsBytes());
+    } on FileSystemException {
+      return null;
+    }
+  }
+
   @override
   Future<SyncPayload?> download() async {
     _validatePath();

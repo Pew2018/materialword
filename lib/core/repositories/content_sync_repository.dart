@@ -6,6 +6,50 @@ import 'package:drift/drift.dart';
 import '../database/app_database.dart';
 import 'settings_repository.dart';
 
+/// One field where both devices wrote a different value and one side had to win.
+///
+/// The losing value is kept so the user can see what was discarded and restore
+/// it as a *new* edit (through the normal version rules), instead of the app
+/// silently dropping their work.
+class FieldConflict {
+  const FieldConflict({
+    required this.kind,
+    required this.id,
+    required this.field,
+    required this.localValue,
+    required this.remoteValue,
+    required this.chosenRemote,
+    required this.localVersion,
+    required this.remoteVersion,
+    required this.localUpdatedAt,
+    required this.remoteUpdatedAt,
+    this.deviceId = '',
+    this.label = '',
+  });
+
+  final String kind;
+  final String id;
+  final String field;
+  final Object? localValue;
+  final Object? remoteValue;
+
+  /// Human-readable entity name (the word itself or the book name), captured at
+  /// merge time so a conflict can be shown even after a later rename.
+  final String label;
+
+  /// True when the remote value won.
+  final bool chosenRemote;
+  final int localVersion;
+  final int remoteVersion;
+  final int localUpdatedAt;
+  final int remoteUpdatedAt;
+  final String deviceId;
+
+  Object? get adoptedValue => chosenRemote ? remoteValue : localValue;
+
+  Object? get discardedValue => chosenRemote ? localValue : remoteValue;
+}
+
 /// Per-field edit stamps and retained identities; values stay in the entity
 /// tables. A missing legacy field is never interpreted as an explicit erase.
 class ContentSyncRepository {
@@ -81,6 +125,39 @@ class ContentSyncRepository {
     };
   }
 
+  /// Batch form of [saveVersions] for a merge: one INSERT batch for every
+  /// entity instead of one batch per row.
+  Future<void> saveVersionsBulk(
+    String kind,
+    Map<String, Map<String, Map<String, Object?>>> byEntity,
+  ) async {
+    final List<ContentVersionsCompanion> rows = <ContentVersionsCompanion>[];
+    for (final MapEntry<String, Map<String, Map<String, Object?>>> entity
+        in byEntity.entries) {
+      for (final MapEntry<String, Map<String, Object?>> field
+          in entity.value.entries) {
+        rows.add(
+          ContentVersionsCompanion.insert(
+            kind: kind,
+            entityId: entity.key,
+            field: field.key,
+            version: field.value['version'] as int,
+            updatedAt: epoch(field.value['updatedAt']),
+            deviceId: field.value['deviceId'] as String,
+          ),
+        );
+      }
+    }
+    if (rows.isEmpty) return;
+    await db.batch(
+      (batch) => batch.insertAll(
+        db.contentVersions,
+        rows,
+        mode: InsertMode.insertOrReplace,
+      ),
+    );
+  }
+
   Future<void> saveVersions(
     String kind,
     String id,
@@ -136,7 +213,42 @@ class ContentSyncRepository {
     Map<String, Object?> local,
     Map<String, Object?> remote,
   ) async {
-    final localStamps = await versions(kind, id);
+    final result = await mergeWithStamps(
+      kind,
+      id,
+      local,
+      remote,
+      await versions(kind, id),
+    );
+    return (
+      row: result.row,
+      changed: result.changed,
+      conflict: result.conflicts.isNotEmpty,
+    );
+  }
+
+  /// Same rules as [merge], but the caller may supply the local stamps it
+  /// already loaded (a 20 000-word merge must not issue 20 000 SELECTs).
+  ///
+  /// Only the rows whose stamps came from the database are persisted here; a
+  /// batched caller is expected to save them itself.
+  Future<
+    ({
+      Map<String, Object?> row,
+      bool changed,
+      bool conflict,
+      List<FieldConflict> conflicts,
+      Map<String, Map<String, Object?>> stamps,
+    })
+  >
+  mergeWithStamps(
+    String kind,
+    String id,
+    Map<String, Object?> local,
+    Map<String, Object?> remote,
+    Map<String, Map<String, Object?>> localStamps, {
+    bool persistStamps = true,
+  }) async {
     final rawRemote = remote['fieldVersions'] as Map?;
     final remoteStamps = rawRemote == null
         ? <String, Map<String, Object?>>{}
@@ -148,7 +260,8 @@ class ContentSyncRepository {
           );
     final merged = Map<String, Object?>.of(local);
     final stamps = <String, Map<String, Object?>>{};
-    bool stampChanged = false, conflict = false;
+    final conflicts = <FieldConflict>[];
+    bool stampChanged = false, conflict = false, learnedStamps = false;
     for (final field in fields(kind)) {
       final old = localStamps[field] ?? baseline(local, field);
       stamps[field] = old;
@@ -169,10 +282,36 @@ class ContentSyncRepository {
           (old['version'] as int) > 1 &&
           (incoming['version'] as int) > 1) {
         conflict = true;
+        conflicts.add(
+          FieldConflict(
+            kind: kind,
+            id: id,
+            field: field,
+            localValue: local[field],
+            remoteValue: remote[field],
+            chosenRemote: order > 0,
+            localVersion: old['version'] as int,
+            remoteVersion: incoming['version'] as int,
+            localUpdatedAt: epoch(old['updatedAt']),
+            remoteUpdatedAt: epoch(incoming['updatedAt']),
+            deviceId: (incoming['deviceId'] as String?) ?? '',
+            label: kind == 'word'
+                ? (local['word'] as String?) ?? ''
+                : (local['name'] as String?) ?? '',
+          ),
+        );
       }
       if (order > 0) {
         merged[field] = remote[field];
         stamps[field] = incoming;
+      } else if (!localStamps.containsKey(field) &&
+          remoteStamps.containsKey(field)) {
+        // The remote knows this field was edited and this device has no stamp
+        // row at all. Adopt the remote stamp even when the value is identical,
+        // otherwise the two databases would keep different version metadata
+        // and never reach the same content hash.
+        stamps[field] = incoming;
+        learnedStamps = true;
       }
       if (jsonEncode(stamps[field]) != jsonEncode(old)) stampChanged = true;
     }
@@ -192,12 +331,53 @@ class ContentSyncRepository {
         fields(kind).any((field) => merged[field] != local[field]) ||
         merged['revision'] != local['revision'] ||
         epoch(merged['updatedAt']) != epoch(local['updatedAt']);
-    if (localStamps.isNotEmpty || remoteStamps.isNotEmpty) {
+    if (persistStamps && (localStamps.isNotEmpty || remoteStamps.isNotEmpty)) {
       // Include effective baseline stamps when one side has not edited this row
       // yet; otherwise the next edit could mistake a merged field for a new one.
       await saveVersions(kind, id, stamps);
     }
-    return (row: merged, changed: changed || stampChanged, conflict: conflict);
+    return (
+      row: merged,
+      changed: changed || stampChanged || learnedStamps,
+      conflict: conflict,
+      conflicts: conflicts,
+      stamps: stamps,
+    );
+  }
+
+  /// Batched alias write: one INSERT per alias, inside a single batch instead
+  /// of a read-then-insert round trip each.
+  Future<void> rememberAll(
+    String kind,
+    Iterable<({String localId, Iterable<String> aliases})> groups,
+    Map<String, String> knownAliases,
+  ) async {
+    final List<SyncAliasesCompanion> rows = <SyncAliasesCompanion>[];
+    for (final ({String localId, Iterable<String> aliases}) group in groups) {
+      for (final String alias in group.aliases.toSet()) {
+        if (alias == group.localId) continue;
+        final String? existing = knownAliases[alias];
+        if (existing != null && existing != group.localId) {
+          throw StateError('词条身份冲突，已停止合并');
+        }
+        knownAliases[alias] = group.localId;
+        rows.add(
+          SyncAliasesCompanion.insert(
+            kind: kind,
+            aliasId: alias,
+            localId: group.localId,
+          ),
+        );
+      }
+    }
+    if (rows.isEmpty) return;
+    await db.batch(
+      (batch) => batch.insertAll(
+        db.syncAliases,
+        rows,
+        mode: InsertMode.insertOrIgnore,
+      ),
+    );
   }
 
   Future<String?> resolve(

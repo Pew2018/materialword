@@ -34,6 +34,15 @@ class SettingsRepository {
   static const String syncConfigRevisionKey = 'sync_config_revision';
   static const String pendingRebuildKey = 'pending_rebuild_words';
 
+  // ---- phase 5: backup preferences and post-restore sync isolation ----------
+  static const String syncPausedKey = 'sync_paused_after_restore';
+  static const String syncPausedReasonKey = 'sync_paused_reason';
+  static const String autoBackupEnabledKey = 'auto_backup_enabled';
+  static const String autoBackupIntervalKey = 'auto_backup_interval_hours';
+  static const String autoBackupRetentionKey = 'auto_backup_retention';
+  static const String lastAutoBackupAtKey = 'last_auto_backup_at';
+  static const String lastAutoBackupHashKey = 'last_auto_backup_hash';
+
   Future<StudySettingsRow> load() async {
     final StudySettingsRow? row = await (db.select(
       db.studySettings,
@@ -210,6 +219,68 @@ class SettingsRepository {
 
   Future<void> setLastSyncResult(String value) =>
       db.writeMeta(lastSyncResultKey, value);
+
+  /// A point-in-time restore leaves the device deliberately out of sync with
+  /// every remote. While this flag is set, no automatic sync runs and a manual
+  /// sync must be an explicit "merge the remote into this device" decision.
+  Future<bool> syncPaused() async =>
+      (await db.readMeta(syncPausedKey)) == 'true';
+
+  Future<String?> syncPausedReason() => db.readMeta(syncPausedReasonKey);
+
+  Future<void> setSyncPaused(bool paused, {String reason = ''}) =>
+      db.transaction(() async {
+        if (paused) {
+          await db.writeMeta(syncPausedKey, 'true');
+          await db.writeMeta(syncPausedReasonKey, reason);
+        } else {
+          await db.deleteMeta(syncPausedKey);
+          await db.deleteMeta(syncPausedReasonKey);
+          // Forgetting the last synced revision forces the next sync to merge
+          // instead of trusting bookkeeping that describes pre-restore data.
+          await db.deleteMeta('last_sync_local_hash');
+          await db.deleteMeta('last_sync_remote_revision');
+        }
+      });
+
+  Future<bool> autoBackupEnabled() async {
+    final String? raw = await db.readMeta(autoBackupEnabledKey);
+    return raw != 'false'; // on by default
+  }
+
+  Future<void> setAutoBackupEnabled(bool value) =>
+      db.writeMeta(autoBackupEnabledKey, value ? 'true' : 'false');
+
+  Future<Duration> autoBackupInterval() async {
+    final int hours =
+        int.tryParse(await db.readMeta(autoBackupIntervalKey) ?? '') ?? 24;
+    return Duration(hours: hours.clamp(1, 24 * 30));
+  }
+
+  Future<void> setAutoBackupInterval(Duration value) =>
+      db.writeMeta(autoBackupIntervalKey, '${value.inHours.clamp(1, 24 * 30)}');
+
+  Future<int> autoBackupRetention() async {
+    final int value =
+        int.tryParse(await db.readMeta(autoBackupRetentionKey) ?? '') ?? 5;
+    return value.clamp(1, 30);
+  }
+
+  Future<void> setAutoBackupRetention(int value) =>
+      db.writeMeta(autoBackupRetentionKey, '${value.clamp(1, 30)}');
+
+  Future<DateTime?> lastAutoBackupAt() async {
+    final raw = await db.readMeta(lastAutoBackupAtKey);
+    return raw == null ? null : DateTime.tryParse(raw)?.toLocal();
+  }
+
+  Future<void> setLastAutoBackup(DateTime at, String hash) =>
+      db.transaction(() async {
+        await db.writeMeta(lastAutoBackupAtKey, at.toUtc().toIso8601String());
+        await db.writeMeta(lastAutoBackupHashKey, hash);
+      });
+
+  Future<String?> lastAutoBackupHash() => db.readMeta(lastAutoBackupHashKey);
 
   /// The persisted sync configuration (provider id + non-secret options).
   /// Secrets live in the platform credential store, never here.

@@ -1,4 +1,4 @@
-# 数据交换协议 v3（数据库 Schema 独立为 3）
+# 数据交换协议（同步 v3 / 备份 v4；数据库 Schema 独立为 3）
 
 ## 格式与兼容
 
@@ -41,9 +41,33 @@ JSON 包含 `kind=materialword-backup`、`schemaVersion=3`、datasetId、作者 
 
 [GitHub 仓库接口](https://docs.github.com/en/rest/repos/repos#get-a-repository) 的 Metadata 读取权限与 [Contents 写入权限](https://docs.github.com/en/rest/repos/contents#create-or-update-file-contents) 分开。真实 PAT 权限矩阵仍待服务验收；Mock 测试不是服务验收。
 
+## Phase 5 增补
+
+- **协议版本**：同步数据集仍为 v3（`buildDataset` 默认）。备份文件在包含
+  `deviceSettings` 时为 v4；v1–v4 均可导入，更高版本拒绝。设备设置永不进入同步数据集。
+- **状态语义**：一次同步区分 `downloading / merging / rebuilding / uploading /
+  verifying`，并在失败时区分"本机已合并但未上传"（`SyncPartialException`）、
+  远端文件缺失（`SyncRemoteMissingException`）、远端数据不可用（`SyncDataException`）、
+  恢复后暂停。本机一旦合并成功，任何后续失败都不会被描述成"没有修改数据"。
+- **远端文件缺失**：对一个曾经成功同步过的目标，`download()` 返回空不再等同于"首次创建"。
+  必须由用户显式确认后才重新上传整个数据集。
+- **前台远端探测**：`autoOnForeground` 触发时先调用 `remoteRevision()`
+  （GitHub 只取 `sha`、WebDAV 只做 PROPFIND、本地文件算哈希），与 `sync_target:<key>.revision`
+  比较，只有变化才进行全量同步。探测继承同一份冷却与退避状态，不产生请求风暴。
+- **失败也计入退避**：手动同步失败同样写入该目标的退避状态，避免自动触发立刻重试。
+- **冲突留痕**：字段级裁决规则不变；双方都改过同一字段时，把（保留值、被覆盖值、版本、
+  时间、设备）写入本机 `app_meta.sync_conflicts_v1`（上限 50，去重）。恢复被覆盖内容是
+  一次新的普通编辑，走正常字段版本规则，不篡改历史。
+- **版本元数据对称**：合并时若远端带有字段版本而本机没有任何版本行，即使值相同也采用远端
+  版本行，否则两台设备会因版本元数据不同而无法收敛到同一内容哈希。
+- **批量实现**：词条合并先一次性读取词条、别名与字段版本，内存中维护身份映射并在事务内
+  同步更新（重命名/恢复/删除立即生效），写入按批提交；`legacyWordMerge` 保留逐词实现，
+  用于逐字段等价性测试。
+
 ## 未完成的安全矩阵
 
-平台文件授权、真实私有仓库权限矩阵及真实设备/用户服务仍待验收。同字段冲突当前确定性选择并计数提示，尚无双版本恢复界面。已验证上传期间新答题及共享设置保持 pending，并在下次实际上传；作者日界/来源通过香港与纽约两进程验证。最终交付前需逐项通过。
+平台文件授权、真实私有仓库权限矩阵及真实设备/用户服务仍待验收。同字段冲突已提供
+本机冲突记录与"恢复被覆盖内容"入口（Phase 5）。已验证上传期间新答题及共享设置保持 pending，并在下次实际上传；作者日界/来源通过香港与纽约两进程验证。最终交付前需逐项通过。
 
 ## 自动同步和配置并发
 

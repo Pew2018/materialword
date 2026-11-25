@@ -25,7 +25,14 @@ const Uuid _uuid = Uuid();
 /// * v2 — phase 2: stable `datasetId`, per-row `revision`/`version`/`updatedAt`,
 ///   entry tombstones (`deletedAt`), review-event `mode`, shared/device
 ///   settings split, and a stable `contentHash` used to skip no-op uploads.
-const int backupSchemaVersion = 3;
+/// * v3 — phase 3: event day anchors/provenance, favourites, tags, retained
+///   identities and per-field versions.
+/// * v4 — phase 5: **backup files only** may carry `deviceSettings` (theme,
+///   accent, TTS, keep-screen-on) for device migration. The sync dataset stays
+///   at v3 so an older client never receives a version it cannot read, and the
+///   device block never travels between devices.
+const int backupSchemaVersion = 4;
+const int syncSchemaVersion = 3;
 const String backupKind = 'materialword-backup';
 
 /// Summary of what an import/merge actually changed.
@@ -45,6 +52,7 @@ class MergeReport {
     this.conflicts = 0,
     this.settingsKept = true,
     this.metadataUpdates = 0,
+    this.conflictDetails = const <FieldConflict>[],
   });
 
   final int addedEvents;
@@ -64,6 +72,10 @@ class MergeReport {
   final int conflicts;
   final bool settingsKept;
   final int metadataUpdates;
+
+  /// Which field of which entity lost a value, so the user can review and
+  /// restore it (see `SyncConflictStore`).
+  final List<FieldConflict> conflictDetails;
 
   bool get hasChanges =>
       metadataUpdates > 0 ||
@@ -135,6 +147,7 @@ class BackupService {
   Future<Map<String, Object?>> buildDataset({
     required DateTime now,
     bool includeEvents = true,
+    bool includeDeviceSettings = false,
   }) => db.transaction(() async {
     final String deviceId = await settings.deviceId();
     final String datasetId = await settings.datasetId();
@@ -189,12 +202,14 @@ class BackupService {
     final StudySettingsRow current = await settings.load();
 
     return <String, Object?>{
-      'schemaVersion': backupSchemaVersion,
+      'schemaVersion': includeDeviceSettings
+          ? backupSchemaVersion
+          : syncSchemaVersion,
       'kind': backupKind,
       'datasetId': datasetId,
       'deviceId': deviceId,
       'exportedAt': now.toUtc().toIso8601String(),
-      'appVersion': '1.1.0',
+      'appVersion': '1.2.0',
       'words': wordRows
           .map((w) => withIdentity('word', _wordToJson(w)))
           .toList(growable: false),
@@ -213,28 +228,133 @@ class BackupService {
         'sprintPlan': (await settings.loadSprintPlan()).toJson(),
         'version': await settings.sharedVersion(),
       },
+      // Device migration data. Never part of a sync dataset: theme, accent and
+      // TTS voice describe *this* device, and applying them from a remote
+      // device would undo the user's local choice on every sync.
+      if (includeDeviceSettings)
+        'deviceSettings': <String, Object?>{
+          'themeMode': current.themeMode,
+          'accentColor': current.accentColor,
+          'ttsVoice': current.ttsVoice,
+          'ttsLocale': current.ttsLocale,
+          'ttsRate': current.ttsRate,
+          'ttsAutoSpeak': current.ttsAutoSpeak,
+          'keepScreenOn': await db.readMeta('keep_screen_on') == '1',
+        },
     };
   });
 
+  /// Serialises a **backup** (not a sync payload): device migration settings are
+  /// included by default, so restoring on a new phone also brings the theme and
+  /// TTS preferences. `buildDataset` stays at the sync protocol version.
   Future<String> exportToJson({
     required DateTime now,
     bool pretty = true,
+    bool includeDeviceSettings = true,
   }) async {
-    final Map<String, Object?> dataset = await buildDataset(now: now);
+    final Map<String, Object?> dataset = await buildDataset(
+      now: now,
+      includeDeviceSettings: includeDeviceSettings,
+    );
     return encodeDatasetJson(dataset, pretty: pretty);
   }
 
+  /// Writes a recovery copy **atomically**.
+  ///
+  /// The old implementation called `writeAsString` on the final path, so a full
+  /// disk or a killed process could truncate the last good backup. Now the JSON
+  /// goes to a sibling `.tmp` file, is flushed, re-read and validated, and only
+  /// then renamed into place. A failure leaves every previous backup intact.
+  ///
+  /// The name carries milliseconds plus a random suffix: two backups in the same
+  /// second can no longer overwrite each other.
   Future<File> writeBackupFile({
     required Directory directory,
     required DateTime now,
+    bool includeDeviceSettings = true,
+    String label = 'auto',
   }) async {
-    final String json = await exportToJson(now: now);
-    String two(int v) => v.toString().padLeft(2, '0');
+    final Map<String, Object?> dataset = await buildDataset(
+      now: now,
+      includeDeviceSettings: includeDeviceSettings,
+    );
+    final String json = await encodeDatasetJson(dataset, pretty: false);
+    return writeJsonAtomically(
+      directory: directory,
+      json: json,
+      now: now,
+      label: label,
+    );
+  }
+
+  /// Shared atomic writer for backups and exported snapshots.
+  Future<File> writeJsonAtomically({
+    required Directory directory,
+    required String json,
+    required DateTime now,
+    String label = 'auto',
+    String prefix = 'materialword-backup',
+  }) async {
+    if (!directory.existsSync()) {
+      await directory.create(recursive: true);
+    }
+    String two(int value) => value.toString().padLeft(2, '0');
+    String three(int value) => value.toString().padLeft(3, '0');
     final String stamp =
-        '${now.year}${two(now.month)}${two(now.day)}-${two(now.hour)}${two(now.minute)}${two(now.second)}';
-    final File file = File('${directory.path}/materialword-backup-$stamp.json');
-    await file.writeAsString(json, flush: true);
-    return file;
+        '${now.year}${two(now.month)}${two(now.day)}-'
+        '${two(now.hour)}${two(now.minute)}${two(now.second)}'
+        '-${three(now.millisecond)}';
+    final String random = _uuid.v4().substring(0, 6);
+    final String base = '$prefix-$stamp-$label-$random';
+    final File target = File('${directory.path}/$base.json');
+    final File temp = File('${directory.path}/.$base.tmp');
+    try {
+      await temp.writeAsString(json, flush: true);
+      final String readBack = await temp.readAsString();
+      if (readBack.length != json.length) {
+        throw const BackupException('备份写入不完整（长度校验失败）');
+      }
+      // Prove the file on disk is a dataset this build can actually read before
+      // it becomes the newest recovery copy.
+      decodeDataset(readBack);
+      await temp.rename(target.path);
+      return target;
+    } catch (e) {
+      try {
+        if (temp.existsSync()) await temp.delete();
+      } catch (_) {}
+      if (e is BackupException) rethrow;
+      throw BackupException('备份写入失败（原有备份未受影响）：$e');
+    }
+  }
+
+  /// Removes leftover `.<name>.tmp` files from an interrupted write. Missing or
+  /// unreadable directories are ignored: this is housekeeping, not data.
+  static int cleanupTempFiles(
+    Directory directory, {
+    Duration maxAge = const Duration(hours: 1),
+  }) {
+    if (!directory.existsSync()) return 0;
+    final DateTime cutoff = DateTime.now().subtract(maxAge);
+    int removed = 0;
+    try {
+      for (final FileSystemEntity entity in directory.listSync()) {
+        if (entity is! File) continue;
+        final String name = entity.uri.pathSegments.last;
+        if (!name.startsWith('.') || !name.endsWith('.tmp')) continue;
+        try {
+          if (entity.statSync().modified.isBefore(cutoff)) {
+            entity.deleteSync();
+            removed++;
+          }
+        } catch (_) {
+          // Another process may be writing it; skip.
+        }
+      }
+    } catch (_) {
+      return removed;
+    }
+    return removed;
   }
 
   Future<Map<String, Object?>> readDataset(String path) async {
@@ -705,6 +825,33 @@ class BackupService {
     Map<String, Object?> dataset, {
     required DateTime now,
     void Function(String phase, Duration elapsed)? onPhase,
+    bool legacyWordMerge = false,
+  }) async {
+    final Map<String, Object?> valid = await validateDatasetAsync(dataset);
+    return db.transaction(
+      () => mergeValidatedInTransaction(
+        valid,
+        now: now,
+        onPhase: onPhase,
+        legacyWordMerge: legacyWordMerge,
+      ),
+    );
+  }
+
+  /// Merges an already validated dataset. The caller owns the transaction,
+  /// which is what lets a point-in-time restore clear and repopulate the
+  /// database in one atomic step (see `BackupManager.restoreSnapshot`).
+  ///
+  /// [onPhase] is a measurement hook: it reports how long each section of the
+  /// merge took, so an optimisation can be justified by data instead of by
+  /// guessing where the time goes. It never affects the merged result.
+  Future<MergeReport> mergeValidatedInTransaction(
+    Map<String, Object?> valid, {
+    required DateTime now,
+    void Function(String phase, Duration elapsed)? onPhase,
+    bool legacyWordMerge = false,
+    bool applySharedSettings = true,
+    List<FieldConflict>? conflictSink,
   }) async {
     final Stopwatch clock = Stopwatch()..start();
     void phase(String name) {
@@ -713,8 +860,6 @@ class BackupService {
       clock.reset();
     }
 
-    final Map<String, Object?> valid = await validateDatasetAsync(dataset);
-    phase('validate');
     final List<dynamic> rawWords =
         (valid['words'] as List<dynamic>?) ?? const <dynamic>[];
     final List<dynamic> rawBooks =
@@ -737,404 +882,364 @@ class BackupService {
     int metadataUpdates = 0;
     int skipped = 0;
     final Set<String> touchedWords = <String>{};
+    final List<FieldConflict> conflictDetails = <FieldConflict>[];
 
-    await db.transaction(() async {
-      final bool originallyEmpty =
-          await _countWords() == 0 && await _countEvents() == 0;
-      phase('transaction-start');
-      // ------------------------------------------------------------- words
-      // remote id → canonical local id. This is the fix for the phase-1 bug
-      // where entries/events kept pointing at the remote UUID and were dropped.
-      final Map<String, String> wordIdMap = <String, String>{};
-      final Map<String, String> bookIdMap = <String, String>{};
+    final bool originallyEmpty =
+        await _countWords() == 0 && await _countEvents() == 0;
+    phase('transaction-start');
+    // ------------------------------------------------------------- words
+    // remote id → canonical local id. Without this mapping, entries/events
+    // would keep pointing at a UUID this database never had and be dropped.
+    final Map<String, String> wordIdMap = <String, String>{};
+    final Map<String, String> bookIdMap = <String, String>{};
 
-      final content = ContentSyncRepository(db);
-      List<String> aliases(Map<String, dynamic> node) =>
-          (node['aliases'] as List?)?.cast<String>() ?? const [];
-      Map<String, Object?> presentFields(
-        Map<String, dynamic> raw,
-        Map<String, Object?> normalized,
-      ) => {
-        for (final key in raw.keys)
-          if (normalized.containsKey(key))
-            key: normalized[key]
-          else
-            key: raw[key],
-      };
-      for (final dynamic raw in rawWords) {
-        final node = raw as Map<String, dynamic>;
-        final incoming = _wordFromJson(node)!;
-        final resolved = await content.resolve(
-          'word',
-          incoming.id,
-          aliases(node),
-        );
-        final local = resolved == null
-            ? await words.byNormalized(
-                incoming.normalized,
-                includeDeleted: true,
-              )
-            : await words.byId(resolved);
-        final id = local?.id ?? incoming.id;
-        wordIdMap[incoming.id] = id;
-        await content.remember('word', id, [incoming.id, ...aliases(node)]);
-        if (local == null) {
-          await db.into(db.words).insert(incoming);
-          if (node['fieldVersions'] != null) {
-            await content.saveVersions(
-              'word',
-              id,
-              (node['fieldVersions'] as Map).map(
-                (key, value) => MapEntry(
-                  key as String,
-                  Map<String, Object?>.from(value as Map),
-                ),
-              ),
-            );
-          }
-          newWords++;
-          continue;
-        }
-        final merged = await content.merge(
-          'word',
-          id,
-          _wordToJson(local),
-          presentFields(node, _wordToJson(incoming)),
-        );
-        if (merged.changed) {
-          final row = Map<String, dynamic>.from(merged.row)
-            ..['normalized'] = normalizeWordKey(merged.row['word'] as String);
-          final updated = _wordFromJson(row)!
-              .copyWith(id: id, createdAt: local.createdAt);
-          final duplicate = await words.byNormalized(
-            updated.normalized,
-            includeDeleted: true,
+    final ContentSyncRepository content = ContentSyncRepository(db);
+    List<String> aliases(Map<String, dynamic> node) =>
+        (node['aliases'] as List?)?.cast<String>() ?? const [];
+    Map<String, Object?> presentFields(
+      Map<String, dynamic> raw,
+      Map<String, Object?> normalized,
+    ) => {
+      for (final key in raw.keys)
+        if (normalized.containsKey(key))
+          key: normalized[key]
+        else
+          key: raw[key],
+    };
+
+    final _WordMergeResult wordResult = legacyWordMerge
+        ? await _mergeWordsPerRow(
+            rawWords,
+            content,
+            wordIdMap,
+            aliases: aliases,
+            presentFields: presentFields,
+            now: now,
+            conflictDetails: conflictDetails,
+          )
+        : await _mergeWordsBatched(
+            rawWords,
+            content,
+            wordIdMap,
+            aliases: aliases,
+            presentFields: presentFields,
+            now: now,
+            conflictDetails: conflictDetails,
           );
-          if (duplicate != null && duplicate.id != id) {
-            throw const BackupException('重命名与本机已有词条冲突，未合并任何数据');
-          }
-          await db.update(db.words).replace(updated);
-          if (updated.deletedAt != null && local.deletedAt == null) {
-            deletedWords++;
-          } else {
-            updatedWords++;
-          }
-        }
-        if (merged.conflict) conflicts++;
-      }
+    newWords = wordResult.newWords;
+    updatedWords = wordResult.updatedWords;
+    deletedWords = wordResult.deletedWords;
+    conflicts += wordResult.conflicts;
 
-      phase('words');
-      // IDs and retained aliases take precedence over names, so later renames
-      // keep existing entries and events attached to their original identity.
-      for (final dynamic raw in rawBooks) {
-        final node = raw as Map<String, dynamic>;
-        final incoming = _bookFromJson(node)!;
-        final resolved = await content.resolve(
-          'book',
-          incoming.id,
-          aliases(node),
-        );
-        WordBook? local;
-        if (resolved != null) {
-          local = await (db.select(
-            db.wordBooks,
-          )..where((t) => t.id.equals(resolved))).getSingleOrNull();
-        } else {
-          final candidates = await (db.select(
-            db.wordBooks,
-          )..where((t) => t.name.equals(incoming.name))).get();
-          final compatible = candidates
-              .where(
-                (b) =>
-                    !(b.deletedAt != null &&
-                        incoming.createdAt > b.deletedAt!) &&
-                    !(incoming.deletedAt != null &&
-                        b.createdAt > incoming.deletedAt!),
-              )
-              .toList();
-          if (compatible.length > 1) {
-            throw const BackupException('词书同名身份不明确，未合并任何数据');
-          }
-          local = compatible.firstOrNull;
+    phase('words');
+    // IDs and retained aliases take precedence over names, so later renames
+    // keep existing entries and events attached to their original identity.
+    for (final dynamic raw in rawBooks) {
+      final node = raw as Map<String, dynamic>;
+      final incoming = _bookFromJson(node)!;
+      final resolved = await content.resolve(
+        'book',
+        incoming.id,
+        aliases(node),
+      );
+      WordBook? local;
+      if (resolved != null) {
+        local = await (db.select(
+          db.wordBooks,
+        )..where((t) => t.id.equals(resolved))).getSingleOrNull();
+      } else {
+        final candidates = await (db.select(
+          db.wordBooks,
+        )..where((t) => t.name.equals(incoming.name))).get();
+        final compatible = candidates
+            .where(
+              (b) =>
+                  !(b.deletedAt != null && incoming.createdAt > b.deletedAt!) &&
+                  !(incoming.deletedAt != null &&
+                      b.createdAt > incoming.deletedAt!),
+            )
+            .toList();
+        if (compatible.length > 1) {
+          throw const BackupException('词书同名身份不明确，未合并任何数据');
         }
-        final id = local?.id ?? incoming.id;
-        bookIdMap[incoming.id] = id;
-        await content.remember('book', id, [incoming.id, ...aliases(node)]);
-        if (local == null) {
-          await db.into(db.wordBooks).insert(incoming);
-          if (node['fieldVersions'] != null) {
-            await content.saveVersions(
-              'book',
-              id,
-              (node['fieldVersions'] as Map).map(
-                (key, value) => MapEntry(
-                  key as String,
-                  Map<String, Object?>.from(value as Map),
-                ),
+        local = compatible.firstOrNull;
+      }
+      final id = local?.id ?? incoming.id;
+      bookIdMap[incoming.id] = id;
+      await content.remember('book', id, [incoming.id, ...aliases(node)]);
+      if (local == null) {
+        await db.into(db.wordBooks).insert(incoming);
+        if (node['fieldVersions'] != null) {
+          await content.saveVersions(
+            'book',
+            id,
+            (node['fieldVersions'] as Map).map(
+              (key, value) => MapEntry(
+                key as String,
+                Map<String, Object?>.from(value as Map),
               ),
-            );
-          }
-          if (incoming.deletedAt == null) newBooks++;
-          continue;
+            ),
+          );
         }
-        final merged = await content.merge(
-          'book',
-          id,
-          _bookToJson(local),
-          presentFields(node, _bookToJson(incoming)),
-        );
-        if (merged.changed) {
-          final updated = _bookFromJson(Map<String, dynamic>.from(merged.row))!
-              .copyWith(id: id, createdAt: local.createdAt);
-          await db.update(db.wordBooks).replace(updated);
-          updatedBooks++;
-        }
-        if (merged.conflict) conflicts++;
+        if (incoming.deletedAt == null) newBooks++;
+        continue;
       }
+      final merged = await content.merge(
+        'book',
+        id,
+        _bookToJson(local),
+        presentFields(node, _bookToJson(incoming)),
+      );
+      if (merged.changed) {
+        final updated = _bookFromJson(Map<String, dynamic>.from(merged.row))!
+            .copyWith(id: id, createdAt: local.createdAt);
+        await db.update(db.wordBooks).replace(updated);
+        updatedBooks++;
+      }
+      if (merged.conflict) conflicts++;
+    }
 
-      phase('books');
-      // ----------------------------------------------------------- entries
-      for (final dynamic node in rawEntries) {
-        if (node is! Map<String, dynamic>) {
-          skipped++;
-          continue;
-        }
-        final String? remoteBookId = node['wordBookId'] as String?;
-        final String? remoteWordId = node['wordId'] as String?;
-        if (remoteBookId == null || remoteWordId == null) {
-          skipped++;
-          continue;
-        }
-        final String bookId = bookIdMap[remoteBookId] ?? remoteBookId;
-        final String? wordId = wordIdMap[remoteWordId];
-        if (wordId == null) {
-          skipped++;
-          continue;
-        }
-        final WordBookEntry? incoming = _entryFromJson(node, bookId, wordId);
-        if (incoming == null) {
-          skipped++;
-          continue;
-        }
-        final WordBookEntry? local =
-            await (db.select(db.wordBookEntries)..where(
-                  (t) => t.wordBookId.equals(bookId) & t.wordId.equals(wordId),
-                ))
-                .getSingleOrNull();
-        if (local == null) {
-          await db
-              .into(db.wordBookEntries)
-              .insert(incoming, mode: InsertMode.insertOrIgnore);
-          if (incoming.deletedAt == null) {
-            newEntries++;
-          } else {
-            removedEntries++;
-          }
-          continue;
-        }
-        final order = _versionOf(
-          incoming.version,
-          incoming.updatedAt,
-        ).compareTo(_versionOf(local.version, local.updatedAt));
-        if (order < 0 ||
-            (order == 0 &&
-                (incoming.deletedAt == null || local.deletedAt != null))) {
-          continue;
-        }
+    phase('books');
+    // ----------------------------------------------------------- entries
+    for (final dynamic node in rawEntries) {
+      if (node is! Map<String, dynamic>) {
+        skipped++;
+        continue;
+      }
+      final String? remoteBookId = node['wordBookId'] as String?;
+      final String? remoteWordId = node['wordId'] as String?;
+      if (remoteBookId == null || remoteWordId == null) {
+        skipped++;
+        continue;
+      }
+      final String bookId = bookIdMap[remoteBookId] ?? remoteBookId;
+      final String? wordId = wordIdMap[remoteWordId];
+      if (wordId == null) {
+        skipped++;
+        continue;
+      }
+      final WordBookEntry? incoming = _entryFromJson(node, bookId, wordId);
+      if (incoming == null) {
+        skipped++;
+        continue;
+      }
+      final WordBookEntry? local =
+          await (db.select(db.wordBookEntries)..where(
+                (t) => t.wordBookId.equals(bookId) & t.wordId.equals(wordId),
+              ))
+              .getSingleOrNull();
+      if (local == null) {
         await db
-            .update(db.wordBookEntries)
-            .replace(
-              local.copyWith(
-                version: incoming.version,
-                updatedAt: incoming.updatedAt,
-                deletedAt: Value<int?>(incoming.deletedAt),
+            .into(db.wordBookEntries)
+            .insert(incoming, mode: InsertMode.insertOrIgnore);
+        if (incoming.deletedAt == null) {
+          newEntries++;
+        } else {
+          removedEntries++;
+        }
+        continue;
+      }
+      final order = _versionOf(
+        incoming.version,
+        incoming.updatedAt,
+      ).compareTo(_versionOf(local.version, local.updatedAt));
+      if (order < 0 ||
+          (order == 0 &&
+              (incoming.deletedAt == null || local.deletedAt != null))) {
+        continue;
+      }
+      await db
+          .update(db.wordBookEntries)
+          .replace(
+            local.copyWith(
+              version: incoming.version,
+              updatedAt: incoming.updatedAt,
+              deletedAt: Value<int?>(incoming.deletedAt),
+            ),
+          );
+      if (incoming.deletedAt != null) {
+        removedEntries++;
+      } else {
+        newEntries++;
+      }
+    }
+
+    phase('entries');
+    metadataUpdates = await WordMetadataSync(db).merge(valid, wordIdMap);
+    phase('metadata');
+    // ------------------------------------------------------------ events
+    // One read of the existing ids instead of a `SELECT ... WHERE id = ?`
+    // per incoming event: a 100 000-event import used to issue 100 000
+    // single-row reads plus 100 000 single-row inserts. Only ids are held in
+    // memory, so the footprint stays proportional to the log (a few MB) and
+    // not to the full row payload.
+    final Set<String> knownEventIds = await _existingEventIds();
+    final Map<String, ReviewEvent> pendingEvents = <String, ReviewEvent>{};
+    Future<void> flushPendingEvents() async {
+      if (pendingEvents.isEmpty) return;
+      final List<ReviewEvent> rows = pendingEvents.values.toList(
+        growable: false,
+      );
+      pendingEvents.clear();
+      await db.batch(
+        (Batch batch) => batch.insertAll(
+          db.reviewEvents,
+          rows,
+          mode: InsertMode.insertOrIgnore,
+        ),
+      );
+    }
+
+    for (final dynamic node in rawEvents) {
+      if (node is! Map<String, dynamic>) {
+        skipped++;
+        continue;
+      }
+      final String? remoteWordId = node['wordId'] as String?;
+      if (remoteWordId == null) {
+        skipped++;
+        continue;
+      }
+      final String? wordId = wordIdMap[remoteWordId];
+      if (wordId == null) {
+        // The event belongs to a word that is not part of this dataset and
+        // does not exist locally either; nothing sensible to attach it to.
+        skipped++;
+        continue;
+      }
+      final ReviewEvent? incoming = _eventFromJson(node, wordId);
+      if (incoming == null) {
+        skipped++;
+        continue;
+      }
+      // A repeated id inside the same dataset is resolved against the pending
+      // batch, exactly like a duplicate against the database.
+      final ReviewEvent? local =
+          pendingEvents[incoming.id] ??
+          (knownEventIds.contains(incoming.id)
+              ? await (db.select(
+                  db.reviewEvents,
+                )..where((t) => t.id.equals(incoming.id))).getSingleOrNull()
+              : null);
+      if (local != null) {
+        if (local.wordId != incoming.wordId ||
+            local.causalOrder != incoming.causalOrder ||
+            local.deviceId != incoming.deviceId ||
+            local.answeredAt != incoming.answeredAt ||
+            local.result != incoming.result ||
+            local.type != incoming.type ||
+            local.mode != incoming.mode ||
+            local.algoVersion != incoming.algoVersion) {
+          throw const BackupException('同一学习记录 ID 的内容冲突，未合并数据');
+        }
+        int rank(String source) => switch (source) {
+          'authored' => 3,
+          'legacy-state' => 2,
+          _ => 1,
+        };
+        final localRank = rank(local.dayStartSource),
+            remoteRank = rank(incoming.dayStartSource);
+        if (localRank == 3 &&
+            remoteRank == 3 &&
+            local.dayStartUtc != incoming.dayStartUtc) {
+          throw const BackupException('同一学习记录的作者时间锚点冲突');
+        }
+        if (remoteRank > localRank ||
+            (remoteRank == localRank &&
+                incoming.dayStartUtc != null &&
+                (local.dayStartUtc == null ||
+                    incoming.dayStartUtc! < local.dayStartUtc!))) {
+          if (pendingEvents.containsKey(incoming.id)) {
+            pendingEvents[incoming.id] = local.copyWith(
+              dayStartUtc: Value<int?>(incoming.dayStartUtc),
+              dayStartSource: incoming.dayStartSource,
+              localDay: incoming.localDay,
+            );
+          } else {
+            await (db.update(
+              db.reviewEvents,
+            )..where((t) => t.id.equals(local.id))).write(
+              ReviewEventsCompanion(
+                dayStartUtc: Value(incoming.dayStartUtc),
+                dayStartSource: Value(incoming.dayStartSource),
+                localDay: Value(incoming.localDay),
               ),
             );
-        if (incoming.deletedAt != null) {
-          removedEntries++;
-        } else {
-          newEntries++;
+          }
+          touchedWords.add(wordId);
         }
+        duplicateEvents++;
+        continue;
       }
+      pendingEvents[incoming.id] = incoming;
+      knownEventIds.add(incoming.id);
+      addedEvents++;
+      touchedWords.add(wordId);
+      if (pendingEvents.length >= 500) await flushPendingEvents();
+    }
+    await flushPendingEvents();
 
-      phase('entries');
-      metadataUpdates = await WordMetadataSync(db).merge(valid, wordIdMap);
-      phase('metadata');
-      // ------------------------------------------------------------ events
-      // One read of the existing ids instead of a `SELECT ... WHERE id = ?`
-      // per incoming event: a 100 000-event import used to issue 100 000
-      // single-row reads plus 100 000 single-row inserts. Only ids are held in
-      // memory, so the footprint stays proportional to the log (a few MB) and
-      // not to the full row payload.
-      final Set<String> knownEventIds = await _existingEventIds();
-      final Map<String, ReviewEvent> pendingEvents = <String, ReviewEvent>{};
-      Future<void> flushPendingEvents() async {
-        if (pendingEvents.isEmpty) return;
-        final List<ReviewEvent> rows = pendingEvents.values.toList(
-          growable: false,
-        );
-        pendingEvents.clear();
-        await db.batch(
-          (Batch batch) => batch.insertAll(
-            db.reviewEvents,
-            rows,
-            mode: InsertMode.insertOrIgnore,
+    phase('events');
+    // Shared settings use a Lamport counter plus a stable source-device tie break.
+    final Object? sharedSettings = valid['settings'];
+    if (applySharedSettings && sharedSettings is Map<String, dynamic>) {
+      final rawVersion = sharedSettings['version'];
+      final Map<String, Object?>? incomingVersion = rawVersion is Map
+          ? Map<String, Object?>.from(rawVersion)
+          : null;
+      if (incomingVersion != null &&
+          (incomingVersion['counter'] is! int ||
+              (incomingVersion['counter'] as int) < 0 ||
+              incomingVersion['deviceId'] is! String)) {
+        throw const BackupException('共享设置版本无效');
+      }
+      final localVersion = await settings.sharedVersion();
+      if ((incomingVersion != null &&
+              SettingsRepository.compareVersions(
+                    incomingVersion,
+                    localVersion,
+                  ) >
+                  0) ||
+          (originallyEmpty && (localVersion['counter'] as int) == 0)) {
+        final current = await settings.load();
+        await settings.save(
+          dailyNewTarget: _positiveInt(
+            sharedSettings['dailyNewTarget'],
+            current.dailyNewTarget,
           ),
+          dailyReviewLimit: _positiveInt(
+            sharedSettings['dailyReviewLimit'],
+            current.dailyReviewLimit,
+          ),
+          studyMode: StudyMode.fromCode(sharedSettings['studyMode'] as String?),
+          sprintPlan: sharedSettings['sprintPlan'] is Map
+              ? SprintPlan.fromJson({
+                  ...Map<String, Object?>.from(
+                    sharedSettings['sprintPlan'] as Map,
+                  ),
+                  'bookId':
+                      bookIdMap[(sharedSettings['sprintPlan']
+                          as Map)['bookId']] ??
+                      (sharedSettings['sprintPlan'] as Map)['bookId'],
+                })
+              : null,
+          importedVersion:
+              incomingVersion ??
+              <String, Object?>{'counter': 0, 'deviceId': ''},
         );
       }
+    }
 
-      for (final dynamic node in rawEvents) {
-        if (node is! Map<String, dynamic>) {
-          skipped++;
-          continue;
-        }
-        final String? remoteWordId = node['wordId'] as String?;
-        if (remoteWordId == null) {
-          skipped++;
-          continue;
-        }
-        final String? wordId = wordIdMap[remoteWordId];
-        if (wordId == null) {
-          // The event belongs to a word that is not part of this dataset and
-          // does not exist locally either; nothing sensible to attach it to.
-          skipped++;
-          continue;
-        }
-        final ReviewEvent? incoming = _eventFromJson(node, wordId);
-        if (incoming == null) {
-          skipped++;
-          continue;
-        }
-        // A repeated id inside the same dataset is resolved against the pending
-        // batch, exactly like a duplicate against the database.
-        final ReviewEvent? local =
-            pendingEvents[incoming.id] ??
-            (knownEventIds.contains(incoming.id)
-                ? await (db.select(
-                    db.reviewEvents,
-                  )..where((t) => t.id.equals(incoming.id))).getSingleOrNull()
-                : null);
-        if (local != null) {
-          if (local.wordId != incoming.wordId ||
-              local.causalOrder != incoming.causalOrder ||
-              local.deviceId != incoming.deviceId ||
-              local.answeredAt != incoming.answeredAt ||
-              local.result != incoming.result ||
-              local.type != incoming.type ||
-              local.mode != incoming.mode ||
-              local.algoVersion != incoming.algoVersion) {
-            throw const BackupException('同一学习记录 ID 的内容冲突，未合并数据');
-          }
-          int rank(String source) => switch (source) {
-            'authored' => 3,
-            'legacy-state' => 2,
-            _ => 1,
-          };
-          final localRank = rank(local.dayStartSource),
-              remoteRank = rank(incoming.dayStartSource);
-          if (localRank == 3 &&
-              remoteRank == 3 &&
-              local.dayStartUtc != incoming.dayStartUtc) {
-            throw const BackupException('同一学习记录的作者时间锚点冲突');
-          }
-          if (remoteRank > localRank ||
-              (remoteRank == localRank &&
-                  incoming.dayStartUtc != null &&
-                  (local.dayStartUtc == null ||
-                      incoming.dayStartUtc! < local.dayStartUtc!))) {
-            if (pendingEvents.containsKey(incoming.id)) {
-              pendingEvents[incoming.id] = local.copyWith(
-                dayStartUtc: Value<int?>(incoming.dayStartUtc),
-                dayStartSource: incoming.dayStartSource,
-                localDay: incoming.localDay,
-              );
-            } else {
-              await (db.update(
-                db.reviewEvents,
-              )..where((t) => t.id.equals(local.id))).write(
-                ReviewEventsCompanion(
-                  dayStartUtc: Value(incoming.dayStartUtc),
-                  dayStartSource: Value(incoming.dayStartSource),
-                  localDay: Value(incoming.localDay),
-                ),
-              );
-            }
-            touchedWords.add(wordId);
-          }
-          duplicateEvents++;
-          continue;
-        }
-        pendingEvents[incoming.id] = incoming;
-        knownEventIds.add(incoming.id);
-        addedEvents++;
-        touchedWords.add(wordId);
-        if (pendingEvents.length >= 500) await flushPendingEvents();
-      }
-      await flushPendingEvents();
+    // ---- rebuild derived state inside the transaction ------------------
+    // Every state row is a pure function of the merged event log, so this is
+    // deterministic and cannot be left half-applied: an interruption rolls
+    // the whole transaction back. The batched entry point produces exactly
+    // the same rows as the per-word one, one query per chunk instead of one
+    // per word.
+    await study.rebuildStatesForWords(touchedWords);
+    phase('replay');
 
-      phase('events');
-      // Shared settings use a Lamport counter plus a stable source-device tie break.
-      final Object? sharedSettings = valid['settings'];
-      if (sharedSettings is Map<String, dynamic>) {
-        final rawVersion = sharedSettings['version'];
-        final Map<String, Object?>? incomingVersion = rawVersion is Map
-            ? Map<String, Object?>.from(rawVersion)
-            : null;
-        if (incomingVersion != null &&
-            (incomingVersion['counter'] is! int ||
-                (incomingVersion['counter'] as int) < 0 ||
-                incomingVersion['deviceId'] is! String)) {
-          throw const BackupException('共享设置版本无效');
-        }
-        final localVersion = await settings.sharedVersion();
-        if ((incomingVersion != null &&
-                SettingsRepository.compareVersions(
-                      incomingVersion,
-                      localVersion,
-                    ) >
-                    0) ||
-            (originallyEmpty && (localVersion['counter'] as int) == 0)) {
-          final current = await settings.load();
-          await settings.save(
-            dailyNewTarget: _positiveInt(
-              sharedSettings['dailyNewTarget'],
-              current.dailyNewTarget,
-            ),
-            dailyReviewLimit: _positiveInt(
-              sharedSettings['dailyReviewLimit'],
-              current.dailyReviewLimit,
-            ),
-            studyMode: StudyMode.fromCode(
-              sharedSettings['studyMode'] as String?,
-            ),
-            sprintPlan: sharedSettings['sprintPlan'] is Map
-                ? SprintPlan.fromJson({
-                    ...Map<String, Object?>.from(
-                      sharedSettings['sprintPlan'] as Map,
-                    ),
-                    'bookId':
-                        bookIdMap[(sharedSettings['sprintPlan']
-                            as Map)['bookId']] ??
-                        (sharedSettings['sprintPlan'] as Map)['bookId'],
-                  })
-                : null,
-            importedVersion:
-                incomingVersion ??
-                <String, Object?>{'counter': 0, 'deviceId': ''},
-          );
-        }
-      }
-
-      // ---- rebuild derived state inside the transaction ------------------
-      // Every state row is a pure function of the merged event log, so this is
-      // deterministic and cannot be left half-applied: an interruption rolls
-      // the whole transaction back. The batched entry point produces exactly
-      // the same rows as the per-word one, one query per chunk instead of one
-      // per word.
-      await study.rebuildStatesForWords(touchedWords);
-      phase('replay');
-    });
-
+    conflictSink?.addAll(conflictDetails);
     return MergeReport(
       metadataUpdates: metadataUpdates,
       addedEvents: addedEvents,
@@ -1150,12 +1255,272 @@ class BackupService {
       skippedEntries: skipped,
       conflicts: conflicts,
       settingsKept: true,
+      conflictDetails: conflictDetails,
     );
   }
 
-  /// Every event id already in the log. Only the ids are read: the merge uses
-  /// them to skip the per-row existence check, and the detailed comparison for
-  /// a genuine duplicate still reads that one row.
+  /// Phase-4 implementation, kept for the equivalence test: one row at a time,
+  /// one version query per word. Any optimisation of the word merge must
+  /// produce exactly the same database rows as this path.
+  Future<_WordMergeResult> _mergeWordsPerRow(
+    List<dynamic> rawWords,
+    ContentSyncRepository content,
+    Map<String, String> wordIdMap, {
+    required List<String> Function(Map<String, dynamic> node) aliases,
+    required Map<String, Object?> Function(
+      Map<String, dynamic> raw,
+      Map<String, Object?> normalized,
+    )
+    presentFields,
+    required DateTime now,
+    required List<FieldConflict> conflictDetails,
+  }) async {
+    int newWords = 0, updatedWords = 0, deletedWords = 0, conflicts = 0;
+    for (final dynamic raw in rawWords) {
+      final node = raw as Map<String, dynamic>;
+      final incoming = _wordFromJson(node)!;
+      final resolved = await content.resolve(
+        'word',
+        incoming.id,
+        aliases(node),
+      );
+      final local = resolved == null
+          ? await words.byNormalized(incoming.normalized, includeDeleted: true)
+          : await words.byId(resolved);
+      final id = local?.id ?? incoming.id;
+      wordIdMap[incoming.id] = id;
+      await content.remember('word', id, [incoming.id, ...aliases(node)]);
+      if (local == null) {
+        await db.into(db.words).insert(incoming);
+        if (node['fieldVersions'] != null) {
+          await content.saveVersions(
+            'word',
+            id,
+            (node['fieldVersions'] as Map).map(
+              (key, value) => MapEntry(
+                key as String,
+                Map<String, Object?>.from(value as Map),
+              ),
+            ),
+          );
+        }
+        newWords++;
+        continue;
+      }
+      final merged = await content.merge(
+        'word',
+        id,
+        _wordToJson(local),
+        presentFields(node, _wordToJson(incoming)),
+      );
+      if (merged.changed) {
+        final row = Map<String, dynamic>.from(merged.row)
+          ..['normalized'] = normalizeWordKey(merged.row['word'] as String);
+        final updated = _wordFromJson(row)!
+            .copyWith(id: id, createdAt: local.createdAt);
+        final duplicate = await words.byNormalized(
+          updated.normalized,
+          includeDeleted: true,
+        );
+        if (duplicate != null && duplicate.id != id) {
+          throw const BackupException('重命名与本机已有词条冲突，未合并任何数据');
+        }
+        await db.update(db.words).replace(updated);
+        if (updated.deletedAt != null && local.deletedAt == null) {
+          deletedWords++;
+        } else {
+          updatedWords++;
+        }
+      }
+      if (merged.conflict) conflicts++;
+    }
+    return _WordMergeResult(
+      newWords: newWords,
+      updatedWords: updatedWords,
+      deletedWords: deletedWords,
+      conflicts: conflicts,
+    );
+  }
+
+  /// Batched word merge (phase 5G).
+  ///
+  /// The per-row path issued 3–5 single-row queries per word (`resolve` twice,
+  /// `byNormalized`, `remember` twice, `versions`) and one UPDATE each. Here the
+  /// whole identity map, alias map and version map are read once, writes are
+  /// batched, and the in-memory maps are kept in sync so a rename/revival later
+  /// in the same dataset still resolves against what this transaction already
+  /// wrote.
+  Future<_WordMergeResult> _mergeWordsBatched(
+    List<dynamic> rawWords,
+    ContentSyncRepository content,
+    Map<String, String> wordIdMap, {
+    required List<String> Function(Map<String, dynamic> node) aliases,
+    required Map<String, Object?> Function(
+      Map<String, dynamic> raw,
+      Map<String, Object?> normalized,
+    )
+    presentFields,
+    required DateTime now,
+    required List<FieldConflict> conflictDetails,
+  }) async {
+    if (rawWords.isEmpty) return const _WordMergeResult();
+
+    final Map<String, Word> byId = <String, Word>{};
+    final Map<String, Word> byNormalized = <String, Word>{};
+    for (final Word word in await db.select(db.words).get()) {
+      byId[word.id] = word;
+      byNormalized[word.normalized] = word;
+    }
+    final Map<String, String> aliasToLocal = <String, String>{};
+    for (final SyncAliasRow alias in await (db.select(
+      db.syncAliases,
+    )..where((t) => t.kind.equals('word'))).get()) {
+      aliasToLocal[alias.aliasId] = alias.localId;
+    }
+    final Map<String, Map<String, Map<String, Object?>>> stampsByWord =
+        <String, Map<String, Map<String, Object?>>>{};
+    for (final ContentVersionRow row in await (db.select(
+      db.contentVersions,
+    )..where((t) => t.kind.equals('word'))).get()) {
+      (stampsByWord[row.entityId] ??=
+          <String, Map<String, Object?>>{})[row.field] = <String, Object?>{
+        'version': row.version,
+        'updatedAt': row.updatedAt,
+        'deviceId': row.deviceId,
+      };
+    }
+
+    int newWords = 0, updatedWords = 0, deletedWords = 0, conflicts = 0;
+    final List<Word> pendingInserts = <Word>[];
+    final List<Word> pendingUpdates = <Word>[];
+    final List<({String localId, Iterable<String> aliases})> pendingAliases =
+        <({String localId, Iterable<String> aliases})>[];
+    final Map<String, Map<String, Map<String, Object?>>> pendingStamps =
+        <String, Map<String, Map<String, Object?>>>{};
+
+    Future<void> flush() async {
+      if (pendingInserts.isNotEmpty) {
+        await db.batch(
+          (Batch batch) => batch.insertAll(db.words, pendingInserts.toList()),
+        );
+        pendingInserts.clear();
+      }
+      if (pendingUpdates.isNotEmpty) {
+        // `replace` instead of a batch update: only `replace` writes a NULL
+        // tombstone (`toColumns(false)`), and a revival depends on that.
+        for (final Word row in pendingUpdates) {
+          await db.update(db.words).replace(row);
+        }
+        pendingUpdates.clear();
+      }
+      if (pendingStamps.isNotEmpty) {
+        await content.saveVersionsBulk('word', pendingStamps);
+        pendingStamps.clear();
+      }
+      if (pendingAliases.isNotEmpty) {
+        await content.rememberAll('word', pendingAliases, aliasToLocal);
+        pendingAliases.clear();
+      }
+    }
+
+    for (final dynamic raw in rawWords) {
+      final node = raw as Map<String, dynamic>;
+      final incoming = _wordFromJson(node)!;
+      final List<String> candidates = <String>[incoming.id, ...aliases(node)];
+      final Set<String> found = <String>{
+        for (final String candidate in candidates)
+          if (byId.containsKey(candidate)) candidate,
+        for (final String candidate in candidates)
+          if (aliasToLocal[candidate] != null &&
+              byId.containsKey(aliasToLocal[candidate]))
+            aliasToLocal[candidate]!,
+      };
+      if (found.length > 1) {
+        throw StateError('远程身份指向多个本机词条，请先处理重命名冲突');
+      }
+      Word? local = found.isEmpty ? null : byId[found.first];
+      local ??= byNormalized[incoming.normalized];
+      final String id = local?.id ?? incoming.id;
+      wordIdMap[incoming.id] = id;
+      pendingAliases.add((
+        localId: id,
+        aliases: <String>[incoming.id, ...aliases(node)],
+      ));
+      for (final String candidate in candidates) {
+        final String? mapped = aliasToLocal[candidate];
+        if (mapped != null && mapped != id) {
+          throw StateError('词条身份冲突，已停止合并');
+        }
+      }
+
+      if (local == null) {
+        byId[id] = incoming;
+        byNormalized[incoming.normalized] = incoming;
+        pendingInserts.add(incoming);
+        if (node['fieldVersions'] != null) {
+          pendingStamps[id] = <String, Map<String, Object?>>{
+            for (final MapEntry<dynamic, dynamic> entry
+                in (node['fieldVersions'] as Map).entries)
+              entry.key as String: Map<String, Object?>.from(
+                entry.value as Map,
+              ),
+          };
+        }
+        newWords++;
+        if (pendingInserts.length >= 400) await flush();
+        continue;
+      }
+
+      final merged = await content.mergeWithStamps(
+        'word',
+        id,
+        _wordToJson(local),
+        presentFields(node, _wordToJson(incoming)),
+        stampsByWord[id] ?? <String, Map<String, Object?>>{},
+        persistStamps: false,
+      );
+      conflicts += merged.conflicts.length;
+      conflictDetails.addAll(merged.conflicts);
+      // `merged.changed` already includes stamp-only changes, so an untouched
+      // row writes nothing — otherwise a device that merely *received* a word
+      // would invent version rows the creator never had, and the two content
+      // hashes would never converge.
+      if (merged.changed) {
+        pendingStamps[id] = merged.stamps;
+        final row = Map<String, dynamic>.from(merged.row)
+          ..['normalized'] = normalizeWordKey(merged.row['word'] as String);
+        final updated = _wordFromJson(row)!
+            .copyWith(id: id, createdAt: local.createdAt);
+        final Word? duplicate = byNormalized[updated.normalized];
+        if (duplicate != null && duplicate.id != id) {
+          throw const BackupException('重命名与本机已有词条冲突，未合并任何数据');
+        }
+        if (updated.normalized != local.normalized) {
+          byNormalized.remove(local.normalized);
+        }
+        byNormalized[updated.normalized] = updated;
+        byId[id] = updated;
+        if (merged.changed) {
+          pendingUpdates.add(updated);
+          if (updated.deletedAt != null && local.deletedAt == null) {
+            deletedWords++;
+          } else {
+            updatedWords++;
+          }
+        }
+        stampsByWord[id] = merged.stamps;
+        if (pendingUpdates.length >= 400) await flush();
+      }
+    }
+    await flush();
+    return _WordMergeResult(
+      newWords: newWords,
+      updatedWords: updatedWords,
+      deletedWords: deletedWords,
+      conflicts: conflicts,
+    );
+  }
+
   Future<Set<String>> _existingEventIds() async {
     final List<QueryRow> rows = await db
         .customSelect(
@@ -1403,6 +1768,21 @@ class BackupService {
     if (value is String) return int.tryParse(value) ?? fallback;
     return fallback;
   }
+}
+
+/// Counters from the batched (or per-row) word merge.
+class _WordMergeResult {
+  const _WordMergeResult({
+    this.newWords = 0,
+    this.updatedWords = 0,
+    this.deletedWords = 0,
+    this.conflicts = 0,
+  });
+
+  final int newWords;
+  final int updatedWords;
+  final int deletedWords;
+  final int conflicts;
 }
 
 /// Total order over (revision, updatedAt) with a deterministic tie-break, so

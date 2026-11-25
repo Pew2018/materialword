@@ -14,13 +14,13 @@
 
 | 项 | 值 |
 | --- | --- |
-| 版本 | 1.2.0 (Phase 4) |
+| 版本 | 1.2.0 (Phase 5) |
 | Flutter | **3.50.1** stable（Dart 3.14.0） |
 | 关键依赖 | drift 2.35.4 / flutter_riverpod 3.5.0 / flutter_tts 4.2.5 / flutter_secure_storage 11.2.0 / http 1.6.0 / crypto 3.0.8 / wakelock_plus 1.8.2 |
 | 应用 ID | `com.pew2018.materialword` |
-| 数据库 schemaVersion | 3（用户库，Phase 4 未再升级）、1（词典库） |
-| 备份协议 | schemaVersion 3（兼容导入 1/2；数据库独立为 3） |
-| 自动化检查 | 341 项测试通过 / 2 项平台条件跳过；`flutter analyze` 无问题；格式检查通过 |
+| 数据库 schemaVersion | 3（用户库，Phase 5 未升级）、1（词典库） |
+| 备份协议 | schemaVersion 4（备份文件可含设备设置；同步数据集仍为 3；兼容导入 1/2/3） |
+| 自动化检查 | 442 项测试通过 / 2 项平台条件跳过；`flutter analyze` 无问题；格式检查通过 |
 
 ## 快速开始
 
@@ -37,6 +37,34 @@ flutter test
 或点「载入示例词书」先用 30 个词体验学习闭环。右上角「＋」或 `⌘N` 快速添加。
 
 原生平台完整构建仅在 GitHub Actions 运行；本机禁止安装 Xcode、Apple SDK、CLT 或新模拟器。
+
+## Phase 5：核心数据功能闭环
+
+Phase 5 把"新增 / 导入 / 导出 / 备份 / 同步"从多条近似路径收敛成一条可靠链路：
+
+- **统一新增入口**：`WordIntakeService` 成为唯一的"加单词"写入路径（快速添加、批量粘贴、
+  文件导入、在线词书、词典页共用）。删除后的词条由用户显式恢复，保留 UUID、aliases、
+  笔记与学习记录；普通编辑与重新添加是两种不同语义。新增走单个事务，页面只负责输入与反馈。
+- **导入**：建词书与写词条在同一事务内（失败不留空词书）；超过 20 000 条直接拒绝而不是
+  静默截断；严格 UTF-8 校验、CSV 引号闭合检查、备份 JSON 误用拦截、流式下载与字节级上限；
+  预览显示新增/已有/可恢复/将新增关联/无效行，并重新校验目标词书。
+- **导出**：统一字段协议（含 `phrase`、`examTags`、`bncRank`、`frqRank`），版本化词书 JSON
+  与历史裸数组兼容，支持多词书导出并保留归属；真实 A→文件→B 往返逐字段比对。
+- **备份与灾难恢复**：临时文件 + 回读校验 + 原子替换；自动备份（每天、仅数据变化时、
+  保留 5 份）；高风险操作前保护性备份；恢复副本可直接查看/校验/合并恢复/指定版本恢复/
+  导出/删除；指定版本恢复用单事务替换并暂停同步，绝不用任一方覆盖另一方。
+- **同步**：区分"本机已合并但上传未完成"、远端文件缺失、认证失败、配置变化等状态；
+  前台每 5 分钟做一次廉价的远端版本探测（不是全量下载）；字段冲突留痕并可一键恢复被覆盖
+  的内容；三台设备 24 个收敛场景全部自动化验证。
+- **性能**：词条合并改为批量身份/版本解析（同一数据集批量 1982 ms vs 逐词 2967 ms），
+  20000 词 / 100000 事件的完整合并与重放由 6866 ms 降至 5854 ms。
+
+逐项范围与根因见 [Phase 5 审计](docs/phase5-audit.md)，证据见
+[Phase 5 验证记录](docs/phase5-verification.md) 与
+[验收矩阵](docs/phase5-acceptance-matrix.md)，交付信息见
+[Phase 5 交付](docs/phase5-delivery.md)。格式契约见
+[词书交换格式](docs/wordbook-exchange-format.md) 与
+[备份与灾难恢复](docs/backup-and-recovery.md)。
 
 ## Phase 4：可靠性、数据安全与性能收尾
 
@@ -100,16 +128,18 @@ lib/
   core/repositories/       词条 / 词书 / 学习 / 冲刺 / 内容版本 / 设置
   features/                dashboard / study / dictionary / settings / statistics /
                            word_management / wordbooks / sync / backup
-  services/                调度、学习会话、练习会话、词典、导入、备份、TTS、常亮、诊断、同步
+  services/                调度、学习会话、练习会话、词典、统一新增、导入、导出、
+                           备份管理器、TTS、常亮、诊断、同步
   shared/widgets/          经典 Material 2 列表与通用控件
 assets/dictionary/          ECDICT SQLite + 内容哈希元数据 + MIT 许可证
-test/                      341 项测试（Phase 1–4 回归 + 性能基线 + golden）
+test/                      442 项测试（Phase 1–5 回归 + 性能基准 + golden）
 ```
 
 ## 文档
 
 - [架构](docs/architecture.md) · [同步协议](docs/sync-protocol.md) · [学习算法](docs/study-scheduler.md)
 - [构建指南](docs/build-guide.md) · [路线图](docs/roadmap.md)
+- Phase 5：[审计](docs/phase5-audit.md) · [验证](docs/phase5-verification.md) · [验收矩阵](docs/phase5-acceptance-matrix.md) · [交付](docs/phase5-delivery.md) · [词书交换格式](docs/wordbook-exchange-format.md) · [备份与恢复](docs/backup-and-recovery.md)
 - Phase 4：[审计](docs/phase4-audit.md) · [验证](docs/phase4-verification.md) · [验收矩阵](docs/phase4-acceptance-matrix.md) · [交付](docs/phase4-delivery.md)
 
 ## 已知限制
@@ -125,5 +155,7 @@ test/                      341 项测试（Phase 1–4 回归 + 性能基线 + g
   不等同于真机验收。
 - 屏幕常亮依赖 `wakelock_plus`（会带入 `package_info_plus`），三平台行为只在 CI 编译
   层面验证，未做真机确认。
-- 大数据性能数字为 Debug + 内存 SQLite，不是 Release 真机基准；合并中的"词条阶段"
-  仍有约 3 s 的已定位但未实施的优化空间。
+- 大数据性能数字为 Debug + 内存/文件 SQLite，不是 Release 真机基准。
+- 空间与时间限制：单次导入上限 20 000 条、单文件 8 MB；超限直接拒绝，需要用户拆分文件。
+- 指定版本恢复期间持有单个写事务；20 万级事件时会阻塞其他写入数秒。
+- CSV 为"安全但不逐字无损"（危险前缀加前导单引号）；逐字往返请使用 JSON。

@@ -182,7 +182,9 @@ void main() {
       service.setForeground(true);
       await tester.pump(const Duration(seconds: 20));
       await tester.pump();
-      expect(c.triggers, ['change', 'change']);
+      // Phase 5 adds an explicit foreground remote check on resume, so the
+      // pending local edit and the resume probe are two separate triggers.
+      expect(c.triggers, ['change', 'foreground', 'change']);
       service.dispose();
       await tester.pump(const Duration(milliseconds: 1));
     },

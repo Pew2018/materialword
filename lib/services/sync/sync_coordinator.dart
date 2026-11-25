@@ -9,6 +9,7 @@ import '../../core/repositories/study_repository.dart';
 import '../../core/time_utils.dart';
 import '../backup_service.dart';
 import '../diagnostics_service.dart';
+import 'conflict_store.dart';
 import 'credential_store.dart';
 import 'github_sync_provider.dart';
 import 'local_file_sync_provider.dart';
@@ -16,6 +17,9 @@ import 'sync_provider.dart';
 import 'webdav_sync_provider.dart';
 
 /// Progress callback so the sync page can show what is happening.
+///
+/// Every stage is a statement about *this device*: "merged" means the local
+/// database already changed, even if the upload is still pending.
 enum SyncStage {
   idle('准备'),
   validating('校验配置'),
@@ -25,6 +29,13 @@ enum SyncStage {
   uploading('上传数据'),
   verifying('校验上传结果'),
   done('完成'),
+  mergedNotUploaded('本机已合并，上传未完成'),
+  waitingBackoff('等待退避'),
+  authFailed('认证失败'),
+  remoteMissing('远程数据缺失'),
+  remoteCorrupt('远程数据不可用'),
+  configChanged('配置已变化'),
+  pausedAfterRestore('恢复后已暂停同步'),
   failed('失败');
 
   const SyncStage(this.label);
@@ -42,6 +53,9 @@ class SyncReport {
     this.skipped = false,
     this.attempts = 1,
     this.notes = const <String>[],
+    this.stage = SyncStage.done,
+    this.localMerged = false,
+    this.conflicts = 0,
   });
 
   final bool ok;
@@ -56,6 +70,15 @@ class SyncReport {
   final bool skipped;
   final int attempts;
   final List<String> notes;
+
+  /// Final stage, so the UI never has to guess from [ok].
+  final SyncStage stage;
+
+  /// True when the local database was modified by this run (a merge happened).
+  final bool localMerged;
+
+  /// Conflicts recorded during the merge (also persisted locally).
+  final int conflicts;
 }
 
 /// One coordinator for every transport.
@@ -124,16 +147,30 @@ class SyncCoordinator {
 
   /// Runs one full sync. Throws [SyncException] for expected failures so the UI
   /// can show a precise reason; unexpected errors are wrapped as well.
+  ///
+  /// [allowRemoteRecreate] is required to (re)create a remote that was deleted:
+  /// a missing file after a successful sync is *not* permission to upload the
+  /// whole database again.
+  /// [resumeAfterRestore] bypasses the post-restore pause and must only be set
+  /// from an explicit user action that says what happens to the remote.
   Future<SyncReport> sync(
     SyncProvider provider, {
     void Function(SyncStage stage, String detail)? onProgress,
     bool skipConnectionTest = false,
+    bool allowRemoteRecreate = false,
+    bool resumeAfterRestore = false,
   }) async {
     if (_running) {
       throw const SyncException('已有同步正在进行，请稍后再试');
     }
     if (!provider.isImplemented) {
       throw const SyncException('该同步方式尚未启用');
+    }
+    if (!resumeAfterRestore && await settings.syncPaused()) {
+      onProgress?.call(SyncStage.pausedAfterRestore, '恢复后已暂停同步');
+      throw SyncException(
+        '同步已暂停：${await settings.syncPausedReason() ?? '恢复历史备份后需要先确认如何处理远端数据'}',
+      );
     }
     _running = true;
     _activeTarget = targetKey(provider);
@@ -166,6 +203,7 @@ class SyncCoordinator {
       MergeReport? merge;
       bool uploaded = false;
       int attempts = 0;
+      int recordedConflicts = 0;
 
       for (var attempt = 0; attempt < maxAttempts; attempt++) {
         attempts = attempt + 1;
@@ -173,6 +211,12 @@ class SyncCoordinator {
           onProgress?.call(SyncStage.downloading, '读取远程数据');
           final SyncPayload? remote = await provider.download();
 
+          if (remote == null &&
+              !allowRemoteRecreate &&
+              await hasSyncedTarget(provider)) {
+            onProgress?.call(SyncStage.remoteMissing, '远程数据文件不存在');
+            throw const SyncRemoteMissingException();
+          }
           if (provider is WebDavSyncProvider &&
               remote != null &&
               remote.revision == null) {
@@ -191,6 +235,7 @@ class SyncCoordinator {
             try {
               await backup.validateDatasetAsync(remote.dataset);
             } on BackupException catch (e) {
+              onProgress?.call(SyncStage.remoteCorrupt, '远程数据不可用');
               throw SyncDataException('远程数据不可用：${e.message}');
             }
             remoteHash = await BackupService.contentHashOfAsync(remote.dataset);
@@ -209,9 +254,11 @@ class SyncCoordinator {
                 skipped: true,
                 attempts: attempts,
                 notes: notes,
+                stage: SyncStage.done,
               );
             }
             merge = await backup.mergeDataset(remote.dataset, now: clock.now());
+            recordedConflicts += await _recordConflicts(merge);
           }
 
           onProgress?.call(SyncStage.rebuilding, '重建派生状态');
@@ -242,6 +289,9 @@ class SyncCoordinator {
               skipped: true,
               attempts: attempts,
               notes: notes,
+              stage: SyncStage.done,
+              localMerged: merge?.hasChanges ?? false,
+              conflicts: recordedConflicts,
             );
           }
 
@@ -276,13 +326,46 @@ class SyncCoordinator {
             uploaded: uploaded,
             attempts: attempts,
             notes: notes,
+            stage: SyncStage.done,
+            localMerged: merge?.hasChanges ?? false,
+            conflicts: recordedConflicts,
           );
         } on SyncConflictException catch (e) {
           notes.add('第 $attempts 次上传冲突：${e.message}，正在重新拉取并合并');
-          if (attempt == maxAttempts - 1) rethrow;
+          if (attempt == maxAttempts - 1) {
+            if (merge?.hasChanges ?? false) {
+              throw SyncPartialException(
+                '本机已合并远程数据，但上传未能完成（多次并发冲突）。'
+                '本机数据已保留，稍后重试即可：${e.message}',
+                mergeSummary: merge?.summary ?? '',
+                localChanged: true,
+              );
+            }
+            rethrow;
+          }
           continue;
         } on TimeoutException {
+          if (merge?.hasChanges ?? false) {
+            throw SyncPartialException(
+              '本机已合并远程数据，但上传超时。本机数据已保留，稍后重试即可',
+              mergeSummary: merge?.summary ?? '',
+              localChanged: true,
+            );
+          }
           throw const SyncException('网络超时：请检查网络后重试', retryable: true);
+        } on SyncException catch (e) {
+          // A failure after a successful merge must never be reported as
+          // "nothing was changed".
+          if ((merge?.hasChanges ?? false) &&
+              e is! SyncDataException &&
+              e is! SyncRemoteMissingException) {
+            throw SyncPartialException(
+              '本机已合并远程数据，但未完成上传：${e.message}',
+              mergeSummary: merge?.summary ?? '',
+              localChanged: true,
+            );
+          }
+          rethrow;
         }
       }
       throw const SyncException('同步未能完成：多次出现并发冲突，请稍后再试');
@@ -318,11 +401,49 @@ class SyncCoordinator {
     }
   }
 
+  Future<int> _recordConflicts(MergeReport? merge) async {
+    if (merge == null || merge.conflictDetails.isEmpty) return 0;
+    try {
+      return await SyncConflictStore(db)
+          .record(merge.conflictDetails, now: clock.now());
+    } catch (e) {
+      // Recording is diagnostic only; it must never fail a sync.
+      DiagnosticsService.instance.log(
+        'sync',
+        'conflict recording failed with ${e.runtimeType}',
+        error: true,
+      );
+      return 0;
+    }
+  }
+
+  /// True when the remote revision differs from the one this device last saw.
+  ///
+  /// Uses [SyncProvider.remoteRevision] so the foreground check costs a metadata
+  /// request, not a full download.
+  Future<bool> remoteChanged({SyncProvider? provider}) async {
+    final SyncProvider? target =
+        provider ?? providerFromConfig(await settings.syncConfig());
+    if (target == null || !target.supportsConditionalWrites) return false;
+    final String? raw = await db.readMeta('sync_target:${targetKey(target)}');
+    if (raw == null) return true;
+    String? lastRevision;
+    try {
+      lastRevision = (jsonDecode(raw) as Map)['revision'] as String?;
+    } on FormatException {
+      return true;
+    }
+    final String? current = await target.remoteRevision();
+    if (current == null) return false;
+    return current != lastRevision;
+  }
+
   static const Map<String, String> autoFlags = {
     'start': 'autoOnStart',
     'resume': 'autoOnResume',
     'change': 'autoOnChange',
     'session-end': 'autoAfterSession',
+    'foreground': 'autoOnForeground',
   };
 
   Future<Map<String, int>> _autoState(SyncProvider provider) async {
@@ -357,10 +478,15 @@ class SyncCoordinator {
 
   /// Foreground-only automatic sync; caller debounces actual edits.
   /// Per-target attempt/backoff survives process restarts. Manual sync bypasses it.
+  ///
+  /// `foreground` is the periodic remote check: it runs even when this device
+  /// has no local changes, but only performs a full sync when the remote
+  /// revision differs from the one stored by the last successful run.
   Future<SyncReport?> autoSync({String trigger = 'start'}) async {
     if (_running || _preparingAuto) return null;
     _preparingAuto = true;
     try {
+      if (await settings.syncPaused()) return null;
       final config = await settings.syncConfig();
       if (config?[autoFlags[trigger]] != true) return null;
       final provider = providerFromConfig(config);
@@ -377,9 +503,12 @@ class SyncCoordinator {
       if (millis >= (state['attempt'] ?? 0) && millis < (state['next'] ?? 0)) {
         return null;
       }
-      if ((trigger == 'change' || trigger == 'session-end') &&
-          !await hasLocalChanges(target: provider)) {
-        return null;
+      if (trigger == 'change' || trigger == 'session-end') {
+        if (!await hasLocalChanges(target: provider)) return null;
+      }
+      if (trigger == 'foreground') {
+        // Cheap probe first; a full sync only when the remote actually moved.
+        if (!await remoteChanged(provider: provider)) return null;
       }
       if (_running) return null;
       await db.writeMeta(
@@ -412,7 +541,17 @@ class SyncCoordinator {
             await settings.setLastSyncResult('自动同步失败：${e.message}');
           }
         });
-        return SyncReport(ok: false, message: e.message, at: clock.now());
+        return SyncReport(
+          ok: false,
+          message: e.message,
+          at: clock.now(),
+          stage: e is SyncRemoteMissingException
+              ? SyncStage.remoteMissing
+              : e is SyncPartialException
+              ? SyncStage.mergedNotUploaded
+              : SyncStage.failed,
+          localMerged: e is SyncPartialException && e.localChanged,
+        );
       }
     } finally {
       _preparingAuto = false;
@@ -429,12 +568,19 @@ class SyncCoordinator {
     }
   }
 
+  /// Persists the outcome.
+  ///
+  /// If the configuration changed while this run was in flight, the *global*
+  /// last-sync fields belong to the new target the user just picked, so they are
+  /// left alone. The per-target record is still written: it describes the target
+  /// that actually received the upload, keyed by its own identity.
   Future<void> _persistState({
     required DateTime now,
     required String hash,
     String? revision,
     required String message,
   }) => db.transaction(() async {
+    await db.deleteMeta(SettingsRepository.pendingRebuildKey);
     if (await db.readMeta(SettingsRepository.syncConfigRevisionKey) ==
         _activeConfigRevision) {
       await settings.setLastSyncAt(now);
@@ -442,7 +588,6 @@ class SyncCoordinator {
       await db.writeMeta(lastLocalHashKey, hash);
       if (revision != null) await db.writeMeta(lastRemoteRevisionKey, revision);
     }
-    await db.deleteMeta(SettingsRepository.pendingRebuildKey);
     final target = _activeTarget;
     if (target != null) {
       await db.writeMeta(
@@ -496,7 +641,37 @@ class SyncCoordinator {
             _activeConfigRevision) {
           await settings.setLastSyncResult(message);
         }
+        // A failed run must also arm the per-target backoff, otherwise the next
+        // automatic trigger retries immediately and a broken network turns into
+        // a request loop.
+        final String? target = _activeTarget;
+        if (target == null) return;
+        final Map<String, int> state = await _autoStateFor(target);
+        final int failures = ((state['failures'] ?? 0) + 1).clamp(1, 10);
+        final int minutes = (5 * (1 << (failures - 1))).clamp(5, 60);
+        await db.writeMeta(
+          'sync_auto:$target',
+          jsonEncode({
+            'attempt': now.millisecondsSinceEpoch,
+            'next': now.add(Duration(minutes: minutes)).millisecondsSinceEpoch,
+            'failures': failures,
+          }),
+        );
       });
+
+  Future<Map<String, int>> _autoStateFor(String target) async {
+    final raw = await db.readMeta('sync_auto:$target');
+    if (raw == null) return <String, int>{};
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map || decoded.values.any((value) => value is! int)) {
+        return <String, int>{};
+      }
+      return decoded.map((key, value) => MapEntry(key as String, value as int));
+    } on FormatException {
+      return <String, int>{};
+    }
+  }
 
   /// Writes a recovery marker before a long rebuild. The merge itself runs in a
   /// single transaction (so it rolls back cleanly), this is a belt-and-braces
@@ -567,6 +742,8 @@ class ScriptedSyncProvider implements SyncProvider {
     this.conflictOnce = false,
     this.failUploadWith,
     this.failDownloadWith,
+    this.beforeUpload,
+    this.failFirstUploads = 0,
   }) : _remote = initial,
        _revision = initial == null ? null : 'rev-0';
 
@@ -576,6 +753,13 @@ class ScriptedSyncProvider implements SyncProvider {
   final bool conflictOnce;
   final Object? failUploadWith;
   final Object? failDownloadWith;
+
+  /// Runs immediately before a conditional write, i.e. while the local merge is
+  /// already applied but the upload has not happened yet.
+  final Future<void> Function()? beforeUpload;
+
+  /// Fails the first N uploads to exercise retry/backoff behaviour.
+  final int failFirstUploads;
 
   int downloadCalls = 0;
   int uploadCalls = 0;
@@ -612,6 +796,9 @@ class ScriptedSyncProvider implements SyncProvider {
   }
 
   @override
+  Future<String?> remoteRevision() async => _remote == null ? null : _revision;
+
+  @override
   Future<SyncTestResult> testConnection() async =>
       const SyncTestResult(ok: true, message: 'ok');
 
@@ -621,6 +808,10 @@ class ScriptedSyncProvider implements SyncProvider {
     String? ifRevision,
   }) async {
     uploadCalls++;
+    if (beforeUpload != null) await beforeUpload!();
+    if (failFirstUploads > 0 && uploadCalls <= failFirstUploads) {
+      throw const SyncException('模拟：网络在上传中中断', retryable: true);
+    }
     lastUploaded = dataset;
     lastIfRevision = ifRevision;
     if (conflictOnce && !_conflicted) {
