@@ -268,6 +268,27 @@ void main() {
       expect(find.text('尚未验证连接'), findsOneWidget);
     });
 
+    testWidgets('A draft password cannot verify the saved credentials', (
+      tester,
+    ) async {
+      final mock = WebDavMock();
+      final store = newStore();
+      final env = await pumpPage(tester, mock, store: store);
+      final password = find.byWidgetPredicate(
+        (widget) => widget is TextField && widget.obscureText,
+      );
+      await reveal(tester, password);
+      await tester.enterText(password, 'draft-secret');
+      await tester.pump();
+      await tapTest(tester);
+
+      expect(find.text('连接成功，可以同步'), findsOneWidget);
+      expect(
+        await env.coordinator.cachedCapability(providerFor(mock, store)),
+        isNull,
+      );
+    });
+
     testWidgets('UI09 技术详情与普通文案分离', (WidgetTester tester) async {
       final WebDavMock mock = WebDavMock();
       await pumpPage(tester, mock);

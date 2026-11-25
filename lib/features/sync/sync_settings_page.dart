@@ -64,6 +64,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
   /// an explicit 测试连接 in this session or from the per-target cache; it is
   /// what the status icon, the automatic-sync gate and 立即同步 consult.
   SyncCapability? _capability;
+  int _verificationGeneration = 0;
 
   /// Shown when the Keychain exists but could not be read (re-signed build, new
   /// Keychain class, locked keychain). The user is asked to type the secret
@@ -98,7 +99,6 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
   }
 
   Future<void> _load() async {
-    // Captured before the first await: every notice below is built after it.
     final settings = ref.read(settingsRepositoryProvider);
     final Map<String, Object?>? config = await settings.syncConfig();
     final DateTime? lastAt = await settings.lastSyncAt();
@@ -190,11 +190,12 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
     }
     final SyncProvider? provider = _buildProvider();
     if (provider is! WebDavSyncProvider) return;
+    final int generation = _verificationGeneration;
     try {
       final SyncCapability? cached = await ref
           .read(syncCoordinatorProvider)
           .cachedCapability(provider);
-      if (!mounted) return;
+      if (!mounted || generation != _verificationGeneration) return;
       setState(() => _capability = cached);
     } catch (_) {
       // A capability lookup must never stop the page from loading.
@@ -370,6 +371,8 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
   Future<void> _runTest() async {
     final SyncProvider? provider = _buildProvider(draft: true);
     if (provider == null) return;
+    final int generation = ++_verificationGeneration;
+    final bool savedCredentials = !_draftCredentialsChanged;
     setState(() {
       _busy = true;
       _error = null;
@@ -381,7 +384,11 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       if (provider is WebDavSyncProvider) await provider.captureCredentials();
       final SyncTestResult result = await provider.testConnection();
       final SyncCapability? capability = result.capability;
-      if (capability != null && provider is WebDavSyncProvider) {
+      if (mounted &&
+          generation == _verificationGeneration &&
+          savedCredentials &&
+          capability != null &&
+          provider is WebDavSyncProvider) {
         // Remember what was just proven, so automatic sync can trust it and the
         // next page load does not have to probe again.
         await ref
@@ -390,21 +397,27 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       }
       if (!mounted) return;
       setState(() {
-        _testResult = result;
-        if (capability != null) _capability = capability;
         _busy = false;
+        if (generation == _verificationGeneration) {
+          _testResult = result;
+          if (capability != null) _capability = capability;
+        }
       });
     } on SyncException catch (e) {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _error = _describeSyncError(e);
+        if (generation == _verificationGeneration) {
+          _error = _describeSyncError(e);
+        }
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _error = context.l10n.connectionTestFailed;
+        if (generation == _verificationGeneration) {
+          _error = context.l10n.connectionTestFailed;
+        }
       });
     } finally {
       if (provider is GitHubSyncProvider) {
@@ -436,6 +449,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       );
       if (chosen == null || !mounted) return;
       setState(() {
+        _verificationGeneration++;
         _fields['dir'] = chosen;
         _webdavDir.text = chosen;
         _testResult = null;
@@ -825,7 +839,9 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
     await ref.read(settingsRepositoryProvider).setSyncConfig(null);
     if (!mounted) return;
     setState(() {
+      _verificationGeneration++;
       _provider = 'none';
+      _capability = null;
       _fields.clear();
       _githubToken.clear();
       _webdavUser.clear();
@@ -838,7 +854,9 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
   void _selectProvider(String id) {
     if (id == _provider) return;
     setState(() {
+      _verificationGeneration++;
       _provider = id;
+      _capability = null;
       _testResult = null;
       _status = null;
       _error = null;
@@ -1375,6 +1393,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
   /// configuration: a capability result belongs to one address + directory +
   /// account, and must never be inherited by the next one.
   void _invalidateVerification() {
+    _verificationGeneration++;
     if (_capability == null && _testResult == null) return;
     if (mounted) {
       setState(() {
