@@ -929,7 +929,8 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
                 child: Text(
                   '冲突由字段版本、更新时间和设备 ID 确定性地裁决。'
-                  '恢复被覆盖的内容会写成一次新的正常编辑，不会篡改历史版本。',
+                  '恢复被覆盖的内容会写成一次新的正常编辑，不会篡改历史版本；'
+                  '没有恢复按钮的记录只用于诊断，避免出现“显示已恢复但数据没变”。',
                   style: theme.textTheme.bodySmall,
                 ),
               ),
