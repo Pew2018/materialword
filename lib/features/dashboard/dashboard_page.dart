@@ -13,6 +13,7 @@ import '../../services/import_service.dart';
 import '../../shared/widgets/common.dart';
 import '../backup/backup_page.dart';
 import '../study/study_page.dart';
+import '../study/sprint_page.dart';
 import '../word_management/import_page.dart';
 import '../word_management/quick_add_page.dart';
 
@@ -34,6 +35,7 @@ class DashboardPage extends ConsumerWidget {
     );
     final AsyncValue<StudySettingsRow> settings = ref.watch(settingsProvider);
     final resume = ref.watch(pausedSessionProvider).value;
+    final sprint = ref.watch(sprintPlanProvider).value;
     final canResume =
         resume != null &&
         (resume.bookId == null ||
@@ -68,6 +70,17 @@ class DashboardPage extends ConsumerWidget {
               ref.invalidate(todayProgressProvider);
             },
             onManage: onOpenBookTab,
+          ),
+          SettingsTile(
+            leading: const Icon(Icons.flag_outlined),
+            title: '考前冲刺',
+            subtitle: sprint?.enabled == true
+                ? '考试日期 ${sprint!.examDate} · 每轮 ${sprint.roundSize} 个'
+                : '设置考试日期与目标词书，独立安排重点练习',
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(
+              context,
+            ).push<void>(MaterialPageRoute(builder: (_) => const SprintPage())),
           ),
           if (canResume)
             SettingsTile(

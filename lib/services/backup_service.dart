@@ -8,6 +8,7 @@ import 'package:uuid/uuid.dart';
 
 import '../core/database/app_database.dart';
 import '../core/models/enums.dart';
+import '../core/models/sprint_plan.dart';
 import '../core/repositories/settings_repository.dart';
 import '../core/repositories/content_sync_repository.dart';
 import '../core/repositories/study_repository.dart';
@@ -209,6 +210,7 @@ class BackupService {
         'dailyNewTarget': current.dailyNewTarget,
         'dailyReviewLimit': current.dailyReviewLimit,
         'studyMode': current.studyMode,
+        'sprintPlan': (await settings.loadSprintPlan()).toJson(),
         'version': await settings.sharedVersion(),
       },
     };
@@ -311,6 +313,7 @@ class BackupService {
                 'special-book',
                 'special-favorites',
                 'special-session-mistakes',
+                'special-sprint',
                 'manual-mastered',
                 'manual-unmastered',
                 'reset',
@@ -548,6 +551,21 @@ class BackupService {
       if (shared is! Map<String, dynamic>) invalid('settings');
       number(shared, 'dailyNewTarget');
       number(shared, 'dailyReviewLimit');
+      if (shared['sprintPlan'] != null) {
+        if (shared['sprintPlan'] is! Map<String, dynamic>) {
+          invalid('sprintPlan');
+        }
+        try {
+          final plan = SprintPlan.fromJson(
+            Map<String, Object?>.from(shared['sprintPlan'] as Map),
+          );
+          if (plan.bookId != null && !bookIds.contains(plan.bookId)) {
+            invalid('sprintPlan:词书引用');
+          }
+        } on FormatException {
+          invalid('sprintPlan');
+        }
+      }
       if (shared['studyMode'] != null &&
           !StudyMode.values.any((mode) => mode.code == shared['studyMode'])) {
         invalid('studyMode');
@@ -642,6 +660,16 @@ class BackupService {
       return value;
     }
 
+    final shared = Map<String, Object?>.from(
+      (dataset['settings'] as Map?) ?? {},
+    );
+    final plan = Map<String, Object?>.from(
+      (shared['sprintPlan'] as Map?) ?? const SprintPlan().toJson(),
+    );
+    if (plan['bookId'] != null) {
+      plan['bookId'] = bookKeys[plan['bookId']] ?? plan['bookId'];
+    }
+    shared['sprintPlan'] = plan;
     final canonical = canonicalize(<String, Object?>{
       'schemaVersion': dataset['schemaVersion'],
       'words': words,
@@ -651,7 +679,7 @@ class BackupService {
       'favorites': favorites,
       'tags': tags,
       'wordTags': wordTags,
-      'settings': dataset['settings'] ?? const <String, Object?>{},
+      'settings': shared,
     });
     return 'sha256:${sha256.convert(utf8.encode(jsonEncode(canonical)))}';
   }
@@ -1022,6 +1050,17 @@ class BackupService {
             studyMode: StudyMode.fromCode(
               sharedSettings['studyMode'] as String?,
             ),
+            sprintPlan: sharedSettings['sprintPlan'] is Map
+                ? SprintPlan.fromJson({
+                    ...Map<String, Object?>.from(
+                      sharedSettings['sprintPlan'] as Map,
+                    ),
+                    'bookId':
+                        bookIdMap[(sharedSettings['sprintPlan']
+                            as Map)['bookId']] ??
+                        (sharedSettings['sprintPlan'] as Map)['bookId'],
+                  })
+                : null,
             importedVersion:
                 incomingVersion ??
                 <String, Object?>{'counter': 0, 'deviceId': ''},

@@ -5,6 +5,7 @@ import 'package:uuid/uuid.dart';
 
 import '../database/app_database.dart';
 import '../models/enums.dart';
+import '../models/sprint_plan.dart';
 
 const Uuid _uuid = Uuid();
 
@@ -22,6 +23,7 @@ class SettingsRepository {
   final AppDatabase db;
 
   static const String sharedVersionKey = 'shared_settings_version';
+  static const String sprintPlanKey = 'sprint_plan_v1';
 
   static const String deviceIdKey = 'device_id';
   static const String datasetIdKey = 'dataset_id';
@@ -68,10 +70,17 @@ class SettingsRepository {
     int? ttsRate,
     bool? ttsAutoSpeak,
     Map<String, Object?>? importedVersion,
+    SprintPlan? sprintPlan,
   }) => db.transaction(() async {
     // Make sure the row exists, but never rewrite its contents here.
     final before = await load();
+    final planChanged =
+        sprintPlan != null &&
+        jsonEncode(sprintPlan.toJson()) !=
+            jsonEncode((await loadSprintPlan()).toJson());
+    if (sprintPlan != null) SprintPlan.fromJson(sprintPlan.toJson());
     final bool sharedChanged =
+        planChanged ||
         (dailyNewTarget != null && dailyNewTarget != before.dailyNewTarget) ||
         (dailyReviewLimit != null &&
             dailyReviewLimit != before.dailyReviewLimit) ||
@@ -107,9 +116,14 @@ class SettingsRepository {
           : Value<bool>(ttsAutoSpeak),
     );
 
-    await (db.update(
-      db.studySettings,
-    )..where((t) => t.id.equals(1))).write(patch);
+    if (patch.toColumns(true).isNotEmpty) {
+      await (db.update(
+        db.studySettings,
+      )..where((t) => t.id.equals(1))).write(patch);
+    }
+    if (planChanged) {
+      await db.writeMeta(sprintPlanKey, jsonEncode(sprintPlan.toJson()));
+    }
     if (importedVersion != null) {
       await db.writeMeta(sharedVersionKey, jsonEncode(importedVersion));
     } else if (sharedChanged) {
@@ -123,6 +137,26 @@ class SettingsRepository {
       );
     }
   });
+
+  Future<SprintPlan> loadSprintPlan() async {
+    final raw = await db.readMeta(sprintPlanKey);
+    if (raw == null) return const SprintPlan();
+    final data = jsonDecode(raw);
+    if (data is! Map<String, dynamic>) throw const FormatException('冲刺计划无效');
+    return SprintPlan.fromJson(data);
+  }
+
+  Stream<SprintPlan> watchSprintPlan() =>
+      (db.select(db.appMeta)..where((t) => t.key.equals(sprintPlanKey)))
+          .watchSingleOrNull()
+          .map(
+            (row) => row == null
+                ? const SprintPlan()
+                : SprintPlan.fromJson(
+                    Map<String, Object?>.from(jsonDecode(row.value) as Map),
+                  ),
+          )
+          .distinct((a, b) => jsonEncode(a.toJson()) == jsonEncode(b.toJson()));
 
   Future<Map<String, Object?>> sharedVersion() async {
     final raw = await db.readMeta(sharedVersionKey);

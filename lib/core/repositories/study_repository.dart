@@ -175,6 +175,7 @@ SELECT $wordColumnsWithState
       case SpecialReview.none:
       case SpecialReview.favorites:
       case SpecialReview.sessionMistakes:
+      case SpecialReview.sprint:
         return const <WordWithState>[];
     }
     if (bookId != null) {
@@ -795,6 +796,8 @@ SELECT COUNT(*) AS c
       "AND NOT EXISTS (SELECT 1 FROM review_events undo "
       "WHERE undo.mode = 'undo:' || $alias.id AND undo.word_id = $alias.word_id)";
 
+  static String realAnswerFilter(String alias) => _realAnswer(alias);
+
   Future<void> undoAnswer({
     required String eventId,
     required String undoId,
@@ -842,7 +845,8 @@ SELECT COUNT(DISTINCT re.word_id) AS c
   FROM review_events re
   JOIN words w ON w.id = re.word_id
  WHERE re.local_day = ? AND re.type = ? AND w.deleted_at IS NULL
-   AND ${_realAnswer('re')} AND re.mode = ?''',
+   AND ${_realAnswer('re')}
+   AND (re.mode = ? OR (re.type = 'review' AND re.mode LIKE 'special-%'))''',
           variables: <Variable<Object>>[
             Variable<String>(_dayKey(now)),
             Variable<String>(type.code),

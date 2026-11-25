@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/database/app_database.dart';
 import '../core/models/study_models.dart';
+import '../core/models/sprint_plan.dart';
+import '../core/repositories/sprint_repository.dart';
 import '../core/models/enums.dart';
 import '../services/study_session.dart';
 import '../core/repositories/settings_repository.dart';
@@ -58,6 +60,13 @@ final Provider<SettingsRepository> settingsRepositoryProvider =
     Provider<SettingsRepository>(
       (Ref ref) => SettingsRepository(ref.watch(databaseProvider)),
     );
+
+final sprintRepositoryProvider = Provider<SprintRepository>(
+  (ref) => SprintRepository(ref.watch(databaseProvider)),
+);
+final sprintPlanProvider = StreamProvider<SprintPlan>(
+  (ref) => ref.watch(settingsRepositoryProvider).watchSprintPlan(),
+);
 
 final Provider<BackupService> backupServiceProvider = Provider<BackupService>(
   (Ref ref) => BackupService(

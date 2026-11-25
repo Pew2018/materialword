@@ -240,6 +240,26 @@ class StudySession extends ChangeNotifier {
             _error = '当前单词已移除，已跳过';
             return null;
           }
+          if (_special == SpecialReview.sprint) {
+            final plan = await _settings.loadSprintPlan();
+            final settings = await _settings.load();
+            final invalid =
+                !plan.enabled ||
+                plan.bookId != _bookId ||
+                (plan.daysUntil(now) ?? -1) < 0 ||
+                jsonEncode(await _settings.sharedVersion()) != _planVersion;
+            final exhausted =
+                !plan.allowOverReviewLimit &&
+                await _study.todayCount(now: now, type: ReviewType.review) >=
+                    settings.dailyReviewLimit;
+            if (invalid || exhausted) {
+              _answeredCardIds.remove(cardId);
+              _error = invalid
+                  ? '冲刺计划已改变或结束，请返回重新安排'
+                  : '今日复习额度已用完，可在冲刺计划中明确允许超限';
+              return null;
+            }
+          }
           final AnswerRecord record = await _study.recordAnswer(
             wordId: card.word.id,
             result: result,
@@ -396,9 +416,12 @@ class StudySession extends ChangeNotifier {
         continue;
       }
       allIds.add(event.wordId);
-      (event.type == ReviewType.study.code ? newIds : reviewIds).add(
-        event.wordId,
-      );
+      (event.type == ReviewType.study.code ||
+                  (event.mode == ReviewEventMode.specialSprint &&
+                      event.stageBefore == StudyStage.newWord.code)
+              ? newIds
+              : reviewIds)
+          .add(event.wordId);
       switch (AnswerResult.fromCode(event.result)) {
         case AnswerResult.known:
           known++;
