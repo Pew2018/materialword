@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:materialword/l10n/l10n.dart';
 import 'package:materialword/app/providers.dart';
 import 'package:materialword/app/theme.dart';
 import 'package:materialword/core/models/enums.dart';
@@ -88,18 +89,24 @@ void main() {
             clockProvider.overrideWithValue(env.clock),
             ttsServiceProvider.overrideWithValue(_SilentTts()),
           ],
-          child: MaterialApp(theme: AppTheme.light(), home: const StudyPage()),
+          child: MaterialApp(
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            locale: const Locale('zh'),
+            theme: AppTheme.light(),
+            home: const StudyPage(),
+          ),
         ),
       );
       await settle(tester);
-      expect(find.text('先回想，再显示释义'), findsOneWidget);
+      expect(find.text('回想单词的含义'), findsOneWidget);
       expect(find.text('不认识'), findsNothing);
 
       await tester.fling(find.text('alpha').first, const Offset(0, -260), 1200);
       await settle(tester);
 
       // Revealed: the meaning and the three answer buttons are on screen.
-      expect(find.text('先回想，再显示释义'), findsNothing);
+      expect(find.text('回想单词的含义'), findsNothing);
       expect(find.text('不认识'), findsOneWidget);
       expect(find.text('模糊'), findsOneWidget);
       expect(find.text('认识'), findsOneWidget);

@@ -3,19 +3,20 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/providers.dart';
 import '../../core/database/app_database.dart';
+import '../../l10n/l10n.dart';
 import '../../shared/widgets/common.dart';
 
 Future<String?> pickUserTag(BuildContext context, WidgetRef ref) async {
   final tags = await ref.read(wordMetadataRepositoryProvider).listTags();
   if (!context.mounted) return null;
   if (tags.isEmpty) {
-    showMessage(context, '请先在标签管理中创建标签');
+    showMessage(context, context.l10n.tagCreateFirst);
     return null;
   }
   return showDialog<String>(
     context: context,
     builder: (context) => SimpleDialog(
-      title: const Text('选择标签'),
+      title: Text(context.l10n.chooseTag),
       children: [
         for (final tag in tags)
           SimpleDialogOption(
@@ -45,7 +46,9 @@ class _FavoriteButtonState extends ConsumerState<FavoriteButton> {
     builder: (context, snapshot) {
       final favorite = snapshot.data ?? false;
       return IconButton(
-        tooltip: favorite ? '取消收藏' : '收藏单词',
+        tooltip: favorite
+            ? context.l10n.unfavoriteWord
+            : context.l10n.favoriteWord,
         icon: Icon(favorite ? Icons.star : Icons.star_border),
         onPressed: _busy || !snapshot.hasData
             ? null
@@ -61,7 +64,11 @@ class _FavoriteButtonState extends ConsumerState<FavoriteButton> {
                       );
                 } catch (_) {
                   if (context.mounted) {
-                    showMessage(context, '收藏操作失败，请重试', error: true);
+                    showMessage(
+                      context,
+                      context.l10n.favoriteFailed,
+                      error: true,
+                    );
                   }
                 } finally {
                   if (mounted) setState(() => _busy = false);
@@ -94,7 +101,9 @@ class _WordTagsEditorState extends ConsumerState<WordTagsEditor> {
             now: ref.read(clockProvider).now(),
           );
     } catch (_) {
-      if (mounted) showMessage(context, '标签操作失败，请重试', error: true);
+      if (mounted) {
+        showMessage(context, context.l10n.tagOperationFailed, error: true);
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -113,12 +122,12 @@ class _WordTagsEditorState extends ConsumerState<WordTagsEditor> {
         for (final tag in snapshot.data ?? <UserTag>[])
           InputChip(
             label: Text(tag.name),
-            deleteButtonTooltipMessage: '移除标签 ${tag.name}',
+            deleteButtonTooltipMessage: context.l10n.removeTagNamed(tag.name),
             onDeleted: _busy ? null : () => _change(tag.id, false),
           ),
         TextButton.icon(
           icon: const Icon(Icons.label_outline),
-          label: const Text('添加标签'),
+          label: Text(context.l10n.addTag),
           onPressed: _busy
               ? null
               : () async {
@@ -131,7 +140,7 @@ class _WordTagsEditorState extends ConsumerState<WordTagsEditor> {
             context,
             MaterialPageRoute(builder: (_) => const TagsPage()),
           ),
-          child: const Text('管理标签'),
+          child: Text(context.l10n.manageTags),
         ),
       ],
     ),
@@ -149,8 +158,8 @@ class _TagsPageState extends ConsumerState<TagsPage> {
   Future<void> _edit([UserTag? tag]) async {
     final name = await promptForText(
       context,
-      title: tag == null ? '创建标签' : '重命名标签',
-      label: '标签名称',
+      title: tag == null ? context.l10n.createTag : context.l10n.renameTag,
+      label: context.l10n.tagName,
       initialValue: tag?.name ?? '',
     );
     if (name == null || !mounted || _busy) return;
@@ -170,7 +179,7 @@ class _TagsPageState extends ConsumerState<TagsPage> {
     try {
       await action();
     } catch (e) {
-      if (mounted) showMessage(context, '操作失败：$e', error: true);
+      if (mounted) showMessage(context, context.l10n.errorGeneric, error: true);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -179,9 +188,9 @@ class _TagsPageState extends ConsumerState<TagsPage> {
   Future<void> _delete(UserTag tag) async {
     final ok = await confirmDialog(
       context,
-      title: '删除标签',
-      message: '删除「${tag.name}」及其单词关联？单词、收藏和学习记录会保留。',
-      confirmLabel: '删除',
+      title: context.l10n.deleteTag,
+      message: context.l10n.deleteTagBody(tag.name),
+      confirmLabel: context.l10n.commonDelete,
       destructive: true,
     );
     if (!ok || !mounted || _busy) return;
@@ -195,10 +204,10 @@ class _TagsPageState extends ConsumerState<TagsPage> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: ClassicAppBar(
-      title: const Text('标签管理'),
+      title: Text(context.l10n.tagsManagement),
       actions: [
         IconButton(
-          tooltip: '创建标签',
+          tooltip: context.l10n.createTag,
           onPressed: _busy ? null : () => _edit(),
           icon: const Icon(Icons.add),
         ),
@@ -207,7 +216,9 @@ class _TagsPageState extends ConsumerState<TagsPage> {
     body: StreamBuilder<List<UserTag>>(
       stream: ref.watch(wordMetadataRepositoryProvider).watchTags(),
       builder: (context, snapshot) {
-        if (snapshot.hasError) return const Center(child: Text('读取标签失败，请重新打开'));
+        if (snapshot.hasError) {
+          return Center(child: Text(context.l10n.tagsLoadFailed));
+        }
         if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
@@ -215,10 +226,10 @@ class _TagsPageState extends ConsumerState<TagsPage> {
         if (tags.isEmpty) {
           return EmptyState(
             icon: Icons.label_outline,
-            title: '还没有标签',
+            title: context.l10n.noTagsYet,
             action: TextButton(
               onPressed: _busy ? null : () => _edit(),
-              child: const Text('创建标签'),
+              child: Text(context.l10n.createTag),
             ),
           );
         }
@@ -231,7 +242,7 @@ class _TagsPageState extends ConsumerState<TagsPage> {
               leading: const Icon(Icons.label_outline),
               onTap: _busy ? null : () => _edit(tag),
               trailing: IconButton(
-                tooltip: '删除标签 ${tag.name}',
+                tooltip: context.l10n.tagDeleteAction(tag.name),
                 onPressed: _busy ? null : () => _delete(tag),
                 icon: const Icon(Icons.delete_outline),
               ),

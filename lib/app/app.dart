@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/database/app_database.dart';
 import '../core/models/enums.dart';
+import '../l10n/l10n.dart';
 import 'navigation.dart';
 import 'providers.dart';
 import 'theme.dart';
@@ -23,6 +23,9 @@ class MaterialWordApp extends ConsumerWidget {
       settings?.themeMode,
     );
     final Color accent = parseAccent(settings?.accentColor);
+    // Device-local: a sync never changes the language of another device, and a
+    // language switch never touches the learning data.
+    final AppLanguage language = ref.watch(languageProvider);
 
     return MaterialApp(
       title: 'MaterialWord',
@@ -35,13 +38,12 @@ class MaterialWordApp extends ConsumerWidget {
         ThemePreference.light => ThemeMode.light,
         ThemePreference.dark => ThemeMode.dark,
       },
-      locale: const Locale('zh', 'CN'),
-      supportedLocales: const <Locale>[Locale('zh', 'CN'), Locale('en', 'US')],
-      localizationsDelegates: const <LocalizationsDelegate<dynamic>>[
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-      ],
+      // `null` follows the platform locale; Flutter resolves it against
+      // [AppLocalizations.supportedLocales], so an untranslated system language
+      // falls back to English and Traditional Chinese resolves to Simplified.
+      locale: language.locale,
+      supportedLocales: AppLocalizations.supportedLocales,
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
       home: const AppShell(),
     );
   }

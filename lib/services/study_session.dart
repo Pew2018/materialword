@@ -8,6 +8,7 @@ import 'package:uuid/uuid.dart';
 
 import '../core/models/enums.dart';
 import '../core/database/app_database.dart';
+import '../core/errors/app_error.dart';
 import '../core/models/study_models.dart';
 import '../core/repositories/settings_repository.dart';
 import '../core/repositories/study_repository.dart';
@@ -61,8 +62,8 @@ class StudySession extends ChangeNotifier {
   DateTime? _finishedAt;
   Map<String, Object?>? _lastSubmission;
   String? _deviceId;
-  String? _error;
-  String? _notice;
+  AppErrorCode? _error;
+  AppErrorCode? _notice;
   SpecialReview _special = SpecialReview.none;
 
   int _newAnswered = 0;
@@ -90,8 +91,12 @@ class StudySession extends ChangeNotifier {
   bool get isFinished =>
       !_loading && _queue.isNotEmpty && _cursor >= _queue.length;
   bool get isEmpty => !_loading && _queue.isEmpty;
-  String? get error => _error;
-  String? get notice => _notice;
+
+  /// Stable code, localised by the page. Never a sentence: the session has no
+  /// [BuildContext] and must not pick a language.
+  AppErrorCode? get error => _error;
+
+  AppErrorCode? get notice => _notice;
   SpecialReview get special => _special;
   String? get bookId => _bookId;
 
@@ -179,7 +184,7 @@ class StudySession extends ChangeNotifier {
         await _persist();
       });
     } catch (e) {
-      _error = '加载失败：$e';
+      _error = AppErrorCode.loadFailed;
     } finally {
       _loading = false;
       notifyListeners();
@@ -258,7 +263,7 @@ class StudySession extends ChangeNotifier {
             _lastSubmission = null;
             _revealed = false;
             await _persist();
-            _error = '当前单词已移除，已跳过';
+            _error = AppErrorCode.wordRemoved;
             return null;
           }
           final count = (await _eventCounts([card.word.id]))[card.word.id] ?? 0;
@@ -273,7 +278,7 @@ class StudySession extends ChangeNotifier {
             _lastSubmission = null;
             _revealed = false;
             await _persist();
-            _notice = '当前单词的学习记录已改变，已跳过旧题';
+            _notice = AppErrorCode.stateChanged;
             return null;
           }
           if (word.word != card.word) {
@@ -281,7 +286,7 @@ class StudySession extends ChangeNotifier {
             _replaceWord(word);
             _revealed = false;
             await _persist();
-            _notice = '词条内容已更新，请重新查看后作答';
+            _notice = AppErrorCode.contentUpdated;
             return null;
           }
           if (_special == SpecialReview.sprint) {
@@ -299,8 +304,8 @@ class StudySession extends ChangeNotifier {
             if (invalid || exhausted) {
               _answeredCardIds.remove(cardId);
               _error = invalid
-                  ? '冲刺计划已改变或结束，请返回重新安排'
-                  : '今日复习额度已用完，可在冲刺计划中明确允许超限';
+                  ? AppErrorCode.sprintChanged
+                  : AppErrorCode.reviewLimitReached;
               return null;
             }
           }
@@ -374,7 +379,7 @@ class StudySession extends ChangeNotifier {
       }
     } catch (e) {
       _answeredCardIds.remove(cardId);
-      _error = '保存失败：$e';
+      _error = AppErrorCode.saveFailed;
       return null;
     } finally {
       _busy = false;
@@ -529,7 +534,9 @@ class StudySession extends ChangeNotifier {
       difficult.add(
         RoundDifficultWord(
           id: id,
-          word: word?.word ?? '已删除词条',
+          // Placeholder only: a card whose word disappeared is skipped before it
+          // can be shown, so this text is never read by the user.
+          word: word?.word ?? '—',
           available: word != null && word.deletedAt == null,
         ),
       );
@@ -773,7 +780,7 @@ class StudySession extends ChangeNotifier {
         ..clear()
         ..addAll(observedCounts);
       _revealed = revealed;
-      _error = '撤销失败，请重试';
+      _error = AppErrorCode.undoFailed;
       return false;
     } finally {
       _busy = false;
@@ -819,7 +826,7 @@ class StudySession extends ChangeNotifier {
       _lastSubmission = previous;
       _finishedAt = finishedAt;
       _revealed = revealed;
-      _error = '跳过失败，请重试';
+      _error = AppErrorCode.skipFailed;
       return false;
     } finally {
       _busy = false;

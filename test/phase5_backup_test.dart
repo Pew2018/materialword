@@ -1,6 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+
+import 'package:materialword/core/errors/app_error.dart';
 import 'package:materialword/core/database/app_database.dart';
 import 'package:materialword/core/models/enums.dart';
 import 'package:materialword/services/backup_manager.dart';
@@ -255,14 +257,16 @@ void main() {
     test('BAK12 保护性备份失败时阻止操作', () async {
       await seed();
       Process.runSync('chmod', <String>['500', env.backupDirectory.path]);
-      String? failure;
+      AppErrorCode? failure;
       try {
-        failure = await env.backups.protectiveBackupFailure('批量删除词条');
+        failure = await env.backups.protectiveBackupFailure(
+          'delete-words-batch',
+        );
       } finally {
         Process.runSync('chmod', <String>['700', env.backupDirectory.path]);
       }
-      expect(failure, isNotNull);
-      expect(failure, contains('已取消该操作'));
+      // A stable code, not a sentence: the page localises it.
+      expect(failure, AppErrorCode.protectiveBackupFailed);
       // The caller would abort here; the data is untouched.
       expect(await env.words.countWords(), 3);
     });

@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 
 import '../core/database/app_database.dart';
+import '../l10n/l10n.dart';
+import '../l10n/language_store.dart';
 import '../core/models/study_models.dart';
 import '../core/models/sprint_plan.dart';
 import '../core/repositories/sprint_repository.dart';
@@ -153,6 +155,34 @@ final Provider<WordIntakeService> wordIntakeProvider =
         wordBooks: ref.watch(wordBookRepositoryProvider),
       ),
     );
+
+/// Device-local app language.
+///
+/// The default is an in-memory Chinese store so that widget tests (and any
+/// caller that forgets to override it) behave exactly like the previous
+/// Chinese-only build. `main()` overrides it with the value read from disk
+/// before the first frame.
+final Provider<LanguageStore> languageStoreProvider = Provider<LanguageStore>(
+  (Ref ref) => MemoryLanguageStore(AppLanguage.zh),
+);
+
+/// Currently displayed language.
+///
+/// Only `MaterialApp.locale` changes on switch: no route is rebuilt, no data
+/// provider is invalidated, and the running study session is untouched.
+class LanguageController extends Notifier<AppLanguage> {
+  @override
+  AppLanguage build() => ref.watch(languageStoreProvider).current;
+
+  Future<void> select(AppLanguage language) async {
+    if (state == language) return;
+    state = language;
+    await ref.read(languageStoreProvider).write(language);
+  }
+}
+
+final NotifierProvider<LanguageController, AppLanguage> languageProvider =
+    NotifierProvider<LanguageController, AppLanguage>(LanguageController.new);
 
 final StreamProvider<StudySettingsRow> settingsProvider =
     StreamProvider<StudySettingsRow>(

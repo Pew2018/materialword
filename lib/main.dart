@@ -8,6 +8,8 @@ import 'package:path_provider/path_provider.dart';
 import 'app/app.dart';
 import 'app/providers.dart';
 import 'core/database/app_database.dart';
+import 'l10n/l10n.dart';
+import 'l10n/language_store.dart';
 import 'services/diagnostics_service.dart';
 
 Future<void> main() async {
@@ -19,12 +21,25 @@ Future<void> main() async {
   // a half-migrated schema.
   final AppDatabase database = AppDatabase.open();
 
+  // The stored language is read before the first frame so that an upgrading
+  // user never sees the interface change language after launch. This is a small
+  // file in the app support directory, not a database query, and it is bounded
+  // by a timeout: a stuck platform channel must never stop the window from
+  // appearing.
+  final LanguageStore language = await DeviceLanguageStore.load().timeout(
+    const Duration(seconds: 2),
+    onTimeout: () => MemoryLanguageStore(AppLanguage.system),
+  );
+
   // The first frame never waits for the database. A blocked first frame is
   // indistinguishable from "the app did not start" — the macOS window simply
   // never appears — and the repair below is a no-op on a healthy install.
   runApp(
     ProviderScope(
-      overrides: [databaseProvider.overrideWithValue(database)],
+      overrides: [
+        databaseProvider.overrideWithValue(database),
+        languageStoreProvider.overrideWithValue(language),
+      ],
       child: const MaterialWordApp(),
     ),
   );

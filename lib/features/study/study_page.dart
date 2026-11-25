@@ -9,6 +9,9 @@ import '../../app/theme.dart';
 import '../../core/database/app_database.dart';
 import '../../core/models/enums.dart';
 import '../../core/models/study_models.dart';
+import '../../l10n/enum_labels.dart';
+import '../../l10n/error_labels.dart';
+import '../../l10n/l10n.dart';
 import '../../services/screen_awake.dart';
 import '../../services/study_session.dart';
 import '../../services/tts_service.dart';
@@ -145,8 +148,7 @@ class _StudyPageState extends ConsumerState<StudyPage>
       rate: settings?.ttsRate ?? 50,
     );
     if (!ok && mounted) {
-      final String message = _tts.lastError ?? '系统语音不可用';
-      showMessage(context, message, error: true);
+      showMessage(context, context.l10n.voiceUnavailable, error: true);
     }
   }
 
@@ -256,7 +258,7 @@ class _StudyPageState extends ConsumerState<StudyPage>
             actions: <Widget>[
               if (_session.current != null && !_session.isFinished)
                 IconButton(
-                  tooltip: '编辑当前词条',
+                  tooltip: context.l10n.editWord,
                   icon: const Icon(Icons.edit_outlined),
                   onPressed: _session.isBusy
                       ? null
@@ -281,7 +283,7 @@ class _StudyPageState extends ConsumerState<StudyPage>
                 FavoriteButton(wordId: _session.current!.word.id),
               if (compact)
                 PopupMenuButton<String>(
-                  tooltip: '更多操作',
+                  tooltip: context.l10n.moreActions,
                   onSelected: (String value) {
                     if (value == 'skip' && !_session.isBusy) _session.skip();
                     if (value == 'undo' && _session.canUndo) _undo();
@@ -291,24 +293,24 @@ class _StudyPageState extends ConsumerState<StudyPage>
                         PopupMenuItem<String>(
                           value: 'skip',
                           enabled: _session.current != null && !_session.isBusy,
-                          child: const Text('跳过（不计入作答）'),
+                          child: Text(context.l10n.skip),
                         ),
                         PopupMenuItem<String>(
                           value: 'undo',
                           enabled: _session.canUndo,
-                          child: const Text('撤销上一作答'),
+                          child: Text(context.l10n.undoLastAnswer),
                         ),
                       ],
                 )
               else ...<Widget>[
                 if (_session.current != null && !_session.isLoading)
                   IconButton(
-                    tooltip: '跳过（不计入作答）',
+                    tooltip: context.l10n.skip,
                     icon: const Icon(Icons.skip_next),
                     onPressed: _session.isBusy ? null : _session.skip,
                   ),
                 IconButton(
-                  tooltip: '撤销上一作答',
+                  tooltip: context.l10n.undoLastAnswer,
                   onPressed: _session.canUndo ? _undo : null,
                   icon: const Icon(Icons.undo),
                 ),
@@ -369,7 +371,7 @@ class _StudyPageState extends ConsumerState<StudyPage>
                       Padding(
                         padding: const EdgeInsets.all(12),
                         child: Text(
-                          _session.notice!,
+                          describeAppError(context.l10n, _session.notice!),
                           textAlign: TextAlign.center,
                         ),
                       ),
@@ -393,9 +395,10 @@ class _StudyPageState extends ConsumerState<StudyPage>
   }
 
   String get _title {
-    if (widget.special != SpecialReview.none) return widget.special.label;
-    if (widget.reviewOnly) return '复习';
-    return '学习';
+    final AppLocalizations l10n = context.l10n;
+    if (widget.special != SpecialReview.none) return widget.special.label(l10n);
+    if (widget.reviewOnly) return l10n.review;
+    return l10n.studyTitle;
   }
 
   Widget _buildContent(BuildContext context, bool desktop) {
@@ -415,11 +418,14 @@ class _StudyPageState extends ConsumerState<StudyPage>
                 color: AppColors.unknown,
               ),
               AppSpacing.h12,
-              Text(_session.error!, textAlign: TextAlign.center),
+              Text(
+                describeAppError(context.l10n, _session.error!),
+                textAlign: TextAlign.center,
+              ),
               AppSpacing.h16,
               ElevatedButton(
                 onPressed: () => Navigator.of(context).maybePop(),
-                child: const Text('返回'),
+                child: Text(context.l10n.back),
               ),
             ],
           ),
@@ -427,17 +433,17 @@ class _StudyPageState extends ConsumerState<StudyPage>
       );
     }
     if (_session.isEmpty) {
+      final AppLocalizations l10n = context.l10n;
+      final bool special = widget.special != SpecialReview.none;
       return EmptyState(
         icon: Icons.done_all,
-        title: widget.special != SpecialReview.none
-            ? '该专项暂时没有需要复习的单词'
-            : '今天没有需要学习的单词',
-        message: widget.special != SpecialReview.none
-            ? '专项复习只包含符合当前条件的单词，普通复习队列不受影响。'
-            : '今日可学的新词和到期复习都已处理完。可以调整每日目标、导入新词，或稍后回来。',
+        title: special ? l10n.nothingDueSpecial : l10n.nothingToStudyToday,
+        message: special
+            ? l10n.specialEmptyMessage
+            : l10n.nothingLeftTodayMessage,
         action: ElevatedButton(
           onPressed: () => Navigator.of(context).maybePop(),
-          child: const Text('返回'),
+          child: Text(l10n.back),
         ),
       );
     }
@@ -447,7 +453,7 @@ class _StudyPageState extends ConsumerState<StudyPage>
         builder: (context, snapshot) {
           if (snapshot.hasError) {
             return ErrorBanner(
-              message: '读取本轮统计失败',
+              message: context.l10n.roundSummaryFailed,
               onRetry: () => setState(() {
                 _summaryFuture = _session.summary();
               }),
@@ -538,7 +544,7 @@ class _WordBody extends StatelessWidget {
                 ),
               ),
             IconButton(
-              tooltip: '朗读',
+              tooltip: context.l10n.speak,
               icon: const Icon(Icons.volume_up_outlined),
               iconSize: AppDimens.iconSizeSmall,
               visualDensity: VisualDensity.compact,
@@ -557,7 +563,7 @@ class _WordBody extends StatelessWidget {
                 if (!ok && context.mounted) {
                   showMessage(
                     context,
-                    tts.lastError ?? '系统语音不可用，可继续用默读方式学习',
+                    context.l10n.voiceUnavailable,
                     error: true,
                   );
                 }
@@ -572,12 +578,18 @@ class _WordBody extends StatelessWidget {
           runSpacing: 4,
           children: <Widget>[
             if (card.repeatCount > 0)
-              const TagChip(label: '本次重复', color: AppColors.hazy, dense: true),
+              TagChip(
+                label: context.l10n.repeatPractice,
+                color: AppColors.hazy,
+                dense: true,
+              ),
             if (card.type == ReviewType.study)
-              const TagChip(label: '新词', dense: true)
+              TagChip(label: context.l10n.newWordTag, dense: true)
             else
               TagChip(
-                label: '复习 · ${StudyStage.fromCode(state?.stage ?? 0).label}',
+                label: context.l10n.reviewWithStage(
+                  StudyStage.fromCode(state?.stage ?? 0).label(context.l10n),
+                ),
                 color: AppColors.hazy,
                 dense: true,
               ),
@@ -588,7 +600,7 @@ class _WordBody extends StatelessWidget {
               ),
             if ((state?.wrongCount ?? 0) > 0)
               TagChip(
-                label: '错 ${state!.wrongCount} 次',
+                label: context.l10n.wrongCountChip(state!.wrongCount),
                 color: AppColors.unknown,
                 dense: true,
               ),
@@ -606,7 +618,10 @@ class _WordBody extends StatelessWidget {
                   color: theme.disabledColor,
                 ),
                 AppSpacing.h8,
-                Text('先回想，再显示释义', style: theme.textTheme.bodySmall),
+                Text(
+                  context.l10n.recallMeaning,
+                  style: theme.textTheme.bodySmall,
+                ),
               ],
             ),
           )
@@ -623,7 +638,9 @@ class _WordBody extends StatelessWidget {
               ),
             ),
           SelectableText(
-            word.translation.isEmpty ? '（暂无中文释义，可在词条中补充）' : word.translation,
+            word.translation.isEmpty
+                ? context.l10n.noChineseMeaning
+                : word.translation,
             style: theme.textTheme.bodyLarge?.copyWith(
               fontSize: 17,
               height: 1.6,
@@ -632,7 +649,7 @@ class _WordBody extends StatelessWidget {
           if (word.definition.isNotEmpty) ...<Widget>[
             AppSpacing.h12,
             _DisclosureSection(
-              title: '英文释义',
+              title: context.l10n.englishDefinition,
               expanded: false,
               child: Text(
                 word.definition,
@@ -645,21 +662,29 @@ class _WordBody extends StatelessWidget {
           ],
           if (word.example.isNotEmpty) ...<Widget>[
             AppSpacing.h12,
-            _LabeledBlock(label: '例句', child: word.example, italic: true),
+            _LabeledBlock(
+              label: context.l10n.exampleSentence,
+              child: word.example,
+              italic: true,
+            ),
           ],
           if (word.phrase.isNotEmpty) ...<Widget>[
             AppSpacing.h12,
-            _LabeledBlock(label: '短语', child: word.phrase),
+            _LabeledBlock(label: context.l10n.phrases, child: word.phrase),
           ],
           if (word.note.isNotEmpty) ...<Widget>[
             AppSpacing.h12,
-            _LabeledBlock(label: '笔记', child: word.note),
+            _LabeledBlock(label: context.l10n.notes, child: word.note),
           ],
           if (state != null) ...<Widget>[
             AppSpacing.h16,
             Text(
-              '正确 ${state.correctCount} · 模糊 ${state.hazyCount} · 错误 ${state.wrongCount}'
-              ' · 间隔 ${state.intervalDays} 天',
+              context.l10n.studyHistoryShort(
+                state.correctCount,
+                state.hazyCount,
+                state.wrongCount,
+                state.intervalDays,
+              ),
               style: theme.textTheme.bodySmall,
             ),
           ],
@@ -807,7 +832,7 @@ class _AnswerBar extends StatelessWidget {
                       ? Row(
                           children: <Widget>[
                             _AnswerButton(
-                              label: AnswerResult.unknown.label,
+                              label: AnswerResult.unknown.label(context.l10n),
                               color: AppColors.unknown,
                               shortcut: desktop ? '1' : null,
                               onPressed: busy
@@ -816,7 +841,7 @@ class _AnswerBar extends StatelessWidget {
                             ),
                             AppSpacing.w8,
                             _AnswerButton(
-                              label: AnswerResult.hazy.label,
+                              label: AnswerResult.hazy.label(context.l10n),
                               color: AppColors.hazy,
                               shortcut: desktop ? '2' : null,
                               onPressed: busy
@@ -825,7 +850,7 @@ class _AnswerBar extends StatelessWidget {
                             ),
                             AppSpacing.w8,
                             _AnswerButton(
-                              label: AnswerResult.known.label,
+                              label: AnswerResult.known.label(context.l10n),
                               color: AppColors.known,
                               shortcut: desktop ? '3' : null,
                               onPressed: busy
@@ -842,7 +867,7 @@ class _AnswerBar extends StatelessWidget {
                                 style: ElevatedButton.styleFrom(
                                   minimumSize: const Size.fromHeight(40),
                                 ),
-                                child: const Text('显示释义'),
+                                child: Text(context.l10n.showMeaning),
                               ),
                             ),
                             // The shortcut lives next to the action, never
@@ -874,7 +899,7 @@ class _KeyHint extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     return Tooltip(
-      message: '按 $label 键显示释义',
+      message: context.l10n.keyHintShowMeaning(label),
       child: Container(
         height: 24,
         padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -981,7 +1006,7 @@ class _SummaryView extends StatelessWidget {
               ),
               AppSpacing.h12,
               Text(
-                '本组完成',
+                context.l10n.roundComplete,
                 textAlign: TextAlign.center,
                 style: theme.textTheme.titleLarge,
               ),
@@ -991,76 +1016,101 @@ class _SummaryView extends StatelessWidget {
                   Expanded(
                     child: StatBlock(
                       value: '${summary.newWords}',
-                      label: '新词（独立）',
+                      label: context.l10n.newWords,
                     ),
                   ),
                   Expanded(
                     child: StatBlock(
                       value: '${summary.reviewWords}',
-                      label: '复习（独立）',
+                      label: context.l10n.review,
                     ),
                   ),
                   Expanded(
                     child: StatBlock(
                       value: '${summary.repeatAttempts}',
-                      label: '复练作答',
+                      label: context.l10n.repeatPractice,
                     ),
                   ),
                 ],
               ),
               AppSpacing.h16,
               Text(
-                '共 ${summary.uniqueWords} 个独立单词，${summary.attempts} 次实际作答',
+                context.l10n.wordsAndAnswers(
+                  summary.uniqueWords,
+                  summary.attempts,
+                ),
                 textAlign: TextAlign.center,
               ),
               AppSpacing.h12,
               Row(
                 children: [
                   Expanded(
-                    child: StatBlock(value: '${summary.known}', label: '认识'),
+                    child: StatBlock(
+                      value: '${summary.known}',
+                      label: AnswerResult.known.label(context.l10n),
+                    ),
                   ),
                   Expanded(
-                    child: StatBlock(value: '${summary.hazy}', label: '模糊'),
+                    child: StatBlock(
+                      value: '${summary.hazy}',
+                      label: AnswerResult.hazy.label(context.l10n),
+                    ),
                   ),
                   Expanded(
-                    child: StatBlock(value: '${summary.unknown}', label: '不认识'),
+                    child: StatBlock(
+                      value: '${summary.unknown}',
+                      label: AnswerResult.unknown.label(context.l10n),
+                    ),
                   ),
                 ],
               ),
               AppSpacing.h12,
               Text(
-                '本轮正确率：${summary.accuracy == null ? '—' : '${(summary.accuracy! * 100).toStringAsFixed(1)}%'}',
+                context.l10n.accuracyValue(
+                  summary.accuracy == null
+                      ? '—'
+                      : '${(summary.accuracy! * 100).toStringAsFixed(1)}%',
+                ),
                 textAlign: TextAlign.center,
               ),
               Text(
-                '经过时间：${summary.elapsed.inMinutes} 分 ${summary.elapsed.inSeconds % 60} 秒（含暂停）',
+                context.l10n.timeSpent(
+                  summary.elapsed.inMinutes,
+                  summary.elapsed.inSeconds % 60,
+                ),
                 textAlign: TextAlign.center,
                 style: theme.textTheme.bodySmall,
               ),
               if (summary.difficultWords.isNotEmpty) ...[
                 AppSpacing.h16,
-                Text('本轮困难词', style: theme.textTheme.titleSmall),
+                Text(
+                  context.l10n.roundDifficultWords,
+                  style: theme.textTheme.titleSmall,
+                ),
                 AppSpacing.h8,
                 SelectableText(
                   summary.difficultWords
-                      .map((w) => '${w.word}${w.available ? '' : '（已删除）'}')
+                      .map(
+                        (w) =>
+                            '${w.word}${w.available ? '' : context.l10n.deletedWordSuffix}',
+                      )
                       .join(' · '),
                 ),
                 Text(
-                  '包含本轮曾模糊或不认识的单词；已删除词不进入复练。',
+                  context.l10n.roundDifficultNote,
                   style: theme.textTheme.bodySmall,
                 ),
                 AppSpacing.h12,
                 OutlinedButton.icon(
                   onPressed: onMistakes,
                   icon: const Icon(Icons.replay),
-                  label: const Text('复练本轮错词'),
+                  label: Text(context.l10n.specialSessionMistakes),
                 ),
               ],
               if (backlog > 0) ...<Widget>[
                 AppSpacing.h16,
                 Text(
-                  '还有 $backlog 个到期单词顺延到明天。',
+                  context.l10n.backlogCarried(backlog),
                   style: theme.textTheme.bodySmall,
                 ),
               ],
@@ -1070,14 +1120,14 @@ class _SummaryView extends StatelessWidget {
                   Expanded(
                     child: OutlinedButton(
                       onPressed: onAgain,
-                      child: const Text('再来一组'),
+                      child: Text(context.l10n.continueStudying),
                     ),
                   ),
                   AppSpacing.w8,
                   Expanded(
                     child: ElevatedButton(
                       onPressed: onDone,
-                      child: const Text('返回'),
+                      child: Text(context.l10n.commonDone),
                     ),
                   ),
                 ],

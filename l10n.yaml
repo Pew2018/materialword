@@ -1,0 +1,10 @@
+# Flutter official localisation (gen_l10n). The generated Dart files are
+# committed so a CI run never depends on local-only output, and
+# `flutter gen-l10n` is part of the build (see .github/workflows/ci.yml).
+arb-dir: lib/l10n
+template-arb-file: app_en.arb
+output-localization-file: app_localizations.dart
+output-class: AppLocalizations
+output-dir: lib/l10n/generated
+nullable-getter: false
+untranslated-messages-file: l10n_untranslated.json

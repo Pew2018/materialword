@@ -88,7 +88,7 @@ void main() {
       );
       final Word removed = await env.words.ensureWord(
         text: 'removed',
-        translation: '已移出',
+        translation: '已移除',
         now: env.clock.now(),
       );
       await env.books.addWords(book.id, <String>[

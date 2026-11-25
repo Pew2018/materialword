@@ -68,7 +68,7 @@ void main() {
     await env.backups.restoreSnapshot(copy);
 
     final StudySettingsRow restored = await env.settings.load();
-    expect(restored.dailyNewTarget, 20, reason: '每日新词必须回到快照值');
+    expect(restored.dailyNewTarget, 20, reason: '每日新词目标必须回到快照值');
     expect(restored.dailyReviewLimit, 60);
     expect(restored.studyMode, StudyMode.reviewOnly.code);
     expect(

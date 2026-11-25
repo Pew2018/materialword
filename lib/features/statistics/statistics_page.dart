@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app/providers.dart';
 import '../../app/theme.dart';
 import '../../core/models/enums.dart';
+import '../../l10n/enum_labels.dart';
+import '../../l10n/l10n.dart';
 import '../../core/models/study_models.dart';
 import '../../core/repositories/word_repository.dart';
 import '../../core/repositories/wordbook_repository.dart';
@@ -57,10 +59,13 @@ class StatisticsPage extends ConsumerWidget {
                   ),
                   AppSpacing.w8,
                   ClassicSelectChip<String>(
-                    label: '全部词书',
+                    label: context.l10n.allWordLists,
                     value: filter ?? '',
                     options: <ClassicOption<String>>[
-                      const ClassicOption<String>(value: '', label: '全部词书'),
+                      ClassicOption<String>(
+                        value: '',
+                        label: context.l10n.allWordLists,
+                      ),
                       for (final WordBookSummary summary
                           in books.value ?? const <WordBookSummary>[])
                         ClassicOption<String>(
@@ -80,7 +85,7 @@ class StatisticsPage extends ConsumerWidget {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: ErrorBanner(
-                message: '读取统计失败：${stats.error}',
+                message: context.l10n.statsLoadFailed,
                 onRetry: () => ref.invalidate(statisticsProvider),
               ),
             ),
@@ -90,7 +95,7 @@ class StatisticsPage extends ConsumerWidget {
               child: Center(child: CircularProgressIndicator()),
             )
           else ...<Widget>[
-            SectionHeader(title: data.scopedToBook ? '总览（当前词书）' : '总览（全部词书）'),
+            SectionHeader(title: context.l10n.statsOverview),
             SettingsGroup(
               children: <Widget>[
                 Padding(
@@ -100,19 +105,19 @@ class StatisticsPage extends ConsumerWidget {
                       Expanded(
                         child: StatBlock(
                           value: '${data.totalWords}',
-                          label: '总词数',
+                          label: context.l10n.totalWordsLabel,
                         ),
                       ),
                       Expanded(
                         child: StatBlock(
                           value: '${data.learnedWords}',
-                          label: '已学习',
+                          label: context.l10n.learnedLabel,
                         ),
                       ),
                       Expanded(
                         child: StatBlock(
                           value: '${data.unlearnedWords}',
-                          label: '未学习',
+                          label: context.l10n.unlearnedLabel,
                         ),
                       ),
                       Expanded(
@@ -121,8 +126,8 @@ class StatisticsPage extends ConsumerWidget {
                               ? '—'
                               : '${(data.accuracyOrNull! * 100).round()}%',
                           label: data.accuracyOrNull == null
-                              ? '正确率（无记录）'
-                              : '历史正确率',
+                              ? context.l10n.accuracyLabel
+                              : context.l10n.overallAccuracy,
                           color: data.accuracyOrNull == null
                               ? null
                               : (data.accuracyOrNull! >= 0.8
@@ -135,7 +140,7 @@ class StatisticsPage extends ConsumerWidget {
                 ),
               ],
             ),
-            SectionHeader(title: '今日（全设备）'),
+            SectionHeader(title: context.l10n.todayStudy),
             SettingsGroup(
               children: <Widget>[
                 Padding(
@@ -145,19 +150,19 @@ class StatisticsPage extends ConsumerWidget {
                       Expanded(
                         child: StatBlock(
                           value: '${data.todayNew}',
-                          label: '今日新词',
+                          label: context.l10n.todayNewWords,
                         ),
                       ),
                       Expanded(
                         child: StatBlock(
                           value: '${data.todayReview}',
-                          label: '今日复习',
+                          label: context.l10n.todayReviews,
                         ),
                       ),
                       Expanded(
                         child: StatBlock(
                           value: '${data.todayAnswers}',
-                          label: '今日实际作答',
+                          label: context.l10n.answersCount,
                         ),
                       ),
                       Expanded(
@@ -165,7 +170,7 @@ class StatisticsPage extends ConsumerWidget {
                           value: data.todayAnswers == 0
                               ? '—'
                               : '${(data.todayCorrect / data.todayAnswers * 100).round()}%',
-                          label: data.todayAnswers == 0 ? '正确率（无记录）' : '今日正确率',
+                          label: context.l10n.accuracyLabel,
                         ),
                       ),
                     ],
@@ -179,27 +184,27 @@ class StatisticsPage extends ConsumerWidget {
                       Expanded(
                         child: StatBlock(
                           value: '${data.correctCount}',
-                          label: '累计正确',
+                          label: context.l10n.cumulativeCorrect,
                         ),
                       ),
                       Expanded(
                         child: StatBlock(
                           value: '${data.wrongCount}',
-                          label: '累计错误',
+                          label: context.l10n.cumulativeWrong,
                           color: data.wrongCount > 0 ? AppColors.unknown : null,
                         ),
                       ),
                       Expanded(
                         child: StatBlock(
                           value: '${data.hazyCount}',
-                          label: '累计模糊',
+                          label: context.l10n.cumulativeHazy,
                           color: AppColors.hazy,
                         ),
                       ),
                       Expanded(
                         child: StatBlock(
                           value: '${data.distinctAnsweredWords}',
-                          label: '独立词条',
+                          label: context.l10n.distinctAnsweredWords,
                         ),
                       ),
                     ],
@@ -207,7 +212,7 @@ class StatisticsPage extends ConsumerWidget {
                 ),
               ],
             ),
-            SectionHeader(title: '作答构成（累计）'),
+            SectionHeader(title: context.l10n.answerBreakdown),
             SettingsGroup(
               children: <Widget>[
                 Padding(
@@ -216,40 +221,42 @@ class StatisticsPage extends ConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: <Widget>[
                       _LineRow(
-                        label: '普通学习/复习',
-                        value: '${data.breakdown.normal} 次',
+                        label: context.l10n.breakdownStudyReview,
+                        value: context.l10n.valueTimes(data.breakdown.normal),
                       ),
                       _LineRow(
-                        label: '专项复习（困难词、错词等）',
-                        value: '${data.breakdown.special} 次',
+                        label: context.l10n.breakdownSpecial,
+                        value: context.l10n.valueTimes(data.breakdown.special),
                       ),
                       _LineRow(
-                        label: '练习模式',
-                        value: '${data.breakdown.practice} 次',
+                        label: context.l10n.breakdownPractice,
+                        value: context.l10n.valueTimes(data.breakdown.practice),
                       ),
                       for (final PracticeKind kind in PracticeKind.values)
                         if ((data.breakdown.practiceByKind[kind] ?? 0) > 0)
                           _LineRow(
-                            label: '• ${kind.label}',
-                            value: '${data.breakdown.practiceByKind[kind]} 次',
+                            label: '• ${kind.label(context.l10n)}',
+                            value: context.l10n.valueTimes(
+                              data.breakdown.practiceByKind[kind]!,
+                            ),
                             subtle: true,
                             indent: 16,
                           ),
                       _LineRow(
-                        label: '同轮复练',
-                        value: '${data.breakdown.repeat} 次',
+                        label: context.l10n.breakdownRepeat,
+                        value: context.l10n.valueTimes(data.breakdown.repeat),
                       ),
                       _LineRow(
-                        label: '独立词条（有真实作答）',
-                        value: '${data.distinctAnsweredWords} 个',
+                        label: context.l10n.distinctWordsAnswered,
+                        value: '${data.distinctAnsweredWords}',
                       ),
                       _LineRow(
-                        label: '已撤销作答（不计入统计）',
-                        value: '${data.undoneAnswers} 次',
+                        label: context.l10n.undoneAnswers,
+                        value: context.l10n.valueTimes(data.undoneAnswers),
                       ),
                       AppSpacing.h8,
                       Text(
-                        '练习会计入次数，但不会影响复习计划；手动设为掌握或重置进度不计入作答统计。',
+                        context.l10n.breakdownNote,
                         style: theme.textTheme.bodySmall,
                       ),
                     ],
@@ -257,7 +264,7 @@ class StatisticsPage extends ConsumerWidget {
                 ),
               ],
             ),
-            SectionHeader(title: '近 7 天作答'),
+            SectionHeader(title: context.l10n.answersLast7Days),
             SettingsGroup(
               children: <Widget>[
                 Padding(
@@ -266,7 +273,7 @@ class StatisticsPage extends ConsumerWidget {
                 ),
               ],
             ),
-            SectionHeader(title: '未来 7 天到期复习'),
+            SectionHeader(title: context.l10n.reviewsNext7Days),
             SettingsGroup(
               children: <Widget>[
                 Padding(
@@ -275,9 +282,12 @@ class StatisticsPage extends ConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: <Widget>[
                       for (final DueForecastDay day in data.dueForecast)
-                        _LineRow(label: day.day, value: '${day.count} 个'),
+                        _LineRow(label: day.day, value: '${day.count}'),
                       if (data.dueForecast.isEmpty)
-                        Text('没有计划中的到期复习。', style: theme.textTheme.bodySmall),
+                        Text(
+                          context.l10n.noScheduledReviews,
+                          style: theme.textTheme.bodySmall,
+                        ),
                     ],
                   ),
                 ),
@@ -285,15 +295,18 @@ class StatisticsPage extends ConsumerWidget {
             ),
             if ((books.value ?? const <WordBookSummary>[])
                 .isNotEmpty) ...<Widget>[
-              SectionHeader(title: '词书完成度'),
+              SectionHeader(title: context.l10n.wordListProgress),
               SettingsGroup(
                 children: <Widget>[
                   for (final WordBookSummary book
                       in (books.value ?? const <WordBookSummary>[]).take(20))
                     SettingsTile(
                       title: book.book.name,
-                      subtitle:
-                          '${book.wordCount} 词 · 已学 ${book.learnedCount} · 到期 ${book.dueCount}',
+                      subtitle: context.l10n.wordListRowStats(
+                        book.wordCount,
+                        book.learnedCount,
+                        book.dueCount,
+                      ),
                       trailing: Text(
                         '${(book.progress * 100).round()}%',
                         style: theme.textTheme.bodyMedium?.copyWith(
@@ -307,7 +320,7 @@ class StatisticsPage extends ConsumerWidget {
                 ],
               ),
             ],
-            SectionHeader(title: '字词表现'),
+            SectionHeader(title: context.l10n.wordPerformance),
             SettingsGroup(
               children: <Widget>[
                 Padding(
@@ -317,13 +330,13 @@ class StatisticsPage extends ConsumerWidget {
                       Expanded(
                         child: StatBlock(
                           value: data.lastStudyDay ?? '—',
-                          label: '最近学习日',
+                          label: context.l10n.lastStudiedDay,
                         ),
                       ),
                       Expanded(
                         child: StatBlock(
                           value: '${data.undoneAnswers}',
-                          label: '已撤销作答',
+                          label: context.l10n.undoneAnswers,
                         ),
                       ),
                     ],
@@ -332,16 +345,14 @@ class StatisticsPage extends ConsumerWidget {
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                   child: Text(
-                    data.hasAnswers
-                        ? '正确率 = 认识次数 ÷ 全部作答次数（累计）。'
-                        : '还没有作答记录，完成一次学习后这里会显示真实比例。',
+                    context.l10n.noAnswersYet,
                     style: theme.textTheme.bodySmall,
                   ),
                 ),
               ],
             ),
             if (data.hardWords.isNotEmpty) ...<Widget>[
-              SectionHeader(title: '困难词（错误次数最多）'),
+              SectionHeader(title: context.l10n.difficultWords),
               SettingsGroup(
                 children: <Widget>[
                   for (final WordWithState row in data.hardWords)
@@ -349,7 +360,10 @@ class StatisticsPage extends ConsumerWidget {
                       title: row.word.word,
                       subtitle: row.word.translation.replaceAll('\n', ' '),
                       trailing: Text(
-                        '错 ${row.state?.wrongCount ?? 0} · 模糊 ${row.state?.hazyCount ?? 0}',
+                        context.l10n.wordErrorHazyStat(
+                          row.state?.wrongCount ?? 0,
+                          row.state?.hazyCount ?? 0,
+                        ),
                         style: theme.textTheme.bodySmall,
                       ),
                       onTap: () => Navigator.of(context).push<void>(
@@ -381,7 +395,7 @@ class _LineRow extends StatelessWidget {
   final String label;
   final String value;
 
-  /// A child row of the row above it (e.g. one practice mode under 练习模式).
+  /// A child row of the row above it (e.g. one practice mode under Practice).
   final bool subtle;
 
   /// Real layout indent in logical pixels. Child rows used to be pushed right
@@ -429,7 +443,10 @@ class _TrendChart extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     if (points.isEmpty) {
-      return Text('最近 7 天还没有作答记录。', style: theme.textTheme.bodySmall);
+      return Text(
+        context.l10n.noAnswersLast7Days,
+        style: theme.textTheme.bodySmall,
+      );
     }
     final int max = points
         .map((DailyAnswers p) => p.answers)

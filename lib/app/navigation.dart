@@ -11,6 +11,7 @@ import '../features/statistics/statistics_page.dart';
 import '../features/word_management/quick_add_page.dart';
 import '../features/word_management/word_management_page.dart';
 import '../features/wordbooks/wordbooks_page.dart';
+import '../l10n/l10n.dart';
 import '../services/diagnostics_service.dart';
 import '../services/backup_manager.dart';
 import '../shared/widgets/common.dart';
@@ -18,37 +19,54 @@ import 'providers.dart';
 import 'theme.dart';
 
 /// One entry in the bottom bar / side navigation.
+///
+/// [id] is stable and is what widget keys and tests refer to; the visible label
+/// is resolved from the ARB resources for the current language.
 class AppDestination {
   const AppDestination({
-    required this.label,
+    required this.id,
     required this.icon,
     required this.activeIcon,
   });
 
-  final String label;
+  final String id;
   final IconData icon;
   final IconData activeIcon;
+
+  String label(AppLocalizations l10n) => switch (id) {
+    'today' => l10n.navToday,
+    'wordLists' => l10n.navWordLists,
+    'dictionary' => l10n.navDictionary,
+    'statistics' => l10n.navStatistics,
+    'settings' => l10n.navSettings,
+    'allWords' => l10n.navAllWords,
+    _ => id,
+  };
 }
 
 const List<AppDestination> appDestinations = <AppDestination>[
   AppDestination(
-    label: '今日',
+    id: 'today',
     icon: Icons.today_outlined,
     activeIcon: Icons.today,
   ),
   AppDestination(
-    label: '词书',
+    id: 'wordLists',
     icon: Icons.library_books_outlined,
     activeIcon: Icons.library_books,
   ),
-  AppDestination(label: '词典', icon: Icons.search, activeIcon: Icons.search),
   AppDestination(
-    label: '统计',
+    id: 'dictionary',
+    icon: Icons.search,
+    activeIcon: Icons.search,
+  ),
+  AppDestination(
+    id: 'statistics',
     icon: Icons.insert_chart_outlined,
     activeIcon: Icons.insert_chart,
   ),
   AppDestination(
-    label: '设置',
+    id: 'settings',
     icon: Icons.settings_outlined,
     activeIcon: Icons.settings,
   ),
@@ -398,17 +416,17 @@ class _AppShellState extends ConsumerState<AppShell>
 
     return Scaffold(
       appBar: ClassicAppBar(
-        title: Text(appDestinations[_index].label),
+        title: Text(appDestinations[_index].label(context.l10n)),
         actions: <Widget>[
           if (hasRail)
             IconButton(
-              tooltip: '快速添加单词 (⌘N)',
+              tooltip: context.l10n.actionAddWordShortcutMac,
               icon: const Icon(Icons.add),
               onPressed: _quickAdd,
             ),
           if (_index == 1 && hasRail)
             IconButton(
-              tooltip: '全部词汇管理',
+              tooltip: context.l10n.manageAllWords,
               icon: const Icon(Icons.table_rows_outlined),
               onPressed: _openWordManagement,
             ),
@@ -443,7 +461,7 @@ class _AppShellState extends ConsumerState<AppShell>
       floatingActionButton: _index == 0 && !hasRail
           ? FloatingActionButton(
               onPressed: _quickAdd,
-              tooltip: '快速添加单词',
+              tooltip: context.l10n.actionAddWord,
               child: const Icon(Icons.add),
             )
           : null,
@@ -500,7 +518,7 @@ class ClassicBottomNavigationBar extends StatelessWidget {
               for (int i = 0; i < items.length; i++)
                 Expanded(
                   child: _BottomNavItem(
-                    key: ValueKey<String>('nav-${items[i].label}'),
+                    key: ValueKey<String>('nav-${items[i].id}'),
                     destination: items[i],
                     selected: i == currentIndex,
                     onTap: () => onTap(i),
@@ -541,7 +559,7 @@ class _BottomNavItem extends StatelessWidget {
     return Semantics(
       button: true,
       selected: selected,
-      label: destination.label,
+      label: destination.label(context.l10n),
       excludeSemantics: true,
       // Clipped by a plain rectangle: the splash may grow into a large circle
       // but it is cut off at the item edge, exactly like the classic bar.
@@ -577,7 +595,7 @@ class _BottomNavItem extends StatelessWidget {
                 SizedBox(
                   height: 16,
                   child: Text(
-                    destination.label,
+                    destination.label(context.l10n),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -643,16 +661,16 @@ class _SideNavigation extends StatelessWidget {
               AppSpacing.h8,
               for (int i = 0; i < appDestinations.length; i++)
                 _RailItem(
-                  key: ValueKey<String>('nav-${appDestinations[i].label}'),
+                  key: ValueKey<String>('nav-${appDestinations[i].id}'),
                   destination: appDestinations[i],
                   selected: i == index,
                   onTap: () => onSelect(i),
                 ),
               const Divider(height: 16, indent: 12, endIndent: 12),
               _RailItem(
-                key: const ValueKey<String>('nav-词汇'),
+                key: const ValueKey<String>('nav-allWords'),
                 destination: const AppDestination(
-                  label: '词汇',
+                  id: 'allWords',
                   icon: Icons.table_rows_outlined,
                   activeIcon: Icons.table_rows,
                 ),
@@ -661,7 +679,10 @@ class _SideNavigation extends StatelessWidget {
               ),
               Padding(
                 padding: const EdgeInsets.all(16),
-                child: Text('离线可用 · 本地优先', style: theme.textTheme.bodySmall),
+                child: Text(
+                  context.l10n.navOfflineNote,
+                  style: theme.textTheme.bodySmall,
+                ),
               ),
             ],
           ),
@@ -694,7 +715,7 @@ class _RailItem extends StatelessWidget {
       child: Semantics(
         selected: selected,
         button: true,
-        label: destination.label,
+        label: destination.label(context.l10n),
         excludeSemantics: true,
         child: Material(
           color: selected
@@ -721,7 +742,7 @@ class _RailItem extends StatelessWidget {
                     AppSpacing.w12,
                     Expanded(
                       child: Text(
-                        destination.label,
+                        destination.label(context.l10n),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.bodyLarge?.copyWith(

@@ -4,9 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/providers.dart';
+import '../../app/app_info.dart';
 import '../../app/theme.dart';
 import '../../core/database/app_database.dart';
 import '../../core/repositories/word_repository.dart' show WordWithState;
+import '../../l10n/enum_labels.dart';
+import '../../l10n/intake_labels.dart';
+import '../../l10n/l10n.dart';
 import '../../services/dictionary_service.dart';
 import '../../services/word_form_guesser.dart';
 import '../../services/word_intake_service.dart';
@@ -153,7 +157,7 @@ class _DictionaryPageState extends ConsumerState<DictionaryPage> {
       if (!mounted || !_generation.isCurrent(generation)) return;
       setState(() {
         _searching = false;
-        _error = '查询失败：$e';
+        _error = context.l10n.dictionarySearchFailed;
       });
     }
   }
@@ -172,8 +176,8 @@ class _DictionaryPageState extends ConsumerState<DictionaryPage> {
           if (!mounted) return;
           final String? name = await promptForText(
             context,
-            title: '新建词书',
-            label: '词书名称',
+            title: context.l10n.newWordList,
+            label: context.l10n.wordListName,
           );
           if (name == null || name.trim().isEmpty) return;
           final WordBook book = await ref
@@ -210,11 +214,11 @@ class _DictionaryPageState extends ConsumerState<DictionaryPage> {
       ref.invalidate(bookSummariesProvider);
       ref.invalidate(todayProgressProvider);
       if (!mounted) return;
-      showMessage(context, result.describe());
+      showMessage(context, describeIntake(context.l10n, result));
       await _run(_term);
     } catch (e) {
       if (!mounted) return;
-      showMessage(context, '加入失败：$e', error: true);
+      showMessage(context, context.l10n.addFailed, error: true);
     }
   }
 
@@ -234,12 +238,14 @@ class _DictionaryPageState extends ConsumerState<DictionaryPage> {
               autofocus: false,
               textInputAction: TextInputAction.search,
               decoration: InputDecoration(
-                hintText: desktop ? '查询离线词典（⌘F）' : '查询离线词典',
+                hintText: desktop
+                    ? context.l10n.searchWordHint
+                    : context.l10n.searchWordHintPlain,
                 prefixIcon: const Icon(Icons.search),
                 suffixIcon: _term.isEmpty
                     ? null
                     : IconButton(
-                        tooltip: '清空',
+                        tooltip: context.l10n.commonClear,
                         icon: const Icon(Icons.clear),
                         onPressed: () {
                           _query.clear();
@@ -264,10 +270,10 @@ class _DictionaryPageState extends ConsumerState<DictionaryPage> {
           if (_term.isEmpty) ...<Widget>[
             if (_recent.isNotEmpty) ...<Widget>[
               SectionHeader(
-                title: '最近搜索',
+                title: context.l10n.recentSearch,
                 trailing: TextButton(
                   onPressed: _clearRecent,
-                  child: const Text('清除历史'),
+                  child: Text(context.l10n.commonClear),
                 ),
               ),
               SettingsGroup(
@@ -284,27 +290,26 @@ class _DictionaryPageState extends ConsumerState<DictionaryPage> {
                 ],
               ),
             ],
-            const Padding(
-              padding: EdgeInsets.only(top: 24, left: 16, right: 16),
+            Padding(
+              padding: const EdgeInsets.only(top: 24, left: 16, right: 16),
               child: EmptyState(
                 icon: Icons.menu_book_outlined,
-                title: '离线词典',
-                message:
-                    '内置约 2.6 万词的离线词典，'
-                    '覆盖中高考、四六级、考研、雅思、托福和 GRE。'
-                    '输入单词即可查询，并可直接加入当前词书。',
+                title: context.l10n.offlineDictionary,
+                message: context.l10n.dictionaryEmptyBody(dictionaryEntryCount),
               ),
             ),
           ] else ...<Widget>[
             if (_forms.isNotEmpty) ...<Widget>[
-              SectionHeader(title: '你可能想查'),
+              SectionHeader(title: context.l10n.relatedWords),
               SettingsGroup(
                 children: <Widget>[
                   for (final WordFormCandidate candidate in _forms)
                     SettingsTile(
                       leading: const Icon(Icons.subdirectory_arrow_right),
                       title: candidate.lemma,
-                      subtitle: '可能是该词的${candidate.relation}形式',
+                      subtitle: context.l10n.wordFormHint(
+                        candidate.relation.label(context.l10n),
+                      ),
                       onTap: () {
                         _query.text = candidate.lemma;
                         _onChanged(candidate.lemma);
@@ -314,7 +319,7 @@ class _DictionaryPageState extends ConsumerState<DictionaryPage> {
               ),
             ],
             if (_mine.isNotEmpty) ...<Widget>[
-              SectionHeader(title: '我的词条（${_mine.length}）'),
+              SectionHeader(title: context.l10n.myWordsCount(_mine.length)),
               SettingsGroup(
                 children: <Widget>[
                   for (final WordWithState row in _mine.take(6))
@@ -323,7 +328,9 @@ class _DictionaryPageState extends ConsumerState<DictionaryPage> {
                       title: row.word.word,
                       subtitle: row.word.translation,
                       trailing: TagChip(
-                        label: row.isLearned ? '已学' : '未学',
+                        label: row.isLearned
+                            ? context.l10n.learnedLabel
+                            : context.l10n.unlearnedLabel,
                         dense: true,
                       ),
                       onTap: () => _add(
@@ -345,7 +352,9 @@ class _DictionaryPageState extends ConsumerState<DictionaryPage> {
                 ],
               ),
             ],
-            SectionHeader(title: '词典结果（${_results.length}）'),
+            SectionHeader(
+              title: context.l10n.dictionaryResultsCount(_results.length),
+            ),
             if (_results.isEmpty && !_searching)
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
@@ -353,7 +362,7 @@ class _DictionaryPageState extends ConsumerState<DictionaryPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     Text(
-                      '离线词典没有匹配项。可以把它作为新词条手动添加，稍后补充释义。',
+                      context.l10n.noDictionaryMatch,
                       style: theme.textTheme.bodySmall,
                     ),
                     AppSpacing.h8,
@@ -374,7 +383,7 @@ class _DictionaryPageState extends ConsumerState<DictionaryPage> {
                         ),
                       ),
                       icon: const Icon(Icons.add),
-                      label: Text('把「$_term」作为新词条加入'),
+                      label: Text(context.l10n.addTermAsWord(_term)),
                     ),
                   ],
                 ),
@@ -393,7 +402,7 @@ class _DictionaryPageState extends ConsumerState<DictionaryPage> {
                           entry.definition.replaceAll('\n', ' '),
                       ].join('  '),
                       trailing: IconButton(
-                        tooltip: '加入词书',
+                        tooltip: context.l10n.addToWordList,
                         icon: const Icon(Icons.add_circle_outline),
                         onPressed: () => _add(entry),
                       ),
@@ -404,7 +413,7 @@ class _DictionaryPageState extends ConsumerState<DictionaryPage> {
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                 child: Text(
-                  '点击右侧「+」把词条加入当前词书；已有词条会保留学习进度和笔记。',
+                  context.l10n.dictionaryHint,
                   style: theme.textTheme.bodySmall,
                 ),
               ),

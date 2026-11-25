@@ -9,6 +9,9 @@ import '../../core/time_utils.dart';
 import '../../services/backup_manager.dart';
 import '../../services/backup_service.dart';
 import '../../services/backup_files.dart';
+import '../../l10n/backup_labels.dart';
+import '../../l10n/sync_labels.dart';
+import '../../l10n/l10n.dart';
 import '../../shared/widgets/common.dart';
 import '../sync/sync_settings_page.dart';
 
@@ -88,13 +91,19 @@ class _BackupPageState extends ConsumerState<BackupPage> {
       final bool saved = await BackupFiles(ref.read(backupServiceProvider))
           .exportWithJson(json);
       if (!mounted) return;
-      setState(() => _status = saved ? '备份已导出' : '已取消导出');
+      setState(
+        () => _status = saved
+            ? context.l10n.backupExportedShort
+            : context.l10n.exportCanceled,
+      );
       return;
     }
     final File file = await manager.createBackup();
     await _reload();
     if (!mounted) return;
-    setState(() => _status = '恢复副本已保存：${file.uri.pathSegments.last}');
+    setState(
+      () => _status = context.l10n.backupSavedAs(file.uri.pathSegments.last),
+    );
   });
 
   Future<void> _importMerge() => _run(() async {
@@ -106,12 +115,14 @@ class _BackupPageState extends ConsumerState<BackupPage> {
     final int events = (data['reviewEvents'] as List?)?.length ?? 0;
     final bool ok = await confirmDialog(
       context,
-      title: '合并备份',
-      message:
-          '词条 $words 个，词书 $books 个，学习记录 $events 条。\n'
-          '备份时间：${data['exportedAt'] ?? '未记录'}\n'
-          '将合并到本机，保留现有学习历史；不会删除本机任何数据。',
-      confirmLabel: '合并',
+      title: context.l10n.mergeBackup,
+      message: context.l10n.mergeConfirmBody(
+        words,
+        books,
+        events,
+        '${data['exportedAt'] ?? context.l10n.timeNotRecorded}',
+      ),
+      confirmLabel: context.l10n.merge,
     );
     if (!ok || !mounted) return;
     final MergeReport report = await service.mergeDataset(
@@ -120,7 +131,7 @@ class _BackupPageState extends ConsumerState<BackupPage> {
     );
     _refreshData();
     if (!mounted) return;
-    setState(() => _status = report.summary);
+    setState(() => _status = mergeSummary(context.l10n, report));
   });
 
   void _refreshData() {
@@ -138,7 +149,9 @@ class _BackupPageState extends ConsumerState<BackupPage> {
     await showDialog<void>(
       context: context,
       builder: (BuildContext context) => AlertDialog(
-        title: Text(verify ? '校验恢复副本' : '恢复副本信息'),
+        title: Text(
+          verify ? context.l10n.checkBackup : context.l10n.backupInfo,
+        ),
         content: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
@@ -146,21 +159,30 @@ class _BackupPageState extends ConsumerState<BackupPage> {
             Text(entry.name, style: Theme.of(context).textTheme.bodySmall),
             AppSpacing.h8,
             if (info.valid) ...<Widget>[
-              Text(info.summary),
+              Text(backupInfoSummary(context.l10n, info)),
               AppSpacing.h8,
-              Text('数据格式：v${info.schemaVersion}'),
+              Text(context.l10n.schemaVersionLine(info.schemaVersion)),
               if (info.exportedAt != null)
-                Text('创建时间：${formatDateTime(info.exportedAt!)}'),
-              if (info.appVersion.isNotEmpty) Text('应用版本：${info.appVersion}'),
-              Text('包含设备设置：${info.hasDeviceSettings ? '是' : '否'}'),
+                Text(
+                  context.l10n.createdAtLine(formatDateTime(info.exportedAt!)),
+                ),
+              if (info.appVersion.isNotEmpty)
+                Text(context.l10n.appVersionLine(info.appVersion)),
+              Text(
+                context.l10n.hasDeviceSettingsLine(
+                  info.hasDeviceSettings ? context.l10n.yes : context.l10n.no,
+                ),
+              ),
               AppSpacing.h8,
               Text(
-                verify ? '完整性校验通过：文件可以安全读取。' : '完整性：未校验（点「校验」可读取并验证）',
+                verify
+                    ? context.l10n.integrityPassed
+                    : context.l10n.integrityUnchecked,
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ] else
               Text(
-                info.problem ?? '无法读取',
+                info.problem ?? context.l10n.cannotReadBackup,
                 style: TextStyle(color: AppColors.unknown),
               ),
           ],
@@ -168,7 +190,7 @@ class _BackupPageState extends ConsumerState<BackupPage> {
         actions: <Widget>[
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('关闭'),
+            child: Text(context.l10n.close),
           ),
         ],
       ),
@@ -181,17 +203,21 @@ class _BackupPageState extends ConsumerState<BackupPage> {
         .inspect(entry.file);
     if (!info.valid) {
       if (!mounted) return;
-      setState(() => _error = '该副本无法读取：${info.problem}');
+      setState(
+        () => _error = context.l10n.backupUnreadable(
+          info.problem ?? context.l10n.unknownReason,
+        ),
+      );
       return;
     }
     if (!mounted) return;
     final bool ok = await confirmDialog(
       context,
-      title: '合并恢复',
-      message:
-          '${info.summary}\n\n合并只补充本机缺少的词条与学习记录，'
-          '保留现有数据与学习进度。这是默认的安全恢复方式。',
-      confirmLabel: '合并',
+      title: context.l10n.mergeRestore,
+      message: context.l10n.mergeRestoreConfirm(
+        backupInfoSummary(context.l10n, info),
+      ),
+      confirmLabel: context.l10n.merge,
     );
     if (!ok || !mounted) return;
     final MergeReport report = await ref
@@ -199,7 +225,11 @@ class _BackupPageState extends ConsumerState<BackupPage> {
         .restoreMerge(entry.file);
     _refreshData();
     if (!mounted) return;
-    setState(() => _status = '合并完成：${report.summary}');
+    setState(
+      () => _status = context.l10n.mergeCompleteWith(
+        mergeSummary(context.l10n, report),
+      ),
+    );
   });
 
   Future<void> _restoreSnapshot(BackupEntry entry) => _run(() async {
@@ -207,20 +237,24 @@ class _BackupPageState extends ConsumerState<BackupPage> {
     final BackupInfo info = await manager.inspect(entry.file);
     if (!info.valid) {
       if (!mounted) return;
-      setState(() => _error = '该副本无法读取：${info.problem}');
+      setState(
+        () => _error = context.l10n.backupUnreadable(
+          info.problem ?? context.l10n.unknownReason,
+        ),
+      );
       return;
     }
     if (!mounted) return;
     final bool ok = await confirmDialog(
       context,
-      title: '恢复到该历史版本？',
-      message:
-          '${info.summary}\n创建时间：${info.exportedAt == null ? '未知' : formatDateTime(info.exportedAt!)}'
-          '\n\n这会用该备份**替换**本机当前数据：'
-          '此后的学习记录、编辑和删除都会丢失。'
-          '操作前会自动保存一份保护性备份，失败时整体回滚。'
-          '恢复后同步会暂停，直到你决定如何处理远端数据。',
-      confirmLabel: '恢复',
+      title: context.l10n.restoreVersionTitle,
+      message: context.l10n.restoreSnapshotConfirm(
+        backupInfoSummary(context.l10n, info),
+        info.exportedAt == null
+            ? context.l10n.createdUnknown
+            : formatDateTime(info.exportedAt!),
+      ),
+      confirmLabel: context.l10n.restore,
       destructive: true,
     );
     if (!ok || !mounted) return;
@@ -229,8 +263,10 @@ class _BackupPageState extends ConsumerState<BackupPage> {
     await _reload();
     if (!mounted) return;
     setState(
-      () => _status =
-          '${outcome.summary}；恢复前状态已保存为 ${outcome.protectiveBackup.uri.pathSegments.last}',
+      () => _status = context.l10n.restoreDoneWith(
+        restoreSummary(context.l10n, outcome),
+        outcome.protectiveBackup.uri.pathSegments.last,
+      ),
     );
     await _askAfterRestore();
   });
@@ -241,32 +277,27 @@ class _BackupPageState extends ConsumerState<BackupPage> {
       context: context,
       barrierDismissible: false,
       builder: (BuildContext context) => AlertDialog(
-        title: const Text('恢复完成：如何使用远端数据？'),
-        content: const Text(
-          '本机已恢复为所选历史版本，同步保持暂停。请选择下一步：\n\n'
-          '· 保持本机状态：暂不同步，稍后可在「数据同步」页处理。\n'
-          '· 合并远端数据：把远端设备的数据并回本机（只增不减）。\n'
-          '· 使用新的同步目标：为恢复后的数据换一个远端位置。',
-        ),
+        title: Text(context.l10n.restoreNextStepTitle),
+        content: Text(context.l10n.restoreNextStepBody),
         actions: <Widget>[
           TextButton(
             onPressed: () => Navigator.of(context).pop('stay'),
-            child: const Text('保持本机状态'),
+            child: Text(context.l10n.keepLocalState),
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop('new-target'),
-            child: const Text('使用新的同步目标'),
+            child: Text(context.l10n.useNewTarget),
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop('merge-remote'),
-            child: const Text('合并远端数据'),
+            child: Text(context.l10n.mergeRemoteData),
           ),
         ],
       ),
     );
     if (!mounted || choice == null) return;
     if (choice == 'stay') {
-      setState(() => _status = '同步保持暂停：远端数据未被修改');
+      setState(() => _status = context.l10n.syncPausedRemoteUnchanged);
       return;
     }
     if (choice == 'new-target') {
@@ -289,7 +320,7 @@ class _BackupPageState extends ConsumerState<BackupPage> {
           .providerFromConfig(config);
       if (!mounted) return;
       if (provider == null) {
-        setState(() => _error = '尚未配置同步目标，可在「数据同步」页设置');
+        setState(() => _error = context.l10n.noSyncTargetHint);
         return;
       }
       final report = await ref
@@ -297,7 +328,7 @@ class _BackupPageState extends ConsumerState<BackupPage> {
           .sync(provider, resumeAfterRestore: true);
       _refreshData();
       if (!mounted) return;
-      setState(() => _status = '远端数据已合并：${report.message}');
+      setState(() => _status = describeSyncReport(context.l10n, report));
       await _reload();
     });
   }
@@ -305,7 +336,7 @@ class _BackupPageState extends ConsumerState<BackupPage> {
   Future<void> _clearPauseIfTargetChanged() async {
     final bool paused = await ref.read(settingsRepositoryProvider).syncPaused();
     if (paused && mounted) {
-      setState(() => _status = '同步仍暂停：在新目标完成一次同步后会解除');
+      setState(() => _status = context.l10n.syncStillPausedUntilTarget);
       await _reload();
     }
   }
@@ -313,9 +344,9 @@ class _BackupPageState extends ConsumerState<BackupPage> {
   Future<void> _delete(BackupEntry entry) async {
     final bool ok = await confirmDialog(
       context,
-      title: '删除这份恢复副本？',
-      message: '${entry.name}\n\n只会删除这个本机文件；数据库里的学习数据不受影响。',
-      confirmLabel: '删除',
+      title: context.l10n.deleteBackupTitle,
+      message: context.l10n.deleteBackupBody(entry.name),
+      confirmLabel: context.l10n.commonDelete,
       destructive: true,
     );
     if (!ok) return;
@@ -323,7 +354,7 @@ class _BackupPageState extends ConsumerState<BackupPage> {
       await ref.read(backupManagerProvider).delete(entry.file);
       await _reload();
       if (!mounted) return;
-      setState(() => _status = '已删除恢复副本');
+      setState(() => _status = context.l10n.backupDeleted);
     });
   }
 
@@ -332,14 +363,18 @@ class _BackupPageState extends ConsumerState<BackupPage> {
         .read(backupManagerProvider)
         .exportCopy(entry.file);
     if (!mounted) return;
-    setState(() => _status = saved ? '已导出恢复副本' : '已取消导出');
+    setState(
+      () => _status = saved
+          ? context.l10n.backupExportedShort
+          : context.l10n.exportCanceled,
+    );
   });
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     return Scaffold(
-      appBar: ClassicAppBar(title: const Text('备份与恢复')),
+      appBar: ClassicAppBar(title: Text(context.l10n.backupAndRestore)),
       body: RefreshIndicator(
         onRefresh: _reload,
         child: ContentColumn(
@@ -366,11 +401,13 @@ class _BackupPageState extends ConsumerState<BackupPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: <Widget>[
-                          Text('同步已暂停', style: theme.textTheme.titleSmall),
+                          Text(
+                            context.l10n.syncPausedBanner,
+                            style: theme.textTheme.titleSmall,
+                          ),
                           AppSpacing.h4,
                           Text(
-                            '本机数据来自历史恢复，尚未与远端核对。'
-                            '在「数据同步」页确认如何处理远端数据前，自动同步不会运行。',
+                            context.l10n.syncPausedBannerBody,
                             style: theme.textTheme.bodySmall,
                           ),
                           AppSpacing.h8,
@@ -386,14 +423,14 @@ class _BackupPageState extends ConsumerState<BackupPage> {
                                     );
                                     await _reload();
                                   },
-                            child: const Text('处理同步'),
+                            child: Text(context.l10n.handleSync),
                           ),
                         ],
                       ),
                     ),
                   ),
                 ),
-              SectionHeader(title: '自动备份（本机）'),
+              SectionHeader(title: context.l10n.autoBackupLocal),
               SettingsGroup(
                 children: <Widget>[
                   SwitchListTile(
@@ -404,28 +441,27 @@ class _BackupPageState extends ConsumerState<BackupPage> {
                           .setAutoBackupEnabled(value);
                       await _reload();
                     },
-                    title: const Text('每天自动备份'),
+                    title: Text(context.l10n.autoBackupDaily),
                     subtitle: Text(
-                      '启动、恢复前台与停留前台期间检查；只有数据变化才创建新副本，'
-                      '保留最近 $_retention 份。',
+                      context.l10n.autoBackupHintCount(_retention),
                     ),
                   ),
                   SettingsTile(
                     leading: const Icon(Icons.history_toggle_off),
-                    title: '上次自动备份',
+                    title: context.l10n.lastAutoBackup,
                     subtitle: _lastAuto == null
-                        ? '还没有自动备份'
+                        ? context.l10n.noAutoBackupYet
                         : formatDateTime(_lastAuto!),
                   ),
                 ],
               ),
-              SectionHeader(title: '手动备份（JSON）'),
+              SectionHeader(title: context.l10n.manualBackupJson),
               SettingsGroup(
                 children: <Widget>[
                   SettingsTile(
                     leading: const Icon(Icons.save_alt),
-                    title: '导出到…',
-                    subtitle: '通过系统文件选择器保存到任意位置（含设备设置）',
+                    title: context.l10n.exportTo,
+                    subtitle: context.l10n.exportToHint,
                     trailing: const Icon(Icons.chevron_right),
                     onTap: _busy
                         ? null
@@ -433,8 +469,8 @@ class _BackupPageState extends ConsumerState<BackupPage> {
                   ),
                   SettingsTile(
                     leading: const Icon(Icons.folder_outlined),
-                    title: '立即保存恢复副本',
-                    subtitle: '保存在本机；可直接从下方列表恢复',
+                    title: context.l10n.saveBackupNow,
+                    subtitle: context.l10n.saveBackupNowHint,
                     trailing: const Icon(Icons.chevron_right),
                     onTap: _busy
                         ? null
@@ -442,8 +478,8 @@ class _BackupPageState extends ConsumerState<BackupPage> {
                   ),
                   SettingsTile(
                     leading: const Icon(Icons.restore),
-                    title: '导入并合并',
-                    subtitle: '不会覆盖本地数据：按单词与作答记录去重后合并',
+                    title: context.l10n.importAndMerge,
+                    subtitle: context.l10n.importAndMergeHint,
                     trailing: const Icon(Icons.chevron_right),
                     onTap: _busy ? null : _importMerge,
                   ),
@@ -452,8 +488,7 @@ class _BackupPageState extends ConsumerState<BackupPage> {
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                 child: Text(
-                  '备份包含词条、词书、关联（含删除标记）、作答历史、收藏、标签、'
-                  '学习目标与设备设置。不包含账号、密码或任何同步凭据。',
+                  context.l10n.backupContentsNote,
                   style: theme.textTheme.bodySmall,
                 ),
               ),
@@ -462,12 +497,12 @@ class _BackupPageState extends ConsumerState<BackupPage> {
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                   child: Text(_status!, style: theme.textTheme.bodyMedium),
                 ),
-              SectionHeader(title: '恢复副本（本机）'),
+              SectionHeader(title: context.l10n.localBackups),
               if (_backups.isEmpty)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
                   child: Text(
-                    '还没有恢复副本。自动备份或「立即保存恢复副本」会在此列出。',
+                    context.l10n.noLocalBackups,
                     style: theme.textTheme.bodySmall,
                   ),
                 )
@@ -487,7 +522,7 @@ class _BackupPageState extends ConsumerState<BackupPage> {
                             '${(entry.bytes / 1024 / 1024).toStringAsFixed(1)} MB · '
                             '${entry.name}',
                         trailing: PopupMenuButton<String>(
-                          tooltip: '恢复副本操作',
+                          tooltip: context.l10n.backupActions,
                           onSelected: (String value) {
                             switch (value) {
                               case 'info':
@@ -505,30 +540,30 @@ class _BackupPageState extends ConsumerState<BackupPage> {
                             }
                           },
                           itemBuilder: (BuildContext context) =>
-                              const <PopupMenuEntry<String>>[
+                              <PopupMenuEntry<String>>[
                                 PopupMenuItem<String>(
                                   value: 'info',
-                                  child: Text('查看信息'),
+                                  child: Text(context.l10n.viewInfo),
                                 ),
                                 PopupMenuItem<String>(
                                   value: 'verify',
-                                  child: Text('校验备份'),
+                                  child: Text(context.l10n.checkIntegrity),
                                 ),
                                 PopupMenuItem<String>(
                                   value: 'merge',
-                                  child: Text('合并恢复（安全）'),
+                                  child: Text(context.l10n.mergeRestoreSafe),
                                 ),
                                 PopupMenuItem<String>(
                                   value: 'restore',
-                                  child: Text('恢复到该版本…'),
+                                  child: Text(context.l10n.restoreThisVersion),
                                 ),
                                 PopupMenuItem<String>(
                                   value: 'export',
-                                  child: Text('导出到…'),
+                                  child: Text(context.l10n.exportTo),
                                 ),
                                 PopupMenuItem<String>(
                                   value: 'delete',
-                                  child: Text('删除'),
+                                  child: Text(context.l10n.commonDelete),
                                 ),
                               ],
                         ),
@@ -538,19 +573,17 @@ class _BackupPageState extends ConsumerState<BackupPage> {
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                 child: Text(
-                  '合并恢复：只补充缺失内容，幂等、可重复执行。\n'
-                  '指定版本恢复：原子替换本机数据，先自动保存保护性备份，'
-                  '并暂停同步直到你决定远端如何处理。',
+                  context.l10n.restoreModesNote,
                   style: theme.textTheme.bodySmall,
                 ),
               ),
-              SectionHeader(title: '跨设备同步'),
+              SectionHeader(title: context.l10n.crossDeviceSync),
               SettingsGroup(
                 children: <Widget>[
                   SettingsTile(
                     leading: const Icon(Icons.sync),
-                    title: '打开数据同步',
-                    subtitle: 'GitHub 私有仓库 / WebDAV / 本地文件',
+                    title: context.l10n.openSync,
+                    subtitle: context.l10n.syncTargetsHint,
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () async {
                       await Navigator.of(context).push<void>(
@@ -567,19 +600,20 @@ class _BackupPageState extends ConsumerState<BackupPage> {
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                 child: Text(
-                  '合并只会补充缺失的内容，不会覆盖已有的单词和学习记录；'
-                  '同一份文件重复导入也不会重复计数。',
+                  context.l10n.mergeNeverOverwrites,
                   style: theme.textTheme.bodySmall,
                 ),
               ),
               ExpansionTile(
-                title: Text('合并规则（高级）', style: theme.textTheme.bodyMedium),
+                title: Text(
+                  context.l10n.mergeRulesAdvanced,
+                  style: theme.textTheme.bodyMedium,
+                ),
                 tilePadding: const EdgeInsets.symmetric(horizontal: 16),
                 childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                 children: <Widget>[
                   Text(
-                    '作答记录按全局 ID 去重，学习状态由合并后的历史重新计算；'
-                    '词书关联带版本与删除标记，因此旧备份不会让已移除的单词复活。',
+                    context.l10n.mergeRulesBody,
                     style: theme.textTheme.bodySmall,
                   ),
                 ],

@@ -1,0 +1,2197 @@
+{
+  "@@locale": "en",
+  "navToday": "Today",
+  "@navToday": {
+    "description": "Bottom bar / side navigation destination."
+  },
+  "navWordLists": "Word Lists",
+  "navDictionary": "Dictionary",
+  "navStatistics": "Statistics",
+  "navSettings": "Settings",
+  "navAllWords": "All Words",
+  "navOfflineNote": "Offline · stored on this device",
+  "actionAddWord": "Add Word",
+  "actionAddWordsShortcut": "Add Word ({shortcut})",
+  "@actionAddWordsShortcut": {
+    "placeholders": {
+      "shortcut": {
+        "type": "String"
+      }
+    }
+  },
+  "actionAddWordShortcutMac": "Add Word (⌘N)",
+  "manageAllWords": "All Words",
+  "commonCancel": "Cancel",
+  "commonSave": "Save",
+  "commonDelete": "Delete",
+  "commonClose": "Close",
+  "commonRetry": "Try Again",
+  "commonDone": "Done",
+  "commonContinue": "Continue",
+  "commonClear": "Clear",
+  "commonRestore": "Restore",
+  "commonRemove": "Remove",
+  "commonEdit": "Edit",
+  "commonAdd": "Add",
+  "commonImport": "Import",
+  "commonExport": "Export",
+  "commonRefresh": "Refresh",
+  "commonTest": "Test",
+  "commonAll": "All",
+  "commonCopy": "Copy",
+  "settingsAppearance": "Appearance",
+  "themeSystem": "System Default",
+  "themeLight": "Light",
+  "themeDark": "Dark",
+  "accentColor": "Accent Color",
+  "accentColorHint": "Change the app's theme color.",
+  "accentAnswerNote": "Answer colors are not affected.",
+  "accentCustom": "Custom Color",
+  "accentHex": "HEX",
+  "accentRestoreDefault": "Restore Default Color",
+  "accentClassicGroup": "Classic",
+  "accentMaterialGroup": "Material Design",
+  "appLanguage": "App Language",
+  "appLanguageSystem": "System Default",
+  "appLanguageChinese": "简体中文",
+  "appLanguageEnglish": "English",
+  "accentClearSkyBlue": "Clear Sky Blue",
+  "accentDeepSeaBlue": "Deep Sea Blue",
+  "accentGoldenOrange": "Golden Orange",
+  "accentLemonYellow": "Lemon Yellow",
+  "accentGrassGreen": "Grass Green",
+  "accentJadeGreen": "Jade Green",
+  "accentViolet": "Violet",
+  "accentDeepIndigo": "Deep Indigo",
+  "accentSkyBlue": "Sky Blue",
+  "accentVibrantPink": "Vibrant Pink",
+  "accentOrchidPink": "Orchid Pink",
+  "accentBlue": "Blue",
+  "accentTeal": "Teal",
+  "accentGreen": "Green",
+  "accentRed": "Red",
+  "accentOrange": "Orange",
+  "accentPurple": "Purple",
+  "accentCyan": "Cyan",
+  "accentIndigo": "Indigo",
+  "accentPink": "Pink",
+  "accentBlueGray": "Blue Gray",
+  "accentDeepOrange": "Deep Orange",
+  "accentLightGreen": "Light Green",
+  "stageNotStudied": "Not Studied",
+  "stageLearning": "Learning",
+  "stageReviewing": "Reviewing",
+  "stageRelearning": "Relearning",
+  "mastered": "Mastered",
+  "answerKnow": "Know",
+  "answerNotSure": "Not Sure",
+  "answerDontKnow": "Don't Know",
+  "modeMixed": "New Words & Review",
+  "modeNewOnly": "New Words Only",
+  "modeReviewOnly": "Review Only",
+  "modeSpecial": "Targeted Review",
+  "specialNone": "Regular Study",
+  "specialHard": "Review Difficult Words",
+  "specialMistakes": "Review Recent Mistakes",
+  "specialBook": "Review This Word List",
+  "specialFavorites": "Review Favorites",
+  "specialSessionMistakes": "Review This Round's Mistakes",
+  "specialSprint": "Exam Prep",
+  "practiceSpelling": "Spelling",
+  "practiceDictation": "Dictation",
+  "practiceChoice": "Multiple Choice",
+  "practiceCloze": "Fill in the Blank",
+  "practiceSpellingDesc": "Type the English word for the Chinese meaning.",
+  "practiceDictationDesc": "Listen and type the English word.",
+  "practiceChoiceDesc": "Pick the correct word.",
+  "practiceClozeDesc": "Complete the word in the example sentence.",
+  "sortAddedDesc": "Recently Added",
+  "sortAlpha": "Alphabetical",
+  "sortWrongDesc": "Most Mistakes",
+  "sortLastStudied": "Recently Studied",
+  "filterAll": "All",
+  "filterUnlearned": "Not Studied",
+  "filterLearning": "Learning",
+  "filterReviewing": "Reviewing",
+  "filterRelearning": "Relearning",
+  "filterHard": "Difficult Words",
+  "filterMastered": "Mastered",
+  "errorGeneric": "Something went wrong. Try again.",
+  "errorLoadFailed": "Couldn't load this. Try again.",
+  "errorSaveFailed": "Couldn't save. Try again.",
+  "errorNetwork": "No network connection.",
+  "errorTimeout": "The connection timed out. Try again.",
+  "errorPermission": "No permission to do that.",
+  "sectionDailyGoals": "Daily Goals",
+  "sectionStudy": "Study",
+  "sectionPronunciation": "Pronunciation",
+  "sectionData": "Data",
+  "sectionAbout": "About",
+  "dailyNewWords": "Daily New Words",
+  "dailyReviewLimit": "Daily Review Limit",
+  "dailyGoalsNote": "Goals apply to this device. Words beyond the review limit move to tomorrow.",
+  "studyWordList": "Word List",
+  "allWordLists": "All Word Lists",
+  "studyMode": "Study Mode",
+  "decrease": "Decrease",
+  "increase": "Increase",
+  "enterExactValue": "Enter a number",
+  "valueRange": "Value ({min}–{max})",
+  "@valueRange": {
+    "placeholders": {
+      "min": {
+        "type": "int"
+      },
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "ok": "OK",
+  "enterNumberInRange": "Enter a number between {min} and {max}.",
+  "@enterNumberInRange": {
+    "placeholders": {
+      "min": {
+        "type": "int"
+      },
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "customAccentTitle": "Custom Color",
+  "apply": "Apply",
+  "invalidHexColor": "Enter a 6-digit HEX color, such as #1565C0.",
+  "accentSwatchSemantics": "Accent color {name}",
+  "@accentSwatchSemantics": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "englishVoice": "English Voice",
+  "loadingVoices": "Loading system voices…",
+  "systemDefault": "System Default",
+  "noEnglishVoice": "No English voice is installed. Install one in System Settings to hear pronunciation.",
+  "autoPronounce": "Auto-Pronunciation",
+  "autoPronounceHint": "Offline playback depends on the installed voice.",
+  "refreshVoices": "Refresh Voices",
+  "previewVoice": "Preview Voice",
+  "speakingRate": "Speaking Rate",
+  "keepScreenAwake": "Keep Screen Awake",
+  "keepScreenAwakeHint": "Applies only while studying or practicing.",
+  "keepScreenAwakeUnsupported": "Not available on this platform. Studying is unaffected.",
+  "randomOrder": "Random Order",
+  "randomOrderHint": "Shuffles the order. Targeted review and exam prep are unaffected.",
+  "syncTitle": "Sync",
+  "syncSubtitle": "Keep your data in step across devices.",
+  "backupRestore": "Backup & Restore",
+  "backupRestoreSubtitle": "Back up and restore your study data.",
+  "diagnostics": "Diagnostics",
+  "diagnosticsSubtitle": "Version, logs and troubleshooting.",
+  "aboutBlurb": "An offline-first vocabulary app. Your data stays on this device unless you turn on sync.",
+  "aboutDictionary": "Built-in dictionary: {count} entries (ECDICT, {license} license).",
+  "@aboutDictionary": {
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "format": "decimalPattern"
+      },
+      "license": {
+        "type": "String"
+      }
+    }
+  },
+  "openSourceLicenses": "Open Source Licenses",
+  "licensesSubtitle": "Flutter, Drift, ECDICT and other dependencies",
+  "legalNotice": "ECDICT dictionary data is distributed under the MIT license.",
+  "voiceUnavailable": "Voice unavailable.",
+  "languageSheetTitle": "App Language",
+  "sprintTileSubtitleOn": "Exam on {date} · {count} words per round",
+  "@sprintTileSubtitleOn": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "sprintTileSubtitleOff": "Set up an exam plan",
+  "continueStudying": "Continue Studying",
+  "resumeProgress": "{done} of {total} done",
+  "@resumeProgress": {
+    "placeholders": {
+      "done": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "todayTasks": "Today",
+  "scopeCurrentList": "This word list",
+  "scopeAllLists": "All word lists",
+  "backlogNote": "{count, plural, =1{1 due word is beyond today's review limit. It moves to tomorrow.} other{{count} due words are beyond today's review limit. They move to tomorrow.}}",
+  "@backlogNote": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "startStudying": "Start Studying",
+  "reviewOnly": "Review Only",
+  "newWordsAvailable": "New Words Available",
+  "reviewsAvailable": "Due Reviews",
+  "overdueReviews": "Overdue Reviews",
+  "difficultWords": "Difficult Words",
+  "newWords": "New Words",
+  "review": "Review",
+  "newWordsHintRemaining": "{remaining} left · {unlearned} not studied",
+  "@newWordsHintRemaining": {
+    "placeholders": {
+      "remaining": {
+        "type": "int"
+      },
+      "unlearned": {
+        "type": "int"
+      }
+    }
+  },
+  "noNewWordsInScope": "No new words left in this scope.",
+  "reviewHintRemaining": "{due} due · {remaining} left",
+  "@reviewHintRemaining": {
+    "placeholders": {
+      "due": {
+        "type": "int"
+      },
+      "remaining": {
+        "type": "int"
+      }
+    }
+  },
+  "noDueWords": "No words due for review.",
+  "learnedOfTotal": "{learned} of {total} studied",
+  "@learnedOfTotal": {
+    "placeholders": {
+      "learned": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "todayDone": "Today's tasks are done.",
+  "todayDoneHint": "You can keep practicing, or come back later to review.",
+  "hardWordsSubtitle": "{count, plural, =1{1 word you missed or weren't sure of} other{{count} words you missed or weren't sure of}}",
+  "@hardWordsSubtitle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "noHardWordsYet": "No difficult words yet.",
+  "mistakesSubtitle": "Review words you recently got wrong.",
+  "sectionPractice": "Practice",
+  "practiceNote": "Practice does not use your daily allowance and does not affect your review schedule.",
+  "clozeUsesOwnSentence": "Uses the example stored with the word.",
+  "noWordsYet": "No words yet",
+  "firstRunBody": "Import your own word list, or add the sample list to try the learning flow. You can also tap + to add words by hand.",
+  "importWordList": "Import Word List",
+  "addSampleList": "Add Sample Word List",
+  "sampleAddFailed": "Couldn't add the sample word list.",
+  "sampleLoaded": "Added “{name}”: {count} words.",
+  "@sampleLoaded": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "wordListOptionLabel": "{name} ({count} words)",
+  "@wordListOptionLabel": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "sectionStartStudy": "Start Studying",
+  "sectionSpecialReview": "Targeted Review",
+  "studyLoadFailed": "Couldn't load this session. Try again.",
+  "studySaveFailed": "Couldn't save. Try again.",
+  "undoFailed": "Couldn't undo. Try again.",
+  "skipFailed": "Couldn't skip. Try again.",
+  "wordRemovedSkipped": "This word was removed, so it was skipped.",
+  "stateChangedSkipped": "This word's progress changed. The old card was skipped.",
+  "contentUpdatedReview": "This word was updated. Check it again before answering.",
+  "sprintChanged": "The exam plan changed. Go back and set it up again.",
+  "reviewLimitReached": "Today's review limit is reached. You can allow extra reviews in the exam plan.",
+  "practiceLoadFailed": "Couldn't load this practice. Try again.",
+  "practiceSaveFailed": "Couldn't save this practice. Try again.",
+  "practiceWordDeleted": "This word was deleted. The round restarts.",
+  "practiceContentUpdated": "This word was updated. The round restarts.",
+  "practiceWordUnlinked": "This word is no longer in the word list. The round restarts.",
+  "editWord": "Edit Word",
+  "undoLastAnswer": "Undo Last Answer",
+  "skip": "Skip",
+  "moreActions": "More",
+  "repeatPractice": "Repeat Practice",
+  "newWordTag": "New",
+  "reviewWithStage": "Review · {stage}",
+  "@reviewWithStage": {
+    "placeholders": {
+      "stage": {
+        "type": "String"
+      }
+    }
+  },
+  "wrongCountChip": "{count, plural, =1{1 miss} other{{count} misses}}",
+  "@wrongCountChip": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "recallMeaning": "Recall the meaning",
+  "noChineseMeaning": "No Chinese meaning yet",
+  "englishDefinition": "English Definition",
+  "exampleSentence": "Example",
+  "phrases": "Phrases",
+  "notes": "Notes",
+  "speak": "Pronounce",
+  "studyHistoryShort": "{correct} correct · {hazy} unsure · {wrong} wrong · {days}-day interval",
+  "@studyHistoryShort": {
+    "placeholders": {
+      "correct": {
+        "type": "int"
+      },
+      "hazy": {
+        "type": "int"
+      },
+      "wrong": {
+        "type": "int"
+      },
+      "days": {
+        "type": "int"
+      }
+    }
+  },
+  "showMeaning": "Show Meaning",
+  "keyHintShowMeaning": "Press {key} to show the meaning",
+  "@keyHintShowMeaning": {
+    "placeholders": {
+      "key": {
+        "type": "String"
+      }
+    }
+  },
+  "back": "Back",
+  "nothingDueSpecial": "Nothing due for review",
+  "nothingToStudyToday": "Nothing to study today",
+  "specialEmptyMessage": "Only words matching this review are included. Your normal queue is unchanged.",
+  "nothingLeftTodayMessage": "Today's new words and reviews are done. Adjust your goals, import more words, or come back later.",
+  "roundSummaryFailed": "Couldn't load this round.",
+  "roundComplete": "Round Complete",
+  "wordsAndAnswers": "{words} words · {answers} answers",
+  "@wordsAndAnswers": {
+    "placeholders": {
+      "words": {
+        "type": "int"
+      },
+      "answers": {
+        "type": "int"
+      }
+    }
+  },
+  "accuracyValue": "Accuracy {value}",
+  "@accuracyValue": {
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "timeSpent": "{minutes} min {seconds} s (pauses included)",
+  "@timeSpent": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      },
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "roundDifficultWords": "Difficult Words",
+  "deletedWordSuffix": " (deleted)",
+  "roundDifficultNote": "Words you weren't sure of or didn't know. Deleted words are not repeated.",
+  "backlogCarried": "{count, plural, =1{1 due word moves to tomorrow.} other{{count} due words move to tomorrow.}}",
+  "@backlogCarried": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "errorAuthFailed": "Unable to sign in. Check your credentials.",
+  "errorRemoteFileMissing": "The sync file is missing from the remote location.",
+  "errorInvalidBackup": "This file is not a valid backup.",
+  "studyTitle": "Study",
+  "practiceVoiceHintUsed": "Voice unavailable. The Chinese meaning is shown instead.",
+  "nothingToPractice": "Nothing to practice",
+  "practiceCannotStart": "Can't start this practice",
+  "clozeEmptyMessage": "Fill in the Blank uses only the example stored with each word. Add an example, or try another practice.",
+  "practiceEmptyMessage": "Practice needs words with a Chinese meaning. Add or import words first.",
+  "undoLastQuestion": "Undo Last Answer",
+  "playAgain": "Play Again",
+  "listenAndType": "Listen and type the word.",
+  "hintWithText": "Hint: {text}",
+  "@hintWithText": {
+    "placeholders": {
+      "text": {
+        "type": "String"
+      }
+    }
+  },
+  "correct": "Correct",
+  "incorrect": "Wrong",
+  "correctSpelling": "Correct spelling: {answer}",
+  "@correctSpelling": {
+    "placeholders": {
+      "answer": {
+        "type": "String"
+      }
+    }
+  },
+  "yourAnswer": "Your answer: {answer}",
+  "@yourAnswer": {
+    "placeholders": {
+      "answer": {
+        "type": "String"
+      }
+    }
+  },
+  "practiceAnswerNote": "This answer is recorded but does not change the word's review interval.",
+  "viewResults": "View Results",
+  "nextQuestion": "Next",
+  "typeTheWord": "Type the word",
+  "submit": "Submit",
+  "chooseCorrectWord": "Choose the correct word above.",
+  "hideHint": "Hide Hint",
+  "showHint": "Show Hint",
+  "practiceComplete": "Practice Complete",
+  "answersCount": "Answers",
+  "skipped": "Skipped",
+  "practiceAccuracy": "Accuracy {value} · {count, plural, =1{1 word} other{{count} words}}",
+  "@practiceAccuracy": {
+    "placeholders": {
+      "value": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "worthAnotherLook": "Worth Another Look",
+  "practiceStatsNote": "Practice answers count towards statistics but do not change the review interval.",
+  "continuePracticing": "Continue Practicing",
+  "sprintPlanFailed": "Couldn't load the exam plan.",
+  "createListFirst": "Add or import a word list first.",
+  "sprintSaveFailed": "Couldn't save the exam plan.",
+  "sprintNothingToRun": "Nothing to review right now. Check the plan and today's limits.",
+  "sprintPrepareFailed": "Couldn't start exam prep.",
+  "setSprintPlan": "Exam Plan",
+  "sprintTileOff": "Set up an exam plan",
+  "examPassedDays": "Exam was {days} days ago",
+  "@examPassedDays": {
+    "placeholders": {
+      "days": {
+        "type": "int"
+      }
+    }
+  },
+  "examToday": "Exam today",
+  "examInDays": "Exam in {days} days",
+  "@examInDays": {
+    "placeholders": {
+      "days": {
+        "type": "int"
+      }
+    }
+  },
+  "targetListName": "Word list: {name}",
+  "@targetListName": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "notSet": "Not set",
+  "sprintDisabledNote": "Exam prep is off.",
+  "sprintBookUnavailable": "The word list is unavailable. Choose another one.",
+  "unlearnedWords": "Not Studied",
+  "recentMistakes7d": "Recent Mistakes",
+  "sprintThisRound": "{count} words this round",
+  "@sprintThisRound": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "sprintEligibleLine": "{eligible} eligible · {allowance} reviews left today",
+  "@sprintEligibleLine": {
+    "placeholders": {
+      "eligible": {
+        "type": "int"
+      },
+      "allowance": {
+        "type": "int"
+      }
+    }
+  },
+  "sprintOnlyUnlearned": "Only unstudied words are left. You can include them in the plan.",
+  "sprintLimitReached": "Today's review limit is reached. You can allow extra reviews in the plan.",
+  "sprintAlgorithmNote": "Prioritises difficult words and recent mistakes, while still covering other words.",
+  "aboutSprintPlan": "About Exam Prep",
+  "sprintAboutBody": "Exam prep builds its own queue from the selected word list. Answers are recorded as ordinary reviews, so they count towards today's limit and move the word's next review date; a correct answer today does not shorten an interval already earned. Changing the plan re-plans the queue and keeps every recorded answer.",
+  "continueSprint": "Continue Exam Prep",
+  "startSprint": "Start Exam Prep",
+  "endSprint": "End Exam Prep",
+  "sprintEnable": "Turn On Exam Prep",
+  "examDateLabel": "Exam date: {date}",
+  "@examDateLabel": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "chooseDate": "Choose",
+  "roundSizeShort": "Words per Round",
+  "roundSizeRange": "Words per Round (1–500)",
+  "prioritizeHard": "Prioritise Difficult Words",
+  "prioritizeRecent": "Prioritise Recent Mistakes",
+  "prioritizeUnmastered": "Prioritise Unmastered Words",
+  "includeUnlearned": "Include Unstudied Words",
+  "allowOverReviewLimit": "Allow Extra Reviews",
+  "sprintDialogNote": "Exam prep is a separate practice. With extra reviews off it respects today's limit. Changing the plan re-plans the queue and keeps your answers.",
+  "sprintVersionUnsupported": "This plan was made by a newer version. Update the app.",
+  "sprintInvalidSwitch": "This plan isn't valid. Set it up again.",
+  "sprintInvalidDate": "That exam date isn't valid.",
+  "sprintInvalidBook": "That word list isn't valid.",
+  "sprintInvalidRoundSize": "Words per round must be between 1 and 500.",
+  "sprintIncomplete": "Choose an exam date and a word list.",
+  "newWordList": "New Word List",
+  "wordListName": "Word List Name",
+  "refreshOnlineList": "Refresh Online List",
+  "sourceUrlLabel": "Source: {url}",
+  "@sourceUrlLabel": {
+    "placeholders": {
+      "url": {
+        "type": "String"
+      }
+    }
+  },
+  "onlineListTotal": "The online list has {count} words.",
+  "@onlineListTotal": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "refreshExisting": "Already on this device: {count}",
+  "@refreshExisting": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "refreshToAdd": "To add: {count}",
+  "@refreshToAdd": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "refreshDuplicate": "Duplicates in the file: {count}",
+  "@refreshDuplicate": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "refreshInvalid": "Invalid entries: {count}",
+  "@refreshInvalid": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "refreshDropped": "Lines skipped: {count}",
+  "@refreshDropped": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "refreshDeletedByUser": "Deleted by you, not restored: {count}",
+  "@refreshDeletedByUser": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "refreshLocalOnly": "Removed from the source, kept here: {count}",
+  "@refreshLocalOnly": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "refreshNote": "Only missing words are added. Nothing on this device is deleted, restored, overwritten or reset. Canceling changes nothing.",
+  "confirmRefresh": "Refresh",
+  "refreshDone": "Refresh complete. Added {added}, updated {updated}, already present {existing}.",
+  "@refreshDone": {
+    "placeholders": {
+      "added": {
+        "type": "int"
+      },
+      "updated": {
+        "type": "int"
+      },
+      "existing": {
+        "type": "int"
+      }
+    }
+  },
+  "refreshCancelled": "Refresh canceled. Nothing changed.",
+  "refreshFailed": "Couldn't refresh this word list. Try again.",
+  "nothingToExport": "No word lists to export.",
+  "exportListTitle": "Export Word List",
+  "wordCountPlural": "{count, plural, =0{No words} =1{1 word} other{{count} words}}",
+  "@wordCountPlural": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "exportContentNote": "Exports word content only: no study history, notes or credentials. Use Backup & Restore for a full backup.",
+  "exportSelected": "Export {count, plural, =1{1 Word List} other{{count} Word Lists}}",
+  "@exportSelected": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chooseFormat": "Choose Format",
+  "exportCancelled": "Export canceled.",
+  "exportDone": "Exported {books} word lists · {words} words (no study history).",
+  "@exportDone": {
+    "placeholders": {
+      "books": {
+        "type": "int"
+      },
+      "words": {
+        "type": "int"
+      }
+    }
+  },
+  "exportFailed": "Couldn't export. Try again.",
+  "myWordLists": "My Word Lists",
+  "wordListsLoadFailed": "Couldn't load word lists. Try again.",
+  "noWordLists": "No word lists yet",
+  "noWordListsMessage": "Create a word list, then import your words — one per line.",
+  "renameWordList": "Rename Word List",
+  "deleteWordListTitle": "Delete Word List?",
+  "deleteWordListBody": "“{name}” will be deleted. Words and study history are kept.",
+  "@deleteWordListBody": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "allWordsNote": "All Words filters by list, progress and difficulty, and can add, remove or delete in bulk.",
+  "currentTag": "Current",
+  "setForStudy": "Use for Study",
+  "commonRename": "Rename",
+  "importIntoList": "Import into This List",
+  "wordListRowStats": "{count} words · {learned} studied · {due} due",
+  "@wordListRowStats": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "learned": {
+        "type": "int"
+      },
+      "due": {
+        "type": "int"
+      }
+    }
+  },
+  "protectiveBackupFailed": "Couldn't create the safety backup, so nothing was changed.",
+  "exportDoneSingle": "Exported {count} words (no study history).",
+  "@exportDoneSingle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "searchWordsHint": "Search words, meanings or notes",
+  "wordListLoadFailed": "Couldn't load this word list. Try again.",
+  "wordListEmpty": "This word list is empty",
+  "noMatchingWords": "No matching words",
+  "wordListEmptyMessage": "Add or import words to start studying.",
+  "operationFailedNothingChanged": "The action failed. Nothing was changed. Try again.",
+  "selectionFailed": "Couldn't select these words. Try again.",
+  "updatedWordsCount": "{count, plural, =1{Updated 1 word} other{Updated {count} words}}",
+  "@updatedWordsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "markMasteredTitle": "Mark as Mastered?",
+  "unmarkMasteredTitle": "Unmark as Mastered?",
+  "unmarkMasteredBody": "Clears the manual mark. Progress returns to what the recorded answers say, without adding answers.",
+  "markMasteredBody": "Marks {count, plural, =1{1 word} other{{count} words}} as mastered and schedules a review in 30 days. Study history is kept; it doesn't count as an answer.",
+  "@markMasteredBody": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "markMasteredBodyOne": "Marks this word as mastered and schedules a review in 30 days. Study history is kept; it doesn't count as an answer or affect accuracy.",
+  "unmarkMasteredDone": "{count, plural, =1{Unmarked 1 word} other{Unmarked {count} words}}",
+  "@unmarkMasteredDone": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "markMasteredDone": "{count, plural, =1{Marked 1 word as mastered} other{Marked {count} words as mastered}}",
+  "@markMasteredDone": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "resetProgressTitle": "Reset Progress?",
+  "resetProgressBodyBulk": "Clears the learning state of {count, plural, =1{1 word} other{{count} words}}: answers, interval and next review date. The words and their answer history are kept.",
+  "@resetProgressBodyBulk": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "resetProgressBodyOne": "Clears this word's learning state: answers, interval and next review date. The word and its answer history are kept.",
+  "reset": "Reset",
+  "resetDone": "{count, plural, =1{Reset 1 word} other{Reset {count} words}}",
+  "@resetDone": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "addListFirst": "Add a word list first.",
+  "addToWordList": "Add to Word List",
+  "addedToWordList": "{count, plural, =1{Added 1 word} other{Added {count} words}}",
+  "@addedToWordList": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chooseListFirst": "Choose a word list above first.",
+  "removeFromWordList": "Remove from Word List",
+  "removeFromListBody": "Remove {count, plural, =1{1 word} other{{count} words}} from “{book}”? Links to other word lists and study progress are unaffected.",
+  "@removeFromListBody": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "book": {
+        "type": "String"
+      }
+    }
+  },
+  "removedFromWordList": "{count, plural, =1{Removed 1 word from the list} other{Removed {count} words from the list}}",
+  "@removedFromWordList": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "deleteWordsTitle": "Delete Words?",
+  "deleteWordsBodyBulk": "Delete {count, plural, =1{1 word} other{{count} words}} from every word list? Study history is kept. To take a word out of one list only, use Remove from Word List.",
+  "@deleteWordsBodyBulk": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "deleteWordsBodyOne": "Delete this word from every word list? Study history is kept. To take it out of one list only, use Remove from Word List.",
+  "deletedWordsCount": "{count, plural, =1{Deleted 1 word} other{Deleted {count} words}}",
+  "@deletedWordsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "tagsManagement": "Tags",
+  "noMatchingWordsGroup": "No matching words",
+  "emptyFilterHint": "Try another filter, or add words first.",
+  "noMatchForQuery": "No words match “{query}”.",
+  "@noMatchForQuery": {
+    "placeholders": {
+      "query": {
+        "type": "String"
+      }
+    }
+  },
+  "favoritesOnly": "Favorites only",
+  "tags": "Tags",
+  "allTags": "All Tags",
+  "statusLabel": "Progress",
+  "sortLabel": "Sort",
+  "selectAllResults": "Select all {count}",
+  "@selectAllResults": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "clearSelection": "Clear",
+  "selectLoaded": "Select {count}",
+  "@selectLoaded": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "selectedCount": "{count} selected",
+  "@selectedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "batchFavoritesAndTags": "Favorites & Tags",
+  "favoriteSelected": "Add to Favorites",
+  "unfavoriteSelected": "Remove from Favorites",
+  "addTag": "Add Tag",
+  "removeTag": "Remove Tag",
+  "removeFromCurrentList": "Remove from Word List",
+  "markMastered": "Mark as Mastered",
+  "unmarkMastered": "Unmark as Mastered",
+  "resetProgress": "Reset Progress",
+  "loadMore": "Load More",
+  "errorRateChip": "{percent}% wrong",
+  "@errorRateChip": {
+    "placeholders": {
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "noChineseMeaningShort": "No Chinese meaning",
+  "selectAWord": "Select a word",
+  "selectAWordHint": "Choose a word to see its history and actions.",
+  "wordDetailTitle": "Word Details",
+  "wordNotFound": "Word Not Found",
+  "errorRateLabel": "Error rate {value}",
+  "@errorRateLabel": {
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "answersTimes": "{count, plural, =1{1 answer} other{{count} answers}}",
+  "@answersTimes": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "inWordLists": "In {count, plural, =1{1 word list} other{{count} word lists}}",
+  "@inWordLists": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "nextReviewNone": "Next review: none",
+  "nextReviewAt": "Next review: {date} ({relative})",
+  "@nextReviewAt": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      },
+      "relative": {
+        "type": "String"
+      }
+    }
+  },
+  "answerHistory": "Answer History (last {count})",
+  "@answerHistory": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "noAnswerHistory": "No answers recorded yet.",
+  "eventNewStudy": "New",
+  "eventReview": "Review",
+  "eventReset": "Reset",
+  "eventManual": "Manual",
+  "eventSpecial": "Targeted",
+  "unmarkMasteredBodyOne": "Returns the word to learning and schedules a near review. History is kept; no answer is added.",
+  "navAllWordsWithCount": "All Words ({count})",
+  "@navAllWordsWithCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "noRecord": "none",
+  "wordManagementDeleteWord": "Delete Word",
+  "timeJustNow": "just now",
+  "timeAgo": "{value} ago",
+  "@timeAgo": {
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "timeIn": "in {value}",
+  "@timeIn": {
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "timeValue": "{count, plural, =1{1 minute} other{{count} minutes}}",
+  "@timeValue": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "timeHoursValue": "{count, plural, =1{1 hour} other{{count} hours}}",
+  "@timeHoursValue": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "timeDaysValue": "{count, plural, =1{1 day} other{{count} days}}",
+  "@timeDaysValue": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "timeMonthsValue": "{count, plural, =1{1 month} other{{count} months}}",
+  "@timeMonthsValue": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "timeYearsValue": "{count, plural, =1{1 year} other{{count} years}}",
+  "@timeYearsValue": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "saved": "Saved",
+  "wordNotInDictionary": "The dictionary doesn't have this word.",
+  "filledFromDictionary": "Blank fields were filled from the dictionary. Save to keep them.",
+  "wordEntry": "Word",
+  "removeFromListBodyWord": "Remove “{word}” from this word list? The word, its other word lists and study progress are kept.",
+  "@removeFromListBodyWord": {
+    "placeholders": {
+      "word": {
+        "type": "String"
+      }
+    }
+  },
+  "deleteWordBodyName": "Delete “{word}” from every word list? Study history is kept. To remove it from one list only, use Remove from Word List.",
+  "@deleteWordBodyName": {
+    "placeholders": {
+      "word": {
+        "type": "String"
+      }
+    }
+  },
+  "fillFromDictionary": "Fill from Dictionary",
+  "wordInfo": "Word Info",
+  "wordField": "Word",
+  "phonetics": "Phonetics",
+  "partOfSpeech": "Part of Speech",
+  "chineseMeaning": "Chinese Meaning",
+  "savedAsCustom": "Once saved, this word is marked as edited, and dictionary updates won't overwrite what you typed.",
+  "saving": "Saving…",
+  "learningProgress": "Learning Progress",
+  "editedTag": "Edited",
+  "sourceLabel": "Source: {source}",
+  "@sourceLabel": {
+    "placeholders": {
+      "source": {
+        "type": "String"
+      }
+    }
+  },
+  "sourceManual": "Added by hand",
+  "sourceImport": "Imported",
+  "sourceUrl": "Online list",
+  "sourceSample": "Sample list",
+  "sourceDictionary": "Dictionary",
+  "sourceFile": "Imported",
+  "sourceOther": "Other",
+  "intervalDays": "{count, plural, =1{1 day} other{{count} days}}",
+  "@intervalDays": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "intervalLabel": "Interval",
+  "statsOverview": "Overview",
+  "totalWordsLabel": "Total Words",
+  "learnedLabel": "Studied",
+  "unlearnedLabel": "Not Studied",
+  "accuracyLabel": "Accuracy",
+  "overallAccuracy": "Overall Accuracy",
+  "todayStudy": "Today",
+  "todayNewWords": "New Words",
+  "todayReviews": "Reviews",
+  "cumulativeCorrect": "Correct",
+  "cumulativeWrong": "Wrong",
+  "cumulativeHazy": "Not Sure",
+  "distinctAnsweredWords": "Words Answered",
+  "answerBreakdown": "Answer Breakdown",
+  "breakdownStudyReview": "Study & Review",
+  "breakdownSpecial": "Targeted Review",
+  "breakdownPractice": "Practice",
+  "breakdownRepeat": "Repeat Practice",
+  "distinctWordsAnswered": "Distinct Words",
+  "undoneAnswers": "Undone",
+  "breakdownNote": "Practice counts as answers but doesn't affect your review plan. Marking as mastered or resetting progress doesn't count.",
+  "answersLast7Days": "Answers in the Last 7 Days",
+  "reviewsNext7Days": "Reviews in the Next 7 Days",
+  "noScheduledReviews": "No reviews scheduled.",
+  "wordListProgress": "Word List Progress",
+  "wordPerformance": "Performance",
+  "lastStudiedDay": "Last Studied",
+  "accuracyFormula": "Accuracy = Know answers ÷ all answers, counted across every session and device.",
+  "noAnswersYet": "No answers yet. Finish one study session to see real numbers.",
+  "wordErrorHazyStat": "{wrong} wrong · {hazy} unsure",
+  "@wordErrorHazyStat": {
+    "placeholders": {
+      "wrong": {
+        "type": "int"
+      },
+      "hazy": {
+        "type": "int"
+      }
+    }
+  },
+  "noAnswersLast7Days": "No answers in the last 7 days.",
+  "aboutStatistics": "About Statistics",
+  "aboutStatisticsBody": "Overview counts every word in the current scope. Today covers this device's answers since midnight; the overview is cumulative. Answers are compared across all sessions and devices, and undone answers are listed separately rather than removed from history.",
+  "valueTimes": "{count}",
+  "@valueTimes": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "statsLoadFailed": "Couldn't load statistics.",
+  "searchWordHint": "Search words (⌘F)",
+  "searchWordHintPlain": "Search words",
+  "recentSearch": "Recent",
+  "offlineDictionary": "Offline Dictionary",
+  "dictionaryEmptyBody": "Search {count} English words and add them straight to a word list.",
+  "@dictionaryEmptyBody": {
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "format": "decimalPattern"
+      }
+    }
+  },
+  "relatedWords": "Related Words",
+  "wordFormHint": "Past tense or past participle of {word}",
+  "@wordFormHint": {
+    "placeholders": {
+      "word": {
+        "type": "String"
+      }
+    }
+  },
+  "relationPastParticiple": "past tense or past participle",
+  "relationPlural": "plural or third-person form",
+  "relationPresentParticiple": "present participle or gerund",
+  "relationComparative": "comparative",
+  "relationSuperlative": "superlative",
+  "myWordsCount": "My Words ({count})",
+  "@myWordsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "dictionaryResultsCount": "Results ({count})",
+  "@dictionaryResultsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "noDictionaryMatch": "The dictionary doesn't have this word. You can add it by hand and fill in the meaning later.",
+  "addTermAsWord": "Add “{term}”",
+  "@addTermAsWord": {
+    "placeholders": {
+      "term": {
+        "type": "String"
+      }
+    }
+  },
+  "dictionaryHint": "Use + to add a word to the current list. Existing words keep their progress and notes.",
+  "dictionarySearchFailed": "Couldn't search the dictionary.",
+  "addFailed": "Couldn't add. Try again.",
+  "tagCreateFirst": "Create a tag in Tags first.",
+  "chooseTag": "Choose Tag",
+  "unfavoriteWord": "Remove from Favorites",
+  "favoriteWord": "Add to Favorites",
+  "favoriteFailed": "Couldn't update favorites. Try again.",
+  "tagOperationFailed": "Couldn't update tags. Try again.",
+  "removeTagNamed": "Remove tag {name}",
+  "@removeTagNamed": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "manageTags": "Manage Tags",
+  "createTag": "Create Tag",
+  "renameTag": "Rename Tag",
+  "tagName": "Tag Name",
+  "deleteTag": "Delete Tag",
+  "deleteTagBody": "Delete “{name}” and its word links? Words, favorites and study history are kept.",
+  "@deleteTagBody": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "tagsLoadFailed": "Couldn't load tags. Open this page again.",
+  "noTagsYet": "No tags yet",
+  "tagDeleteAction": "Delete tag {name}",
+  "@tagDeleteAction": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "intakeAdded": "Added “{word}”.",
+  "@intakeAdded": {
+    "placeholders": {
+      "word": {
+        "type": "String"
+      }
+    }
+  },
+  "intakeRevivedLinked": "Restored “{word}” and added it to the list. Study history was kept.",
+  "@intakeRevivedLinked": {
+    "placeholders": {
+      "word": {
+        "type": "String"
+      }
+    }
+  },
+  "intakeRevived": "Restored “{word}”. Study history was kept.",
+  "@intakeRevived": {
+    "placeholders": {
+      "word": {
+        "type": "String"
+      }
+    }
+  },
+  "intakeUnchanged": "“{word}” is unchanged.",
+  "@intakeUnchanged": {
+    "placeholders": {
+      "word": {
+        "type": "String"
+      }
+    }
+  },
+  "intakeUpdated": "Updated {count, plural, =1{1 field} other{{count} fields}} of “{word}”.",
+  "@intakeUpdated": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "word": {
+        "type": "String"
+      }
+    }
+  },
+  "intakeAlreadyInList": "“{word}” is already in this list.",
+  "@intakeAlreadyInList": {
+    "placeholders": {
+      "word": {
+        "type": "String"
+      }
+    }
+  },
+  "intakeExists": "“{word}” already exists and is unchanged.",
+  "@intakeExists": {
+    "placeholders": {
+      "word": {
+        "type": "String"
+      }
+    }
+  },
+  "intakeDeletedSkipped": "“{word}” was deleted and wasn't restored.",
+  "@intakeDeletedSkipped": {
+    "placeholders": {
+      "word": {
+        "type": "String"
+      }
+    }
+  },
+  "dictNotFoundManual": "No meaning found. You can add one by hand.",
+  "dictFilled": "Filled from the dictionary.",
+  "dictLookupFailed": "Couldn't query the dictionary. You can type the meaning yourself.",
+  "enterEnglishWord": "Enter an English word.",
+  "listDeleted": "That word list was deleted.",
+  "pasteWordsPerLine": "Paste words, one per line.",
+  "addMultiple": "Add Multiple Words",
+  "parseFailed": "Couldn't read this. Check the format.",
+  "batchAddFailed": "Couldn't add these words. Try again.",
+  "addOneWord": "Add One Word",
+  "englishWord": "English Word",
+  "typeToLookUp": "Type a word to look it up",
+  "optional": "Optional",
+  "dictMissingNote": "You can save even if the dictionary doesn't have it, and fill in the meaning later.",
+  "preview": "Preview",
+  "importing": "Adding…",
+  "saveAndContinueShortcut": "Save and Continue (⌘Enter)",
+  "saveAndContinue": "Save and Continue",
+  "quickAddNote": "Uses the last chosen word list. Existing words keep their meaning, notes and progress; only what you change is overwritten.",
+  "batchWordsPerLine": "One word per line",
+  "foundWordCount": "{count, plural, =1{Found 1 word} other{Found {count} words}}",
+  "@foundWordCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "batchDuplicates": "{count} duplicates merged",
+  "@batchDuplicates": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "batchInvalidLines": "{count} lines ignored",
+  "@batchInvalidLines": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "batchDefinitionStats": "{withMeaning} have a meaning or can be filled from the dictionary; {withoutMeaning} need one.",
+  "@batchDefinitionStats": {
+    "placeholders": {
+      "withMeaning": {
+        "type": "int"
+      },
+      "withoutMeaning": {
+        "type": "int"
+      }
+    }
+  },
+  "batchKeepsProgress": "Existing progress is kept.",
+  "moreTotal": "…{count} in total",
+  "@moreTotal": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "targetList": "Word List",
+  "wordEmpty": "Enter a word.",
+  "wordTooLong": "That word is too long (64 characters at most).",
+  "chooseWordListFile": "Choose a Word List File",
+  "cannotReadFile": "Couldn't read this file. Only local files are supported.",
+  "downloadParseFailed": "Couldn't download or read this link. Check the file.",
+  "downloadCancelled": "Download canceled. Nothing was written.",
+  "chooseTargetList": "Choose a word list first.",
+  "importFailedUnchanged": "Import failed. Nothing was changed.",
+  "importWordListTitle": "Import Word List",
+  "stepChooseSource": "1. Source",
+  "chooseFile": "Choose File",
+  "formatHelp": "Format",
+  "downloadLink": "Word List Link (TXT / CSV / JSON)",
+  "download": "Download",
+  "cancelDownload": "Cancel Download",
+  "stepPreview": "2. Preview",
+  "statImportable": "Importable",
+  "statNewWords": "New",
+  "statExistingWords": "Existing",
+  "statRestorable": "Restorable",
+  "statWillLink": "Will be added",
+  "statDuplicates": "Duplicates",
+  "statInvalid": "Invalid",
+  "statFormat": "Format",
+  "statLists": "Word Lists",
+  "fileRowsSummary": "{total} lines. {skipped} won't be imported (see below).",
+  "@fileRowsSummary": {
+    "placeholders": {
+      "total": {
+        "type": "int"
+      },
+      "skipped": {
+        "type": "int"
+      }
+    }
+  },
+  "restorableNote": "{count} of them were deleted by you. An explicit import restores them and keeps their history; refreshing an online list does not.",
+  "@restorableNote": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "issuesHeader": "First {count} issues:",
+  "@issuesHeader": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "stepTargetList": "3. Word List",
+  "addToExistingList": "Add to an Existing Word List",
+  "chooseWordList": "Choose a word list",
+  "importMergeNote": "Existing words are not created twice and their progress is kept. Only missing details are filled in, and the word is linked to the chosen list.",
+  "startImportCount": "Import {count, plural, =1{1 Word} other{{count} Words}}",
+  "@startImportCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "importComplete": "Import Complete",
+  "noFileChosen": "No file chosen",
+  "formatSummary": "TXT: one word per line. CSV: a word column is required. JSON: a words array is required.",
+  "supportedFormats": "Supported Formats",
+  "importResultAdded": "Added",
+  "importResultExisting": "Already present",
+  "importResultUpdated": "Updated",
+  "importResultRestored": "Restored",
+  "importResultDuplicate": "Duplicates",
+  "importResultSkipped": "Not imported",
+  "formatHelpTxt": "TXT\nOne word per line. An optional meaning can follow a tab or a comma:\n  abandon\n  abandon\tv. to give up",
+  "formatHelpCsv": "CSV\nOne header row, and a word column is required. phonetic / pos / translation / definition / example / note are optional.",
+  "formatHelpJson": "JSON\nA schemaVersion, an optional name, and a words array. Each entry is an object with word, plus optional translation, phonetic, pos, definition, example and note.",
+  "formatHelpFooter": "Files must be UTF-8. One import is limited to {entries} words and {megabytes} MB; download links must be HTTPS. Missing phonetics and meanings are filled in from the offline dictionary, and existing progress and notes are never overwritten.",
+  "@formatHelpFooter": {
+    "placeholders": {
+      "entries": {
+        "type": "int",
+        "format": "decimalPattern"
+      },
+      "megabytes": {
+        "type": "int"
+      }
+    }
+  },
+  "saveDiagnostics": "Save Diagnostics",
+  "diagnosticsExported": "Diagnostics exported (no account or study content).",
+  "diagnosticsExportFailed": "Couldn't export diagnostics.",
+  "logsSection": "Logs",
+  "detailedLogging": "Detailed Logs",
+  "detailedLoggingHint": "Off by default. When on, keeps the last 400 entries for 24 hours, with sensitive values removed.",
+  "exportDiagnosticsReport": "Export Diagnostics",
+  "exportDiagnosticsHint": "Version, database and dictionary statistics, sync status. No account or study content.",
+  "clearLogs": "Clear Logs",
+  "noLogs": "Nothing recorded yet",
+  "logCount": "{count, plural, =1{1 entry} other{{count} entries}}",
+  "@logCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "logsCleared": "Logs cleared.",
+  "deviceSection": "Device",
+  "deviceIdLabel": "Device ID",
+  "reading": "Reading…",
+  "deviceIdCopied": "Device ID copied (used only to investigate sync problems).",
+  "diagnosticsPrivacy": "Diagnostics never include passwords, credentials, word content or personal notes. The sync configuration records only the sync method, not the address, account or path.",
+  "chooseRemoteFolder": "Choose Remote Folder",
+  "cannotReadFolder": "Couldn't read this folder.",
+  "newFolder": "New Folder",
+  "folderName": "Folder Name",
+  "create": "Create",
+  "serverLabel": "Server: {url}",
+  "@serverLabel": {
+    "placeholders": {
+      "url": {
+        "type": "String"
+      }
+    }
+  },
+  "chooseThisFolder": "Choose This Folder",
+  "parentFolder": "Up One Level",
+  "noSubfolders": "No subfolders here. You can choose this folder or create one.",
+  "syncOff": "Off",
+  "syncOffHint": "Study data stays on this device.",
+  "localFile": "Local File",
+  "localFileHint": "Transfers data through a JSON file.",
+  "githubPrivateRepo": "GitHub",
+  "githubHint": "Keeps study data in a private repository.",
+  "webdavHint": "Syncs through a compatible WebDAV service.",
+  "credentialsUnreadable": "{reason}. The saved credentials can't be read; enter them again. Offline study is unaffected.",
+  "@credentialsUnreadable": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "tokenMissing": "No saved access token was found. Enter it again before syncing.",
+  "passwordMissing": "No saved WebDAV password was found. Enter it again before syncing.",
+  "draftNotSaved": "The connection settings aren't saved yet. Auto options are saved and verified when you tap Sync Now.",
+  "configChanged": "The connection settings changed. Open this page again.",
+  "preferencesSaved": "Preferences saved. Automatic sync starts only after Test Connection verifies safe writes.",
+  "preferencesSaveFailed": "Couldn't save the auto-sync options. Try again.",
+  "credentialsNotSaved": "{reason}. The credentials were not saved; enter them again. Offline study is unaffected.",
+  "@credentialsNotSaved": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "connectionTestFailed": "Couldn't test this connection.",
+  "remoteFolderChosen": "Remote folder selected: {path}",
+  "@remoteFolderChosen": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "cannotBrowseRemote": "Couldn't browse the remote folder.",
+  "syncInProgress": "A sync is already running.",
+  "firstSyncTitle": "First Sync",
+  "firstSyncBody": "The first sync merges the remote data with this device. It won't overwrite local progress and won't delete local words.\n\nContinue?",
+  "startMerging": "Merge",
+  "unsafeServerBody": "This is normally written with a conditional request, so two devices editing at once can't overwrite each other. This server can't do that, so automatic merge and Sync Now won't run.\n\nUse Export Backup, or a WebDAV service that supports conditional requests.",
+  "retestConnection": "Test Again",
+  "exportBackup": "Export Backup",
+  "syncFailed": "Sync failed.",
+  "remoteBecameEmpty": "Remote file became empty",
+  "remoteIsEmpty": "Remote file is empty",
+  "remoteEmptiedBody": "This target synced successfully before, but the remote file is now 0 bytes.\n\nContinuing re-initialises it with this device's data, replacing what was there.",
+  "remoteEmptiedConfirm": "Continue only if the remote data is no longer needed.",
+  "emptyInitBody": "The remote sync file is empty.\n\nInitialise it with this device's data? The current version is recorded, so if another device writes meanwhile this initialisation is rejected instead of overwriting it.",
+  "initialiseAndSync": "Initialise and Sync",
+  "mergeRemoteTitle": "Merge Remote Data?",
+  "mergeRemoteBody": "This resumes sync and merges the other device's data into this one, adding only what is missing. The merged result is then uploaded, so the remote copy will contain the restored data from this device.",
+  "noTargetConfigured": "No sync target configured",
+  "syncStaysPausedRemoteUntouched": "Sync stays paused. The remote data was not changed.",
+  "recreateRemoteTitle": "Re-upload Remote Data?",
+  "recreateRemoteBody": "The remote data file no longer exists, perhaps because the repository file was deleted or the path changed.\n\nContinuing uploads this device's current data there. If you did not intend to remove the remote data, cancel and check the repository and settings.",
+  "reupload": "Re-upload",
+  "restoreConflictTitle": "Restore the Overwritten Value?",
+  "restoreConflictBody": "{label} · {field} will be changed back to the other value. This is synced to other devices as a new edit.",
+  "@restoreConflictBody": {
+    "placeholders": {
+      "label": {
+        "type": "String"
+      },
+      "field": {
+        "type": "String"
+      }
+    }
+  },
+  "restoredField": "Restored {field}",
+  "@restoredField": {
+    "placeholders": {
+      "field": {
+        "type": "String"
+      }
+    }
+  },
+  "restoredAsNewEdit": "(synced as a new edit)",
+  "restoreFailedKept": "Couldn't restore. The conflict record was kept.",
+  "fieldWord": "Word",
+  "fieldPhonetic": "Phonetics",
+  "fieldPos": "Part of Speech",
+  "fieldTranslation": "Meaning",
+  "fieldDefinition": "English Definition",
+  "fieldExample": "Example",
+  "fieldPhrase": "Phrases",
+  "fieldNote": "Notes",
+  "fieldSource": "Source",
+  "fieldExamTags": "Exam Tags",
+  "fieldBnc": "BNC Rank",
+  "fieldCoca": "COCA Rank",
+  "fieldDeleted": "Deleted",
+  "fieldBookName": "Word List Name",
+  "fieldBookDescription": "Word List Description",
+  "fieldBookSourceType": "Word List Source Type",
+  "fieldBookSourceUrl": "Word List Source Link",
+  "notDeleted": "Not deleted",
+  "deleted": "Deleted",
+  "emptyValue": "(empty)",
+  "backupExported": "Backup exported.",
+  "exportPickFailed": "Couldn't export. Choose another location.",
+  "turnOffSync": "Turn Off Sync",
+  "turnOffSyncBody": "The sync settings and credentials (token / password) stored on this device are deleted. Remote data is not deleted, and study records stay on this device.",
+  "syncTurnedOff": "Sync turned off.",
+  "retestAfterSwitch": "Test the connection again after switching sync method.",
+  "remoteFileMissingNotice": "The remote data file no longer exists.",
+  "syncPausedTitle": "Sync Paused",
+  "syncPausedRestoreBody": "This data came from a restore. Automatic sync stays off until you decide what to do with the remote data.",
+  "mergeRemote": "Merge Remote Data",
+  "keepLocal": "Keep This Device",
+  "mergeOnlyAdds": "Neither side overwrites the other: a merge only adds what is missing.",
+  "syncMethod": "Sync Method",
+  "connectionSettings": "Connection Settings",
+  "syncNow": "Sync Now",
+  "syncing": "Syncing…",
+  "syncOnStart": "Sync on Launch",
+  "syncOnStartHint": "The app always shows local data first.",
+  "syncOnResume": "Sync on Return",
+  "syncOnResumeHint": "Checks for changes when you come back; retries later on failure.",
+  "syncOnChange": "Sync After Changes",
+  "syncOnChangeHint": "Runs about 20 seconds after you stop, not after every answer.",
+  "syncOnSessionEnd": "Sync When a Session Ends",
+  "syncOnSessionEndHint": "Runs after a session ends, without changing the flow.",
+  "localFileManualOnly": "A local file is for manual merging only. For automatic sync, choose GitHub or WebDAV.",
+  "testConnection": "Test Connection",
+  "autoSyncNotEnabled": "Automatic sync is off: run Test Connection to verify safe writes first.",
+  "autoSyncNotEnabledReason": "Automatic sync is off: {reason}.",
+  "@autoSyncNotEnabledReason": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "syncConflicts": "Sync Conflicts",
+  "keptValue": "Kept: {value}",
+  "@keptValue": {
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "discardedValue": "Overwritten: {value}",
+  "@discardedValue": {
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "restoreOverwritten": "Restore",
+  "diagnosticOnly": "Diagnostic only, can't be restored",
+  "ignoreRecord": "Ignore",
+  "conflictExplain": "Another device changed the same item. MaterialWord kept the newer value and stored the other one here. Restoring changes it back and syncs that as a new edit; entries without a restore action are for diagnostics only.",
+  "syncStatus": "Sync Status",
+  "lastSynced": "Last Synced",
+  "neverSynced": "Never Synced",
+  "syncResult": "Sync Result",
+  "pendingChanges": "Pending Changes",
+  "hasLocalChanges": "Local changes are not uploaded yet.",
+  "inSyncWithLast": "This device matches the last sync.",
+  "recreateRemoteAction": "Re-upload Remote Data…",
+  "syncDiagnostics": "Sync Diagnostics",
+  "syncDiagnosticsHint": "View and export recent sync requests (no passwords or study content).",
+  "aboutSync": "About Syncing",
+  "aboutSyncBody": "Remote and local data are merged, never overwritten:\n· one record per word;\n· every answer is kept and progress is recomputed after merging;\n· deleted words and word lists stay deleted;\n· when two devices change the same item, the newer value is kept and the other copy stays under Sync Conflicts.\nTokens and passwords are kept only in the system secure storage (Keychain / Keystore), never in the database, a backup or a log.",
+  "connectionNotVerified": "Connection Not Verified",
+  "connectionNotVerifiedHint": "Enter the address and account, then run Test Connection. Safe writes must be verified before syncing.",
+  "technicalDetails": "Technical Details",
+  "noteLabel": "Note:",
+  "syncFilePath": "Sync File Path",
+  "mobileFolderLimit": "Phones can't keep access to an arbitrary folder. Use the app's own file, or export / import from Backup & Restore.",
+  "githubOwner": "GitHub User or Organization",
+  "repoName": "Repository Name",
+  "branch": "Branch",
+  "dataFilePath": "File Path",
+  "accessToken": "Access Token",
+  "accessTokenHint": "Used to access your private repository; kept only in this device's secure storage.",
+  "privateRepoNote": "Use a dedicated private repository for study data. Never use a public one.",
+  "serverAddress": "Server Address (HTTPS)",
+  "username": "Username",
+  "password": "Password",
+  "appPassword": "Password or App Password",
+  "leaveBlankToKeep": "Leave blank to keep the saved value",
+  "remoteFolder": "Folder",
+  "remoteFolderHint": "Leave blank to use the server address itself. Browse with the button above rather than copying a name from a sync client.",
+  "fileName": "File Name",
+  "httpsOnly": "HTTPS only; certificate checks are never disabled.",
+  "etagNote": "Sync uses conditional requests (ETag) to protect concurrent edits; automatic sync stays off when a server doesn't support them.",
+  "serverNoConditionalWrite": "This server did not pass the safe-write check.",
+  "credentialsUnavailable": "The saved sync credentials can't be read. Enter them again. Offline study is unaffected.",
+  "credentialsNotStored": "The credentials were not saved. Enter them again. Offline study is unaffected.",
+  "serverRootFolder": "server root",
+  "mergeOnlyAddsShort": "Merge",
+  "backupAndRestore": "Backup & Restore",
+  "exportBackupDone": "Backup exported.",
+  "exportCanceled": "Export canceled.",
+  "mergeBackup": "Merge Backup",
+  "mergeToDevice": "Merges into this device and keeps the existing history; nothing on this device is deleted.",
+  "merge": "Merge",
+  "checkBackup": "Check Backup",
+  "backupInfo": "Backup Info",
+  "schemaVersionLine": "Format: v{version}",
+  "@schemaVersionLine": {
+    "placeholders": {
+      "version": {
+        "type": "int"
+      }
+    }
+  },
+  "createdAtLine": "Created: {time}",
+  "@createdAtLine": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "appVersionLine": "App version: {version}",
+  "@appVersionLine": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "hasDeviceSettingsLine": "Device settings included: {value}",
+  "@hasDeviceSettingsLine": {
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "yes": "Yes",
+  "no": "No",
+  "integrityPassed": "Integrity check passed: the file can be read safely.",
+  "integrityUnchecked": "Integrity: unchecked (run Check to read and verify)",
+  "cannotReadBackup": "Can't Read",
+  "close": "Close",
+  "backupUnreadable": "This backup can't be read: {problem}",
+  "@backupUnreadable": {
+    "placeholders": {
+      "problem": {
+        "type": "String"
+      }
+    }
+  },
+  "mergeRestore": "Merge Backup",
+  "mergeRestoreBody": "Adds only words and answers this device is missing. Existing data and progress are kept. This is the safe default.",
+  "mergeComplete": "Merge complete.",
+  "restoreVersionTitle": "Restore This Version?",
+  "restoreVersionBody": "Study data on this device returns to the selected version. Changes made after that backup are removed from the current data.\n\nThe current data is backed up automatically first, and sync is paused.",
+  "restore": "Restore",
+  "restoredProtected": "Restored. The previous state was saved as {file}.",
+  "@restoredProtected": {
+    "placeholders": {
+      "file": {
+        "type": "String"
+      }
+    }
+  },
+  "restoreNextStepTitle": "Restored: What About the Remote Data?",
+  "restoreNextStepBody": "This device now holds the selected version and sync is paused. Choose the next step:\n\n· Keep this device: don't sync yet; handle it later on the Sync page.\n· Merge remote data: bring the other device's data in (adds only).\n· Use a new target: point sync at a different remote location.",
+  "keepLocalState": "Keep This Device",
+  "useNewTarget": "Use a New Target",
+  "mergeRemoteData": "Merge Remote Data",
+  "syncPausedRemoteUnchanged": "Sync stays paused. The remote data was not changed.",
+  "noSyncTargetHint": "No sync target configured. Set one on the Sync page.",
+  "remoteMerged": "Remote data merged.",
+  "syncStillPausedUntilTarget": "Sync stays paused until one sync completes with the new target.",
+  "deleteBackupTitle": "Delete Backup?",
+  "deleteBackupBody": "{name}\n\nOnly this local file is deleted. Study data in the database is not affected.",
+  "@deleteBackupBody": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "backupDeleted": "Backup deleted.",
+  "backupExportedShort": "Backup exported.",
+  "syncPausedBanner": "Sync Paused",
+  "syncPausedBannerBody": "This data came from a restore and hasn't been checked against the remote copy. Automatic sync stays off until you confirm how to handle the remote data on the Sync page.",
+  "handleSync": "Open Sync",
+  "autoBackupLocal": "Automatic Backup (Local)",
+  "autoBackupDaily": "Daily Automatic Backup",
+  "autoBackupHint": "Checked at launch, on resume and while the app stays open. A new copy is written only when data changed, keeping the last {count}.",
+  "@autoBackupHint": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "lastAutoBackup": "Last Automatic Backup",
+  "noAutoBackupYet": "No automatic backup yet",
+  "manualBackupJson": "Manual Backup (JSON)",
+  "exportTo": "Export Backup…",
+  "exportToHint": "Saves anywhere through the system file picker (includes device settings).",
+  "saveBackupNow": "Save Backup Now",
+  "saveBackupNowHint": "Saved on this device and restorable from the list below.",
+  "importAndMerge": "Import and Merge",
+  "importAndMergeHint": "Never overwrites local data: merges after de-duplicating words and answers.",
+  "backupContentsNote": "A backup contains words, word lists, links (including delete marks), answer history, favorites, tags, study goals and device settings. It never contains accounts, passwords or sync credentials.",
+  "localBackups": "Local Backups",
+  "noLocalBackups": "No backups yet. An automatic backup or Save Backup Now will appear here.",
+  "backupActions": "Backup Actions",
+  "viewInfo": "View Info",
+  "checkIntegrity": "Check Backup",
+  "mergeRestoreSafe": "Merge Backup",
+  "restoreThisVersion": "Restore This Version…",
+  "deleteBackup": "Delete",
+  "restoreModesNote": "Merging only adds what is missing, so it is idempotent and safe to repeat. Restoring a version replaces this device's data atomically, saves a safety backup first, and pauses sync until you decide how to handle the remote copy.",
+  "crossDeviceSync": "Cross-device Sync",
+  "openSync": "Open Sync",
+  "syncTargetsHint": "GitHub / WebDAV / local file",
+  "mergeNeverOverwrites": "A merge only adds missing content and never overwrites existing words or answers. Importing the same file twice does not double-count.",
+  "mergeRulesAdvanced": "Merge Rules (Advanced)",
+  "mergeRulesBody": "Answers are de-duplicated by global id and learning state is recalculated from the merged history. Word-list links carry versions and delete marks, so an old backup cannot revive a removed word.",
+  "syncUploadPending": "Local data is saved. Upload is pending.",
+  "syncConflictRetry": "Another device changed the data. Try syncing again.",
+  "syncFileUnreadable": "Unable to read the sync file.",
+  "backupInfoSummary": "{words} words · {books} word lists · {entries} links · {events} answers",
+  "@backupInfoSummary": {
+    "placeholders": {
+      "words": {
+        "type": "int"
+      },
+      "books": {
+        "type": "int"
+      },
+      "entries": {
+        "type": "int"
+      },
+      "events": {
+        "type": "int"
+      }
+    }
+  },
+  "backupInfoTags": "{count} tags",
+  "@backupInfoTags": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "backupInfoFavorites": "{count} favorites",
+  "@backupInfoFavorites": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "backupInfoUnreadable": "Unreadable: {reason}",
+  "@backupInfoUnreadable": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "unknownReason": "unknown reason",
+  "mergeSummaryEvents": "{count} new answers",
+  "@mergeSummaryEvents": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mergeSummaryDuplicates": "{count} duplicates ignored",
+  "@mergeSummaryDuplicates": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mergeSummaryNewWords": "{count} new words",
+  "@mergeSummaryNewWords": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mergeSummaryUpdatedWords": "{count} words updated",
+  "@mergeSummaryUpdatedWords": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mergeSummaryDeletedWords": "{count} deletions applied",
+  "@mergeSummaryDeletedWords": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mergeSummaryNewBooks": "{count} new word lists",
+  "@mergeSummaryNewBooks": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mergeSummaryNewEntries": "{count} links added",
+  "@mergeSummaryNewEntries": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mergeSummaryRemovedEntries": "{count} links removed",
+  "@mergeSummaryRemovedEntries": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mergeSummaryRebuiltStates": "{count} progress rows recalculated",
+  "@mergeSummaryRebuiltStates": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mergeSummaryMetadata": "{count} favorite or tag changes",
+  "@mergeSummaryMetadata": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mergeSummaryConflicts": "{count} content conflicts (the newer value was kept)",
+  "@mergeSummaryConflicts": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "restoreSummary": "Restored {words} words and {events} answers. The previous state was saved as a safety backup.",
+  "@restoreSummary": {
+    "placeholders": {
+      "words": {
+        "type": "int"
+      },
+      "events": {
+        "type": "int"
+      }
+    }
+  },
+  "importOutcomeCreated": "{count} added",
+  "@importOutcomeCreated": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "importOutcomeRevived": "{count} restored",
+  "@importOutcomeRevived": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "importOutcomeExisting": "{count} already present",
+  "@importOutcomeExisting": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "importOutcomeUpdated": "{count} updated",
+  "@importOutcomeUpdated": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "importOutcomeLinked": "{count} linked to the word list",
+  "@importOutcomeLinked": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "importOutcomeBooks": "across {count} word lists",
+  "@importOutcomeBooks": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "importOutcomeSkippedDeleted": "{count} deleted words skipped",
+  "@importOutcomeSkippedDeleted": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "importOutcomeDuplicates": "{count} duplicates in the file",
+  "@importOutcomeDuplicates": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "importOutcomeInvalid": "{count} invalid lines ignored",
+  "@importOutcomeInvalid": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "importOutcomeSeparator": ", ",
+  "backupSavedAs": "Backup saved: {name}",
+  "@backupSavedAs": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "mergeConfirmBody": "{words} words, {books} word lists, {events} answers.\nBackup time: {time}\nMerges into this device, keeps the existing history and deletes nothing.",
+  "@mergeConfirmBody": {
+    "placeholders": {
+      "words": {
+        "type": "int"
+      },
+      "books": {
+        "type": "int"
+      },
+      "events": {
+        "type": "int"
+      },
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "timeNotRecorded": "not recorded",
+  "mergeRestoreConfirm": "{summary}\n\nMerging only adds what this device is missing and keeps existing data and progress. This is the safe default.",
+  "@mergeRestoreConfirm": {
+    "placeholders": {
+      "summary": {
+        "type": "String"
+      }
+    }
+  },
+  "mergeCompleteWith": "Merge complete: {summary}",
+  "@mergeCompleteWith": {
+    "placeholders": {
+      "summary": {
+        "type": "String"
+      }
+    }
+  },
+  "restoreSnapshotConfirm": "{summary}\nCreated: {created}\n\nThis replaces the current data on this device: answers, edits and deletions made after that backup are removed from it. A safety backup is written first, and a failure rolls everything back. Sync stays paused afterwards until you decide what to do with the remote data.",
+  "@restoreSnapshotConfirm": {
+    "placeholders": {
+      "summary": {
+        "type": "String"
+      },
+      "created": {
+        "type": "String"
+      }
+    }
+  },
+  "restoreDoneWith": "{summary} The previous state was saved as {file}.",
+  "@restoreDoneWith": {
+    "placeholders": {
+      "summary": {
+        "type": "String"
+      },
+      "file": {
+        "type": "String"
+      }
+    }
+  },
+  "createdUnknown": "unknown",
+  "autoBackupHintCount": "Checked at launch, on resume and while the app stays open. A new copy is written only when data changed, keeping the last {count}.",
+  "@autoBackupHintCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "syncStageIdle": "Preparing",
+  "syncStageValidating": "Checking settings",
+  "syncStageDownloading": "Reading remote data",
+  "syncStageMerging": "Merging",
+  "syncStageRebuilding": "Updating progress",
+  "syncStageUploading": "Uploading",
+  "syncStageVerifying": "Verifying upload",
+  "syncStageDone": "Done",
+  "syncStageMergedNotUploaded": "Saved locally, upload pending",
+  "syncStageWaitingBackoff": "Waiting to retry",
+  "syncStageAuthFailed": "Sign-in failed",
+  "syncStageRemoteMissing": "Remote data missing",
+  "syncStageRemoteCorrupt": "Remote data unreadable",
+  "syncStageConfigChanged": "Settings changed",
+  "syncStagePausedAfterRestore": "Paused after restore",
+  "syncStageFailed": "Failed",
+  "syncCapabilityUnknown": "Connection not verified",
+  "syncCapabilityConnectionFailed": "Can't reach the server",
+  "syncCapabilityAuthFailed": "Sign-in failed. Check the account and password.",
+  "syncCapabilityNoFolder": "Connected, but this folder isn't accessible",
+  "syncCapabilityReadOnly": "Connected, but read-only",
+  "syncCapabilityUnsafe": "This server doesn't support safe syncing",
+  "syncCapabilitySafe": "Connected. Ready to sync.",
+  "syncResultSynced": "Synced",
+  "syncResultUnchanged": "Already up to date",
+  "syncResultRemoteHasData": "Remote already has this data",
+  "syncResultInitialised": "Remote file initialised from this device",
+  "syncResultPartial": "Saved locally, upload pending",
+  "syncResultFailed": "Sync failed",
+  "syncResultSyncedWith": "Synced: {summary}",
+  "@syncResultSyncedWith": {
+    "placeholders": {
+      "summary": {
+        "type": "String"
+      }
+    }
+  },
+  "syncResultUnknown": "Sync finished",
+  "syncTestOk": "Connection verified",
+  "syncTestFailed": "Connection check failed",
+  "voiceVariantUS": "US",
+  "voiceVariantUK": "UK",
+  "voiceVariantAU": "Australia",
+  "voiceVariantCA": "Canada",
+  "voiceVariantIE": "Ireland",
+  "voiceVariantIN": "India",
+  "importIssueNotEnglish": "Not a valid English word",
+  "importIssueRowInvalid": "Row {row}: the word field is invalid",
+  "@importIssueRowInvalid": {
+    "placeholders": {
+      "row": {
+        "type": "int"
+      }
+    }
+  },
+  "importIssueNotEntry": "Not a valid entry (expected text or an object)",
+  "importIssueInvalidEntry": "Invalid entry",
+  "importIssueEmpty": "(empty)",
+  "exportFormatTxt": "Plain text (one word per line)",
+  "exportFormatCsv": "CSV (with meanings and examples)",
+  "exportFormatJson": "JSON (structured, lossless round trip)",
+  "createFolderFailed": "Couldn't create the folder. Check the permissions and try again."
+}

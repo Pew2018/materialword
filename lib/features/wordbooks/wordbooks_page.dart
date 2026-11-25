@@ -8,7 +8,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app/providers.dart';
 import '../../app/theme.dart';
 import '../../core/database/app_database.dart';
+import '../../core/errors/app_error.dart';
 import '../../core/repositories/wordbook_repository.dart';
+import '../../l10n/export_labels.dart';
+import '../../l10n/l10n.dart';
 import '../../services/import_service.dart';
 import '../../services/wordbook_export.dart';
 import '../../shared/widgets/common.dart';
@@ -34,8 +37,8 @@ class WordBooksPage extends ConsumerWidget {
     Future<void> createBook() async {
       final String? name = await promptForText(
         context,
-        title: '新建词书',
-        label: '词书名称',
+        title: context.l10n.newWordList,
+        label: context.l10n.wordListName,
       );
       if (name == null || name.trim().isEmpty) return;
       await ref
@@ -77,39 +80,37 @@ class WordBooksPage extends ConsumerWidget {
         final bool? ok = await showDialog<bool>(
           context: context,
           builder: (BuildContext context) => AlertDialog(
-            title: const Text('刷新在线词书'),
+            title: Text(context.l10n.refreshOnlineList),
             content: SingleChildScrollView(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: <String>[
-                  '来源：$url',
+                  context.l10n.sourceUrlLabel(url),
                   '',
-                  '在线词书共 ${preview.validCount} 个词条。',
-                  '· 本机已有：${stats.existingWords} 个',
-                  '· 将新增：${stats.newWords} 个',
-                  '· 文件内重复：${preview.duplicateCount} 个',
-                  '· 无效词条：${preview.invalidCount} 个',
+                  context.l10n.onlineListTotal(preview.validCount),
+                  context.l10n.refreshExisting(stats.existingWords),
+                  context.l10n.refreshToAdd(stats.newWords),
+                  context.l10n.refreshDuplicate(preview.duplicateCount),
+                  context.l10n.refreshInvalid(preview.invalidCount),
                   if (preview.droppedRows > 0)
-                    '· 不会导入的行：${preview.droppedRows} 行',
+                    context.l10n.refreshDropped(preview.droppedRows),
                   if (stats.restorableWords > 0)
-                    '· 你曾删除、本次不会自动恢复：${stats.restorableWords} 个',
-                  '· 来源已移除、仍保留在本机：$localOnly 个',
+                    context.l10n.refreshDeletedByUser(stats.restorableWords),
+                  context.l10n.refreshLocalOnly(localOnly),
                   '',
-                  '刷新只新增缺失的单词：不删除本机词条、不恢复你主动删除的词条、'
-                      '不覆盖个人笔记与自定义释义、不重置任何学习进度。'
-                      '取消不会修改任何数据。',
+                  context.l10n.refreshNote,
                 ].map((String line) => Text(line)).toList(),
               ),
             ),
             actions: <Widget>[
               TextButton(
                 onPressed: () => Navigator.of(context).pop(false),
-                child: const Text('取消'),
+                child: Text(context.l10n.commonCancel),
               ),
               TextButton(
                 onPressed: () => Navigator.of(context).pop(true),
-                child: const Text('确认刷新'),
+                child: Text(context.l10n.confirmRefresh),
               ),
             ],
           ),
@@ -126,13 +127,20 @@ class WordBooksPage extends ConsumerWidget {
         ref.invalidate(bookSummariesProvider);
         ref.invalidate(todayProgressProvider);
         if (!context.mounted) return;
-        showMessage(context, '在线词书刷新完成：${outcome.summary}');
+        showMessage(
+          context,
+          context.l10n.refreshDone(
+            outcome.created,
+            outcome.updated,
+            outcome.existing,
+          ),
+        );
       } on ImportCancelledException {
         if (!context.mounted) return;
-        showMessage(context, '已取消刷新，未修改任何数据');
+        showMessage(context, context.l10n.refreshCancelled);
       } catch (e) {
         if (!context.mounted) return;
-        showMessage(context, '刷新失败：$e', error: true);
+        showMessage(context, context.l10n.refreshFailed, error: true);
       }
     }
 
@@ -149,8 +157,10 @@ class WordBooksPage extends ConsumerWidget {
     /// Export one book, the selected books, or every book. Book membership is
     /// preserved in JSON/CSV so re-importing does not create duplicates.
     Future<void> exportBooks(List<WordBookSummary> all) async {
+      // Captured up front: the picker is opened after several awaits.
+      final String exportTitle = context.l10n.exportListTitle;
       if (all.isEmpty) {
-        showMessage(context, '还没有可导出的词书');
+        showMessage(context, context.l10n.nothingToExport);
         return;
       }
       final Set<String> selected = <String>{
@@ -164,7 +174,7 @@ class WordBooksPage extends ConsumerWidget {
                 BuildContext context,
                 void Function(void Function()) setDialogState,
               ) => AlertDialog(
-                title: const Text('导出词书内容'),
+                title: Text(context.l10n.exportListTitle),
                 content: SizedBox(
                   width: 420,
                   child: SingleChildScrollView(
@@ -183,13 +193,14 @@ class WordBooksPage extends ConsumerWidget {
                               }
                             }),
                             title: Text(summary.book.name),
-                            subtitle: Text('${summary.wordCount} 个单词'),
+                            subtitle: Text(
+                              context.l10n.wordCountPlural(summary.wordCount),
+                            ),
                           ),
                         const SizedBox(height: 8),
-                        const Text(
-                          '只导出词条内容：不含学习记录、笔记历史与同步凭据。'
-                          '需要完整备份请到「设置 → 备份与恢复」。',
-                          style: TextStyle(fontSize: 12),
+                        Text(
+                          context.l10n.exportContentNote,
+                          style: const TextStyle(fontSize: 12),
                         ),
                       ],
                     ),
@@ -198,13 +209,13 @@ class WordBooksPage extends ConsumerWidget {
                 actions: <Widget>[
                   TextButton(
                     onPressed: () => Navigator.of(context).pop(false),
-                    child: const Text('取消'),
+                    child: Text(context.l10n.commonCancel),
                   ),
                   TextButton(
                     onPressed: selected.isEmpty
                         ? null
                         : () => Navigator.of(context).pop(true),
-                    child: Text('导出 ${selected.length} 个词书'),
+                    child: Text(context.l10n.exportSelected(selected.length)),
                   ),
                 ],
               ),
@@ -215,13 +226,13 @@ class WordBooksPage extends ConsumerWidget {
           await showDialog<WordBookExportFormat>(
             context: context,
             builder: (BuildContext context) => SimpleDialog(
-              title: const Text('选择格式'),
+              title: Text(context.l10n.chooseFormat),
               children: <Widget>[
                 for (final WordBookExportFormat format
                     in WordBookExportFormat.values)
                   SimpleDialogOption(
                     onPressed: () => Navigator.of(context).pop(format),
-                    child: Text(format.label),
+                    child: Text(exportFormatLabel(context.l10n, format)),
                   ),
               ],
             ),
@@ -262,7 +273,7 @@ class WordBooksPage extends ConsumerWidget {
             WordBookExportFormat.csv => 'text/csv',
             WordBookExportFormat.json => 'application/json',
           },
-          dialogTitle: '导出词书内容',
+          dialogTitle: exportTitle,
         );
         if (!context.mounted) return;
         final int total = exports.fold<int>(
@@ -272,12 +283,12 @@ class WordBooksPage extends ConsumerWidget {
         showMessage(
           context,
           saved == null
-              ? '已取消导出'
-              : '已导出 ${exports.length} 个词书、$total 条词条内容（不含学习记录）',
+              ? context.l10n.exportCancelled
+              : context.l10n.exportDone(exports.length, total),
         );
       } catch (e) {
         if (!context.mounted) return;
-        showMessage(context, '导出失败：$e', error: true);
+        showMessage(context, context.l10n.exportFailed, error: true);
       }
     }
 
@@ -290,7 +301,10 @@ class WordBooksPage extends ConsumerWidget {
             child: Row(
               children: <Widget>[
                 Expanded(
-                  child: Text('我的词书', style: theme.textTheme.titleLarge),
+                  child: Text(
+                    context.l10n.myWordLists,
+                    style: theme.textTheme.titleLarge,
+                  ),
                 ),
                 TextButton.icon(
                   onPressed: openManagement,
@@ -298,21 +312,21 @@ class WordBooksPage extends ConsumerWidget {
                     Icons.table_rows_outlined,
                     size: AppDimens.iconSizeSmall,
                   ),
-                  label: const Text('全部词汇'),
+                  label: Text(context.l10n.navAllWords),
                 ),
                 IconButton(
-                  tooltip: '导出词书内容',
+                  tooltip: context.l10n.exportListTitle,
                   icon: const Icon(Icons.ios_share),
                   onPressed: () =>
                       exportBooks(books.value ?? const <WordBookSummary>[]),
                 ),
                 IconButton(
-                  tooltip: '导入词表',
+                  tooltip: context.l10n.importWordList,
                   icon: const Icon(Icons.file_upload_outlined),
                   onPressed: openImport,
                 ),
                 IconButton(
-                  tooltip: '新建词书',
+                  tooltip: context.l10n.newWordList,
                   icon: const Icon(Icons.add),
                   onPressed: createBook,
                 ),
@@ -323,25 +337,25 @@ class WordBooksPage extends ConsumerWidget {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: ErrorBanner(
-                message: '读取词书失败：${books.error}',
+                message: context.l10n.wordListsLoadFailed,
                 onRetry: () => ref.invalidate(bookSummariesProvider),
               ),
             ),
           if ((books.value ?? const <WordBookSummary>[]).isEmpty)
             EmptyState(
               icon: Icons.library_books_outlined,
-              title: '还没有词书',
-              message: '创建一个词书，然后导入你的单词表（每行一个单词即可）。',
+              title: context.l10n.noWordLists,
+              message: context.l10n.noWordListsMessage,
               action: Wrap(
                 spacing: 8,
                 children: <Widget>[
                   ElevatedButton(
                     onPressed: createBook,
-                    child: const Text('新建词书'),
+                    child: Text(context.l10n.newWordList),
                   ),
                   OutlinedButton(
                     onPressed: openImport,
-                    child: const Text('导入词表'),
+                    child: Text(context.l10n.importWordList),
                   ),
                 ],
               ),
@@ -383,8 +397,8 @@ class WordBooksPage extends ConsumerWidget {
                     onRename: () async {
                       final String? name = await promptForText(
                         context,
-                        title: '重命名词书',
-                        label: '词书名称',
+                        title: context.l10n.renameWordList,
+                        label: context.l10n.wordListName,
                         initialValue: summary.book.name,
                       );
                       if (name == null || name.trim().isEmpty) return;
@@ -403,22 +417,25 @@ class WordBooksPage extends ConsumerWidget {
                     onDelete: () async {
                       final bool ok = await confirmDialog(
                         context,
-                        title: '删除词书',
-                        message:
-                            '删除「${summary.book.name}」？单词本身和学习记录会保留，只移除词书及其关联。',
-                        confirmLabel: '删除',
+                        title: context.l10n.deleteWordListTitle,
+                        message: context.l10n.deleteWordListBody(
+                          summary.book.name,
+                        ),
+                        confirmLabel: context.l10n.commonDelete,
                         destructive: true,
                       );
                       if (!ok) return;
                       // Deleting a book detaches up to thousands of links at once.
-                      final String? backupFailure = await ref
+                      final AppErrorCode? backupFailure = await ref
                           .read(backupManagerProvider)
-                          .protectiveBackupFailure(
-                            '删除词书「${summary.book.name}」',
-                          );
+                          .protectiveBackupFailure('delete-word-list');
                       if (backupFailure != null) {
                         if (context.mounted) {
-                          showMessage(context, backupFailure, error: true);
+                          showMessage(
+                            context,
+                            context.l10n.protectiveBackupFailed,
+                            error: true,
+                          );
                         }
                         return;
                       }
@@ -437,7 +454,7 @@ class WordBooksPage extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
             child: Text(
-              '「全部词汇」可以按词书、学习状态、困难程度筛选，并批量加入词书 / 移出 / 删除。',
+              context.l10n.allWordsNote,
               style: theme.textTheme.bodySmall,
             ),
           ),
@@ -492,7 +509,7 @@ class _BookRow extends StatelessWidget {
                       ),
                       if (isCurrent) ...<Widget>[
                         AppSpacing.w8,
-                        const TagChip(label: '当前', dense: true),
+                        TagChip(label: context.l10n.currentTag, dense: true),
                       ],
                     ],
                   ),
@@ -500,10 +517,10 @@ class _BookRow extends StatelessWidget {
                 if (!isCurrent)
                   TextButton(
                     onPressed: onSetCurrent,
-                    child: const Text('设为当前'),
+                    child: Text(context.l10n.setForStudy),
                   ),
                 PopupMenuButton<String>(
-                  tooltip: '更多',
+                  tooltip: context.l10n.moreActions,
                   onSelected: (String value) {
                     switch (value) {
                       case 'rename':
@@ -518,22 +535,22 @@ class _BookRow extends StatelessWidget {
                   },
                   itemBuilder: (BuildContext context) =>
                       <PopupMenuEntry<String>>[
-                        const PopupMenuItem<String>(
+                        PopupMenuItem<String>(
                           value: 'rename',
-                          child: Text('重命名'),
+                          child: Text(context.l10n.commonRename),
                         ),
-                        const PopupMenuItem<String>(
+                        PopupMenuItem<String>(
                           value: 'import',
-                          child: Text('导入到该词书'),
+                          child: Text(context.l10n.importIntoList),
                         ),
                         if (onRefreshOnline != null)
-                          const PopupMenuItem<String>(
+                          PopupMenuItem<String>(
                             value: 'refresh',
-                            child: Text('刷新在线词书'),
+                            child: Text(context.l10n.refreshOnlineList),
                           ),
-                        const PopupMenuItem<String>(
+                        PopupMenuItem<String>(
                           value: 'delete',
-                          child: Text('删除词书'),
+                          child: Text(context.l10n.commonDelete),
                         ),
                       ],
                 ),
@@ -541,7 +558,11 @@ class _BookRow extends StatelessWidget {
             ),
             const SizedBox(height: 3),
             Text(
-              '${summary.wordCount} 词 · 已学 ${summary.learnedCount} · 到期 ${summary.dueCount}',
+              context.l10n.wordListRowStats(
+                summary.wordCount,
+                summary.learnedCount,
+                summary.dueCount,
+              ),
               style: theme.textTheme.bodySmall,
             ),
             if (summary.book.description.isNotEmpty)

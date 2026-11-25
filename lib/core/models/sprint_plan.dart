@@ -1,3 +1,5 @@
+import '../errors/app_error.dart';
+
 class SprintPlan {
   const SprintPlan({
     this.enabled = false,
@@ -35,7 +37,7 @@ class SprintPlan {
 
   factory SprintPlan.fromJson(Map<String, Object?> data) {
     if (data['version'] is! int || data['version'] != 1) {
-      throw const FormatException('不支持的冲刺计划版本');
+      throw const AppError(AppErrorCode.sprintVersionUnsupported);
     }
     for (final key in [
       'enabled',
@@ -45,32 +47,34 @@ class SprintPlan {
       'includeUnlearned',
       'allowOverReviewLimit',
     ]) {
-      if (data[key] is! bool) throw const FormatException('冲刺计划开关无效');
+      if (data[key] is! bool) {
+        throw const AppError(AppErrorCode.sprintInvalidSwitch);
+      }
     }
     final date = data['examDate'],
         book = data['bookId'],
         size = data['roundSize'];
     if (date != null) {
       if (date is! String || !RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(date)) {
-        throw const FormatException('考试日期无效');
+        throw const AppError(AppErrorCode.sprintInvalidDate);
       }
       final parts = date.split('-').map(int.parse).toList();
       final parsed = DateTime.utc(parts[0], parts[1], parts[2]);
       if (parsed.year != parts[0] ||
           parsed.month != parts[1] ||
           parsed.day != parts[2]) {
-        throw const FormatException('考试日期无效');
+        throw const AppError(AppErrorCode.sprintInvalidDate);
       }
     }
     if (book != null &&
         (book is! String || book.trim().isEmpty || book.trim() != book)) {
-      throw const FormatException('冲刺词书无效');
+      throw const AppError(AppErrorCode.sprintInvalidBook);
     }
     if (size is! int || size < 1 || size > 500) {
-      throw const FormatException('每轮单词数量须为 1–500');
+      throw const AppError(AppErrorCode.sprintInvalidRoundSize);
     }
     if (data['enabled'] == true && (date == null || book == null)) {
-      throw const FormatException('请选择考试日期和目标词书');
+      throw const AppError(AppErrorCode.sprintIncomplete);
     }
     return SprintPlan(
       enabled: data['enabled'] as bool,

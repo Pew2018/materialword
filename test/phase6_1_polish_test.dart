@@ -8,6 +8,8 @@ import 'package:materialword/app/providers.dart';
 import 'package:materialword/app/theme.dart';
 import 'package:materialword/core/database/app_database.dart';
 import 'package:materialword/core/models/enums.dart';
+import 'package:materialword/l10n/enum_labels.dart';
+import 'package:materialword/l10n/l10n.dart';
 import 'package:materialword/features/statistics/statistics_page.dart';
 import 'package:materialword/features/sync/sync_settings_page.dart';
 import 'package:materialword/services/practice_session.dart';
@@ -17,6 +19,15 @@ import 'package:materialword/shared/widgets/common.dart';
 
 import 'helpers/test_dictionary.dart';
 import 'helpers/test_env.dart';
+
+const Map<String, String> kNavIds = <String, String>{
+  '今日': 'today',
+  '词书': 'wordLists',
+  '词典': 'dictionary',
+  '统计': 'statistics',
+  '设置': 'settings',
+  '词汇': 'allWords',
+};
 
 /// Phase 6.1 — the interaction contract.
 ///
@@ -143,7 +154,7 @@ void main() {
       for (final String label in <String>['今日', '词书', '词典', '统计', '设置']) {
         expect(
           find.descendant(
-            of: find.byKey(ValueKey<String>('nav-$label')),
+            of: find.byKey(ValueKey<String>('nav-${kNavIds[label]!}')),
             matching: find.text(label),
           ),
           findsOneWidget,
@@ -168,7 +179,9 @@ void main() {
           reason: '$width must not fall back to the phone bar',
         );
         for (final String label in <String>['词书', '词典', '统计', '设置', '今日']) {
-          await tester.tap(find.byKey(ValueKey<String>('nav-$label')));
+          await tester.tap(
+            find.byKey(ValueKey<String>('nav-${kNavIds[label]!}')),
+          );
           await _settle(tester);
           expect(
             tester.takeException(),
@@ -197,7 +210,7 @@ void main() {
         dictionary: dictionary,
       );
 
-      await tester.tap(find.byKey(const ValueKey<String>('nav-词典')));
+      await tester.tap(find.byKey(const ValueKey<String>('nav-dictionary')));
       await _settle(tester);
       final TextEditingController controller = tester
           .widget<TextField>(find.byType(TextField).first)
@@ -205,9 +218,9 @@ void main() {
       await tester.enterText(find.byType(TextField).first, 'abandon');
       await _settle(tester);
 
-      await tester.tap(find.byKey(const ValueKey<String>('nav-统计')));
+      await tester.tap(find.byKey(const ValueKey<String>('nav-statistics')));
       await _settle(tester);
-      await tester.tap(find.byKey(const ValueKey<String>('nav-词典')));
+      await tester.tap(find.byKey(const ValueKey<String>('nav-dictionary')));
       await _settle(tester);
 
       expect(
@@ -221,14 +234,14 @@ void main() {
   });
 
   group('SET 设置页', () {
-    testWidgets('SET01 随机学习顺序有 shuffle 图标，SET02 三行开关一致', (
+    testWidgets('SET01 随机顺序有 shuffle 图标，SET02 三行开关一致', (
       WidgetTester tester,
     ) async {
       await _pumpShell(tester, size: const Size(1280, 900));
-      await tester.tap(find.byKey(const ValueKey<String>('nav-设置')));
+      await tester.tap(find.byKey(const ValueKey<String>('nav-settings')));
       await _settle(tester);
 
-      final Finder randomRow = find.widgetWithText(SwitchListTile, '随机学习顺序');
+      final Finder randomRow = find.widgetWithText(SwitchListTile, '随机顺序');
       await _reveal(tester, randomRow);
 
       expect(
@@ -255,7 +268,7 @@ void main() {
 
     testWidgets('SET03/04/05 Slider 连续跟手，松手才写库', (WidgetTester tester) async {
       final TestEnv env = await _pumpShell(tester, size: const Size(1280, 900));
-      await tester.tap(find.byKey(const ValueKey<String>('nav-设置')));
+      await tester.tap(find.byKey(const ValueKey<String>('nav-settings')));
       await _settle(tester);
 
       final Finder sliderFinder = find.byType(Slider);
@@ -311,6 +324,9 @@ void main() {
         late BuildContext context;
         await tester.pumpWidget(
           MaterialApp(
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            locale: const Locale('zh'),
             theme: ThemeData(platform: platform, useMaterial3: false),
             // A fresh element per platform: reusing the element would keep the
             // old `Theme` dependency and silently report the previous theme.
@@ -390,6 +406,9 @@ void main() {
             clockProvider.overrideWithValue(env.clock),
           ],
           child: MaterialApp(
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            locale: const Locale('zh'),
             theme: AppTheme.light(),
             home: const Scaffold(body: StatisticsPage()),
           ),
@@ -397,10 +416,15 @@ void main() {
       );
       await _settle(tester);
 
-      final Finder childLabel = find.text('• ${PracticeKind.choice.label}');
+      final AppLocalizations l10n = await AppLocalizations.delegate.load(
+        const Locale('zh'),
+      );
+      final Finder childLabel = find.text(
+        '• ${PracticeKind.choice.label(l10n)}',
+      );
       await _reveal(tester, childLabel);
 
-      final Finder parentLabel = find.text('练习模式');
+      final Finder parentLabel = find.text('练习');
       expect(parentLabel, findsOneWidget);
       expect(childLabel, findsOneWidget);
 
@@ -465,7 +489,7 @@ void main() {
         size: const Size(1280, 900),
         dictionary: dictionary,
       );
-      await tester.tap(find.byKey(const ValueKey<String>('nav-词典')));
+      await tester.tap(find.byKey(const ValueKey<String>('nav-dictionary')));
       await _settle(tester);
 
       // DICT01: the duplicated AppBar search button is gone.
@@ -486,7 +510,7 @@ void main() {
 
       // DICT03: ⌘F / Ctrl+F still jumps to the dictionary and focuses the
       // field. (Ctrl+F is pressed from another tab so nothing is being edited.)
-      await tester.tap(find.byKey(const ValueKey<String>('nav-统计')));
+      await tester.tap(find.byKey(const ValueKey<String>('nav-statistics')));
       await _settle(tester);
       await tester.sendKeyDownEvent(LogicalKeyboardKey.control);
       await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
@@ -504,7 +528,7 @@ void main() {
       // Go back to another tab and press the desktop shortcut again: tapping a
       // destination must hand keyboard focus back to the shell, otherwise the
       // shortcut would stop working after the first navigation tap.
-      await tester.tap(find.byKey(const ValueKey<String>('nav-今日')));
+      await tester.tap(find.byKey(const ValueKey<String>('nav-today')));
       await _settle(tester);
       await tester.sendKeyDownEvent(LogicalKeyboardKey.meta);
       await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
@@ -517,7 +541,7 @@ void main() {
     });
   });
 
-  group('SYNCUI 数据同步页', () {
+  group('SYNCUI 同步页', () {
     Future<TestEnv> pumpSync(WidgetTester tester) async {
       tester.view.physicalSize = const Size(1280, 900);
       tester.view.devicePixelRatio = 1;
@@ -547,6 +571,9 @@ void main() {
             ),
           ],
           child: MaterialApp(
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            locale: const Locale('zh'),
             theme: AppTheme.light(),
             home: const SyncSettingsPage(),
           ),
@@ -562,8 +589,8 @@ void main() {
       const List<String> labels = <String>[
         '启动时同步',
         '返回应用时同步',
-        '数据变化后自动同步',
-        '本轮学习结束后同步',
+        '更改后同步',
+        '学习结束时同步',
       ];
       final List<double> heights = <double>[];
       for (final String label in labels) {
@@ -598,7 +625,7 @@ void main() {
 
     testWidgets('SYNCUI03 高级说明默认收起', (WidgetTester tester) async {
       await pumpSync(tester);
-      final Finder summary = find.text('同步与合并说明');
+      final Finder summary = find.text('关于同步');
       await _reveal(tester, summary);
 
       expect(summary, findsOneWidget);
@@ -657,6 +684,9 @@ void main() {
       addTearDown(tester.view.resetDevicePixelRatio);
       await tester.pumpWidget(
         MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          locale: const Locale('zh'),
           theme: theme,
           home: Builder(
             builder: (BuildContext context) => Scaffold(

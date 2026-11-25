@@ -6,6 +6,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/providers.dart';
 import '../../app/theme.dart';
+import '../../core/errors/app_error.dart';
+import '../../l10n/error_labels.dart';
+import '../../l10n/backup_labels.dart';
+import '../../l10n/intake_labels.dart';
+import '../../l10n/l10n.dart';
 import '../../core/database/app_database.dart';
 import '../../core/text/dictionary_text.dart';
 import '../../services/dictionary_service.dart';
@@ -194,10 +199,9 @@ class _QuickAddPageState extends ConsumerState<QuickAddPage> {
         _looking = false;
         _lookup = entry;
         if (entry == null) {
-          _status = '离线词典未收录，可以手动填写释义后保存。';
+          _status = context.l10n.dictNotFoundManual;
         } else {
-          _status =
-              '已从离线词典补全（${entry.tagLabel.isEmpty ? '通用词条' : entry.tagLabel}）';
+          _status = context.l10n.dictFilled;
           _fillFromEntry(entry);
         }
       });
@@ -206,7 +210,7 @@ class _QuickAddPageState extends ConsumerState<QuickAddPage> {
       setState(() {
         _looking = false;
         _status = null;
-        _error = '词典查询失败：$e（可以手动填写后保存）';
+        _error = context.l10n.dictLookupFailed;
       });
     }
   }
@@ -229,14 +233,16 @@ class _QuickAddPageState extends ConsumerState<QuickAddPage> {
   }
 
   Future<void> _save({required bool continueAdding}) async {
+    // Captured before any await: the confirmation is built later.
+    final AppLocalizations l10n = context.l10n;
     if (_saving) return;
     final String text = _word.text.trim();
     if (text.isEmpty) {
-      setState(() => _error = '请输入英文单词');
+      setState(() => _error = context.l10n.enterEnglishWord);
       return;
     }
     if (_bookId == null) {
-      setState(() => _error = '请先创建一个词书');
+      setState(() => _error = context.l10n.createListFirst);
       return;
     }
     setState(() {
@@ -270,22 +276,23 @@ class _QuickAddPageState extends ConsumerState<QuickAddPage> {
       if (!mounted) return;
       setState(() {
         _saving = false;
-        _error = e.message;
+        _error = describeAppError(l10n, e.code);
       });
-      if (e.message.contains('词书已被删除')) await _loadBooks();
+      // Branch on the code, never on the (translated) sentence.
+      if (e.code == AppErrorCode.wordListDeleted) await _loadBooks();
       return;
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _saving = false;
-        _error = '保存失败：$e';
+        _error = l10n.errorSaveFailed;
       });
       return;
     }
 
     // The data is committed at this point. A failure while refreshing caches or
     // remembering the last book must never be reported as "save failed".
-    final String message = result.describe();
+    final String message = describeIntake(l10n, result);
     try {
       await ref.read(databaseProvider).writeMeta(_lastBookKey, _bookId!);
       ref.invalidate(todayProgressProvider);
@@ -352,7 +359,7 @@ class _QuickAddPageState extends ConsumerState<QuickAddPage> {
         .where((String l) => l.isNotEmpty)
         .toList();
     if (lines.isEmpty) {
-      setState(() => _error = '请粘贴单词，每行一个');
+      setState(() => _error = context.l10n.pasteWordsPerLine);
       return;
     }
     setState(() {
@@ -365,7 +372,7 @@ class _QuickAddPageState extends ConsumerState<QuickAddPage> {
       final ImportPreview preview = service.parseContent(
         lines.join('\n'),
         format: 'txt',
-        name: '批量添加',
+        name: context.l10n.addMultiple,
       );
       final Map<String, bool> hasDefinition = <String, bool>{};
       final DictionaryService? dictionary = ref.read(dictionaryProvider).value;
@@ -400,7 +407,7 @@ class _QuickAddPageState extends ConsumerState<QuickAddPage> {
       if (!mounted) return;
       setState(() {
         _looking = false;
-        _error = '解析失败：$e';
+        _error = context.l10n.parseFailed;
       });
     }
   }
@@ -427,17 +434,17 @@ class _QuickAddPageState extends ConsumerState<QuickAddPage> {
       if (!mounted) return;
       setState(() {
         _saving = false;
-        _status = outcome.summary;
+        _status = importOutcomeSummary(context.l10n, outcome);
         _batch.clear();
         _batchPreview = null;
         _batchPreviewReady = false;
       });
-      showMessage(context, outcome.summary);
+      showMessage(context, importOutcomeSummary(context.l10n, outcome));
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _saving = false;
-        _error = '批量导入失败：$e';
+        _error = context.l10n.batchAddFailed;
       });
     }
   }
@@ -445,8 +452,8 @@ class _QuickAddPageState extends ConsumerState<QuickAddPage> {
   Future<void> _createBook() async {
     final String? name = await promptForText(
       context,
-      title: '新建词书',
-      label: '词书名称',
+      title: context.l10n.newWordList,
+      label: context.l10n.wordListName,
     );
     if (name == null || name.trim().isEmpty) return;
     final WordBook book = await ref
@@ -480,10 +487,12 @@ class _QuickAddPageState extends ConsumerState<QuickAddPage> {
       },
       child: Scaffold(
         appBar: ClassicAppBar(
-          title: const Text('快速添加单词'),
+          title: Text(context.l10n.actionAddWord),
           actions: <Widget>[
             IconButton(
-              tooltip: _batchMode ? '切换到单个添加' : '批量添加',
+              tooltip: _batchMode
+                  ? context.l10n.addOneWord
+                  : context.l10n.addMultiple,
               icon: Icon(
                 _batchMode ? Icons.note_add_outlined : Icons.playlist_add,
               ),
@@ -512,8 +521,8 @@ class _QuickAddPageState extends ConsumerState<QuickAddPage> {
                       focusNode: _wordFocus,
                       autofocus: true,
                       decoration: InputDecoration(
-                        labelText: '英文单词',
-                        hintText: '输入后自动查询离线词典',
+                        labelText: context.l10n.englishWord,
+                        hintText: context.l10n.typeToLookUp,
                         prefixIcon: const Icon(Icons.text_fields),
                         suffixIcon: _looking
                             ? const Padding(
@@ -545,14 +554,18 @@ class _QuickAddPageState extends ConsumerState<QuickAddPage> {
                         Expanded(
                           child: TextField(
                             controller: _phonetic,
-                            decoration: const InputDecoration(labelText: '音标'),
+                            decoration: InputDecoration(
+                              labelText: context.l10n.phonetics,
+                            ),
                           ),
                         ),
                         AppSpacing.w8,
                         Expanded(
                           child: TextField(
                             controller: _pos,
-                            decoration: const InputDecoration(labelText: '词性'),
+                            decoration: InputDecoration(
+                              labelText: context.l10n.partOfSpeech,
+                            ),
                           ),
                         ),
                       ],
@@ -560,9 +573,9 @@ class _QuickAddPageState extends ConsumerState<QuickAddPage> {
                     AppSpacing.h8,
                     TextField(
                       controller: _translation,
-                      decoration: const InputDecoration(
-                        labelText: '中文释义',
-                        hintText: '可为空，稍后补充',
+                      decoration: InputDecoration(
+                        labelText: context.l10n.chineseMeaning,
+                        hintText: context.l10n.optional,
                       ),
                       minLines: 1,
                       maxLines: 4,
@@ -570,21 +583,27 @@ class _QuickAddPageState extends ConsumerState<QuickAddPage> {
                     AppSpacing.h8,
                     TextField(
                       controller: _definition,
-                      decoration: const InputDecoration(labelText: '英文释义'),
+                      decoration: InputDecoration(
+                        labelText: context.l10n.englishDefinition,
+                      ),
                       minLines: 1,
                       maxLines: 4,
                     ),
                     AppSpacing.h8,
                     TextField(
                       controller: _example,
-                      decoration: const InputDecoration(labelText: '例句（可选）'),
+                      decoration: InputDecoration(
+                        labelText: context.l10n.exampleSentence,
+                      ),
                       minLines: 1,
                       maxLines: 3,
                     ),
                     AppSpacing.h8,
                     TextField(
                       controller: _note,
-                      decoration: const InputDecoration(labelText: '个人笔记（可选）'),
+                      decoration: InputDecoration(
+                        labelText: context.l10n.notes,
+                      ),
                       minLines: 1,
                       maxLines: 3,
                     ),
@@ -593,7 +612,7 @@ class _QuickAddPageState extends ConsumerState<QuickAddPage> {
                       Padding(
                         padding: const EdgeInsets.only(bottom: 8),
                         child: Text(
-                          '词典未收录也可以直接保存；保存后可在词条详情里继续补充释义。',
+                          context.l10n.dictMissingNote,
                           style: theme.textTheme.bodySmall,
                         ),
                       ),
@@ -612,7 +631,7 @@ class _QuickAddPageState extends ConsumerState<QuickAddPage> {
                         Expanded(
                           child: OutlinedButton(
                             onPressed: _saving ? null : _previewBatch,
-                            child: const Text('预览'),
+                            child: Text(context.l10n.preview),
                           ),
                         ),
                         AppSpacing.w8,
@@ -624,7 +643,11 @@ class _QuickAddPageState extends ConsumerState<QuickAddPage> {
                                     _bookId == null
                                 ? null
                                 : _commitBatch,
-                            child: Text(_saving ? '导入中…' : '导入到词书'),
+                            child: Text(
+                              _saving
+                                  ? context.l10n.importing
+                                  : context.l10n.importIntoList,
+                            ),
                           ),
                         ),
                       ],
@@ -637,7 +660,11 @@ class _QuickAddPageState extends ConsumerState<QuickAddPage> {
                             onPressed: _saving
                                 ? null
                                 : () => _save(continueAdding: true),
-                            child: Text(desktop ? '保存并继续（⌘Enter）' : '保存并继续添加'),
+                            child: Text(
+                              desktop
+                                  ? context.l10n.saveAndContinueShortcut
+                                  : context.l10n.saveAndContinue,
+                            ),
                           ),
                         ),
                         AppSpacing.w8,
@@ -646,15 +673,18 @@ class _QuickAddPageState extends ConsumerState<QuickAddPage> {
                             onPressed: _saving
                                 ? null
                                 : () => _save(continueAdding: false),
-                            child: Text(_saving ? '保存中…' : '保存'),
+                            child: Text(
+                              _saving
+                                  ? context.l10n.saving
+                                  : context.l10n.commonSave,
+                            ),
                           ),
                         ),
                       ],
                     ),
                   AppSpacing.h16,
                   Text(
-                    '默认沿用上次选择的词书；已有单词会保留原有释义、笔记和学习进度，'
-                    '只有你实际修改过的内容才会覆盖。',
+                    context.l10n.quickAddNote,
                     style: theme.textTheme.bodySmall,
                   ),
                 ],
@@ -677,8 +707,8 @@ class _QuickAddPageState extends ConsumerState<QuickAddPage> {
         controller: _batch,
         minLines: 8,
         maxLines: 16,
-        decoration: const InputDecoration(
-          labelText: '批量单词（每行一个）',
+        decoration: InputDecoration(
+          labelText: context.l10n.batchWordsPerLine,
           hintText: 'apple\napply\nappreciate',
           alignLabelWithHint: true,
         ),
@@ -691,15 +721,19 @@ class _QuickAddPageState extends ConsumerState<QuickAddPage> {
       if (_batchPreviewReady && preview != null) ...<Widget>[
         AppSpacing.h12,
         Text(
-          '识别到 ${preview.entries.length} 个单词'
-          '${preview.duplicateCount > 0 ? '，文件内重复 ${preview.duplicateCount} 个已合并' : ''}'
-          '${preview.invalidCount > 0 ? '，忽略 ${preview.invalidCount} 行无效内容' : ''}',
+          <String>[
+            context.l10n.foundWordCount(preview.entries.length),
+            if (preview.duplicateCount > 0)
+              context.l10n.batchDuplicates(preview.duplicateCount),
+            if (preview.invalidCount > 0)
+              context.l10n.batchInvalidLines(preview.invalidCount),
+          ].join(' · '),
           style: theme.textTheme.bodyMedium,
         ),
         AppSpacing.h4,
         Text(
-          '已有释义或可由词典补全：$withDefinition 个；需要人工补充：$withoutDefinition 个。'
-          '导入时已有学习进度会被保留。',
+          '${context.l10n.batchDefinitionStats(withDefinition, withoutDefinition)} '
+          '${context.l10n.batchKeepsProgress}',
           style: theme.textTheme.bodySmall,
         ),
         AppSpacing.h8,
@@ -721,7 +755,7 @@ class _QuickAddPageState extends ConsumerState<QuickAddPage> {
           Padding(
             padding: const EdgeInsets.only(top: 4),
             child: Text(
-              '…共 ${preview.entries.length} 个',
+              context.l10n.moreTotal(preview.entries.length),
               style: theme.textTheme.bodySmall,
             ),
           ),
@@ -794,11 +828,14 @@ class _BookField extends StatelessWidget {
       children: <Widget>[
         Expanded(
           child: ClassicSelect<String>(
-            label: '目标词书',
+            label: context.l10n.targetList,
             value: known ? bookId! : (books.isEmpty ? '' : books.first.id),
             options: <ClassicOption<String>>[
               if (books.isEmpty)
-                const ClassicOption<String>(value: '', label: '还没有词书'),
+                ClassicOption<String>(
+                  value: '',
+                  label: context.l10n.noWordLists,
+                ),
               for (final WordBook book in books)
                 ClassicOption<String>(value: book.id, label: book.name),
             ],
@@ -809,7 +846,7 @@ class _BookField extends StatelessWidget {
         ),
         AppSpacing.w8,
         IconButton(
-          tooltip: '新建词书',
+          tooltip: context.l10n.newWordList,
           onPressed: onCreate,
           icon: const Icon(Icons.create_new_folder_outlined),
         ),

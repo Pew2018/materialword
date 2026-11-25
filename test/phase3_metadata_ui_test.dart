@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:materialword/l10n/l10n.dart';
 import 'package:materialword/app/providers.dart';
 import 'package:materialword/app/theme.dart';
 import 'package:materialword/core/repositories/word_metadata_repository.dart';
@@ -23,7 +24,13 @@ void main() {
           databaseProvider.overrideWithValue(env.db),
           clockProvider.overrideWithValue(env.clock),
         ],
-        child: MaterialApp(theme: AppTheme.light(), home: home),
+        child: MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          locale: const Locale('zh'),
+          theme: AppTheme.light(),
+          home: home,
+        ),
       ),
     );
     await settle(tester);
@@ -138,14 +145,14 @@ void main() {
       await mount(tester, e, const WordManagementPage());
       await tester.tap(find.text('仅收藏'));
       await settle(tester);
-      expect(find.text('词汇管理（121）'), findsOneWidget);
-      await tester.ensureVisible(find.text('选择筛选结果全部 121 项'));
-      await tester.tap(find.text('选择筛选结果全部 121 项'));
+      expect(find.text('全部单词（121）'), findsOneWidget);
+      await tester.ensureVisible(find.text('选择全部 121 项'));
+      await tester.tap(find.text('选择全部 121 项'));
       await settle(tester);
       expect(find.text('已选 121'), findsOneWidget);
       await tester.tap(find.byTooltip('收藏与标签批量操作'));
       await settle(tester);
-      await tester.tap(find.text('取消收藏所选'));
+      await tester.tap(find.text('取消收藏'));
       await settle(tester);
       expect(await e.study.managedCount(favoritesOnly: true), 0);
       expect(find.text('没有符合条件的单词'), findsOneWidget);

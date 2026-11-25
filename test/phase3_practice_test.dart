@@ -1,4 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
+
+import 'package:materialword/core/errors/app_error.dart';
 import 'package:materialword/core/database/app_database.dart';
 import 'package:materialword/core/models/enums.dart';
 import 'package:materialword/core/models/study_models.dart';
@@ -298,7 +300,7 @@ void main() {
       expect(outcome, isNull);
       expect(session.answeredCount, 0);
       expect(session.phase, PracticePhase.question);
-      expect(session.error, contains('已更新'));
+      expect(session.error, AppErrorCode.practiceContentUpdated);
       expect(await env.db.select(env.db.reviewEvents).get(), isEmpty);
     },
   );
@@ -316,7 +318,7 @@ void main() {
     ], now: env.clock.now());
 
     expect(await session.submitTyped(question.answer), isNull);
-    expect(session.error, contains('移出'));
+    expect(session.error, AppErrorCode.practiceWordUnlinked);
     expect(await env.db.select(env.db.reviewEvents).get(), isEmpty);
   });
 
@@ -331,7 +333,7 @@ void main() {
     await env.words.softDelete(question.word.id, now: env.clock.now());
 
     expect(await session.submitTyped(question.answer), isNull);
-    expect(session.error, contains('删除'));
+    expect(session.error, AppErrorCode.practiceWordDeleted);
     expect(await env.db.select(env.db.reviewEvents).get(), isEmpty);
   });
 

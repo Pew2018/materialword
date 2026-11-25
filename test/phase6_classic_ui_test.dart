@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:materialword/l10n/l10n.dart';
 import 'package:materialword/app/app.dart';
 import 'package:materialword/app/navigation.dart';
 import 'package:materialword/app/providers.dart';
@@ -89,6 +90,9 @@ void main() {
     int index = 0;
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        locale: const Locale('zh'),
         theme: AppTheme.light(),
         home: StatefulBuilder(
           builder: (BuildContext context, StateSetter setState) => Scaffold(
@@ -103,9 +107,7 @@ void main() {
 
     final List<Rect> rects = <Rect>[
       for (final AppDestination destination in appDestinations)
-        tester.getRect(
-          find.byKey(ValueKey<String>('nav-${destination.label}')),
-        ),
+        tester.getRect(find.byKey(ValueKey<String>('nav-${destination.id}'))),
     ];
     expect(rects, hasLength(5));
     for (final Rect rect in rects) {
@@ -118,7 +120,7 @@ void main() {
     void expectNoTint() {
       for (final AppDestination destination in appDestinations) {
         final Finder item = find.byKey(
-          ValueKey<String>('nav-${destination.label}'),
+          ValueKey<String>('nav-${destination.id}'),
         );
         final Material surface = tester.widget<Material>(
           find.descendant(of: item, matching: find.byType(Material)).first,
@@ -138,13 +140,13 @@ void main() {
 
     expectNoTint();
     final Rect before = tester.getRect(
-      find.byKey(const ValueKey<String>('nav-统计')),
+      find.byKey(const ValueKey<String>('nav-statistics')),
     );
-    await tester.tap(find.byKey(const ValueKey<String>('nav-统计')));
+    await tester.tap(find.byKey(const ValueKey<String>('nav-statistics')));
     await settle(tester);
     expect(index, 3);
     expect(
-      tester.getRect(find.byKey(const ValueKey<String>('nav-统计'))),
+      tester.getRect(find.byKey(const ValueKey<String>('nav-statistics'))),
       before,
       reason: 'selecting must not move or resize the item',
     );
@@ -173,6 +175,9 @@ void main() {
           ttsServiceProvider.overrideWithValue(_SilentTts()),
         ],
         child: MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          locale: const Locale('zh'),
           theme: AppTheme.light(platform: TargetPlatform.macOS),
           home: const StudyPage(),
         ),
@@ -254,6 +259,9 @@ void main() {
           ttsServiceProvider.overrideWithValue(_SilentTts()),
         ],
         child: MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          locale: const Locale('zh'),
           theme: AppTheme.light(),
           home: const StudyPage(special: SpecialReview.hard),
         ),
@@ -262,7 +270,7 @@ void main() {
     await settle(tester);
     // Four icon buttons plus the counter used to overflow this AppBar.
     expect(find.byTooltip('更多操作'), findsOneWidget);
-    expect(find.byTooltip('跳过（不计入作答）'), findsNothing);
+    expect(find.byTooltip('跳过'), findsNothing);
     expect(find.text('显示释义'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await clean(tester);
@@ -279,6 +287,9 @@ void main() {
     String value = 'a';
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        locale: const Locale('zh'),
         theme: AppTheme.light(),
         home: Scaffold(
           appBar: AppBar(title: const Text('选择')),
@@ -287,7 +298,7 @@ void main() {
             child: StatefulBuilder(
               builder: (BuildContext context, StateSetter setState) =>
                   ClassicSelect<String>(
-                    label: '当前学习词书',
+                    label: '学习词书',
                     value: value,
                     options: const <ClassicOption<String>>[
                       ClassicOption<String>(value: 'a', label: '全部词书'),
@@ -331,13 +342,16 @@ void main() {
     final ThemeData theme = AppTheme.dark();
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        locale: const Locale('zh'),
         theme: theme,
         home: Scaffold(
           appBar: AppBar(title: const Text('选择')),
           body: Padding(
             padding: const EdgeInsets.all(16),
             child: ClassicSelect<String>(
-              label: '当前学习词书',
+              label: '学习词书',
               value: 'a',
               options: const <ClassicOption<String>>[
                 ClassicOption<String>(value: 'a', label: '全部词书'),
@@ -394,17 +408,17 @@ void main() {
     );
     await settle(tester);
 
-    expect(find.text('当前学习词书'), findsOneWidget);
+    expect(find.text('学习词书'), findsOneWidget);
     expect(
       find.widgetWithText(TextButton, '词书'),
       findsNothing,
       reason: 'the navigation bar already has a 词书 destination',
     );
     expect(find.widgetWithText(ElevatedButton, '开始学习'), findsOneWidget);
-    expect(find.widgetWithText(OutlinedButton, '只做复习'), findsOneWidget);
+    expect(find.widgetWithText(OutlinedButton, '仅复习'), findsOneWidget);
     // Special drills are list rows, not a row of competing buttons.
     expect(find.text('专项复习'), findsOneWidget);
-    expect(find.widgetWithText(TextButton, '困难词专项'), findsNothing);
+    expect(find.widgetWithText(TextButton, '困难词复习'), findsNothing);
     expect(tester.takeException(), isNull);
     await clean(tester);
     await env.dispose();

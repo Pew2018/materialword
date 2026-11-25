@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:materialword/l10n/l10n.dart';
 import 'package:materialword/app/providers.dart';
 import 'package:materialword/app/theme.dart';
 import 'package:materialword/features/sync/sync_settings_page.dart';
@@ -57,13 +58,16 @@ void main() {
           credentialStoreProvider.overrideWithValue(credentials),
         ],
         child: MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          locale: const Locale('zh'),
           theme: AppTheme.light(),
           home: const SyncSettingsPage(),
         ),
       ),
     );
     await settle(tester);
-    final tile = find.widgetWithText(SwitchListTile, '数据变化后自动同步');
+    final tile = find.widgetWithText(SwitchListTile, '更改后同步');
     await reveal(tester, tile);
     expect(tester.widget<SwitchListTile>(tile).value, isTrue);
     await tester.tap(tile.hitTestable());
@@ -96,13 +100,16 @@ void main() {
           credentialStoreProvider.overrideWithValue(InMemoryCredentialStore()),
         ],
         child: MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          locale: const Locale('zh'),
           theme: AppTheme.light(),
           home: const SyncSettingsPage(),
         ),
       ),
     );
     await settle(tester);
-    final tile = find.widgetWithText(SwitchListTile, '数据变化后自动同步');
+    final tile = find.widgetWithText(SwitchListTile, '更改后同步');
     await reveal(tester, tile);
     expect(tester.widget<SwitchListTile>(tile).onChanged, isNull);
     expect(tester.takeException(), isNull);

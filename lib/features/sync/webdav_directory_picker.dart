@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../app/theme.dart';
 import '../../services/sync/sync_provider.dart';
 import '../../services/sync/webdav_sync_provider.dart';
+import '../../l10n/l10n.dart';
 import '../../shared/widgets/common.dart';
 
 /// Lets the user pick a *real* folder on their WebDAV server instead of typing
@@ -19,14 +20,14 @@ Future<String?> showWebDavDirectoryPicker({
   required BuildContext context,
   required WebDavSyncProvider provider,
   String initialPath = '',
-  String title = '选择远程文件夹',
+  String? title,
 }) {
   return showDialog<String>(
     context: context,
     builder: (BuildContext context) => _WebDavDirectoryDialog(
       provider: provider,
       initialPath: initialPath,
-      title: title,
+      title: title ?? context.l10n.chooseRemoteFolder,
     ),
   );
 }
@@ -94,7 +95,7 @@ class _WebDavDirectoryDialogState extends State<_WebDavDirectoryDialog> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = '无法读取目录：$e';
+        _error = context.l10n.cannotReadFolder;
       });
     }
   }
@@ -109,9 +110,9 @@ class _WebDavDirectoryDialogState extends State<_WebDavDirectoryDialog> {
   Future<void> _createFolder() async {
     final String? name = await promptForText(
       context,
-      title: '新建文件夹',
-      label: '文件夹名称',
-      confirmLabel: '创建',
+      title: context.l10n.newFolder,
+      label: context.l10n.folderName,
+      confirmLabel: context.l10n.create,
     );
     if (name == null || name.trim().isEmpty) return;
     final String child = _path.isEmpty ? name.trim() : '$_path/${name.trim()}';
@@ -120,9 +121,10 @@ class _WebDavDirectoryDialogState extends State<_WebDavDirectoryDialog> {
       if (!mounted) return;
       setState(() => _path = _normalize(child));
       await _load();
-    } on SyncException catch (e) {
+    } on SyncException {
       if (!mounted) return;
-      showMessage(context, e.message, error: true);
+      // The exception message is diagnostic; the user gets a sentence they can act on.
+      showMessage(context, context.l10n.createFolderFailed, error: true);
     }
   }
 
@@ -140,7 +142,7 @@ class _WebDavDirectoryDialogState extends State<_WebDavDirectoryDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             Text(
-              '服务器：${widget.provider.baseUrl.trim()}',
+              context.l10n.serverLabel(widget.provider.baseUrl.trim()),
               style: theme.textTheme.bodySmall,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -162,7 +164,7 @@ class _WebDavDirectoryDialogState extends State<_WebDavDirectoryDialog> {
                   ),
                 ),
                 IconButton(
-                  tooltip: '刷新',
+                  tooltip: context.l10n.commonRefresh,
                   icon: const Icon(Icons.refresh),
                   onPressed: _loading ? null : _load,
                 ),
@@ -192,15 +194,15 @@ class _WebDavDirectoryDialogState extends State<_WebDavDirectoryDialog> {
       actions: <Widget>[
         TextButton(
           onPressed: _loading ? null : _createFolder,
-          child: const Text('新建文件夹'),
+          child: Text(context.l10n.newFolder),
         ),
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('取消'),
+          child: Text(context.l10n.commonCancel),
         ),
         TextButton(
           onPressed: _loading ? null : () => Navigator.of(context).pop(_path),
-          child: const Text('选择此文件夹'),
+          child: Text(context.l10n.chooseThisFolder),
         ),
       ],
     );
@@ -212,7 +214,7 @@ class _WebDavDirectoryDialogState extends State<_WebDavDirectoryDialog> {
         ListTile(
           dense: true,
           leading: const Icon(Icons.arrow_upward),
-          title: const Text('上一级'),
+          title: Text(context.l10n.parentFolder),
           onTap: () {
             setState(() => _path = parent);
             _load();
@@ -233,7 +235,7 @@ class _WebDavDirectoryDialogState extends State<_WebDavDirectoryDialog> {
       return Padding(
         padding: const EdgeInsets.only(top: 16),
         child: Text(
-          '这个位置没有子文件夹。可以直接选择当前文件夹，或新建一个。',
+          context.l10n.noSubfolders,
           style: theme.textTheme.bodySmall,
         ),
       );

@@ -128,7 +128,7 @@ void main() {
     expect(state.stage, StudyStage.review.code);
   });
 
-  test('T09 每日新词目标与复习上限生效，超出部分计入积压', () async {
+  test('T09 每日新词目标目标与复习上限生效，超出部分计入积压', () async {
     final WordBook book = await env.seedBook(
       words: List<String>.generate(10, (int i) => 'word$i'),
     );

@@ -8,14 +8,15 @@ import '../core/database/app_database.dart';
 /// no review events, learning states or settings are included. The full backup
 /// lives in 设置 → 备份与恢复.
 enum WordBookExportFormat {
-  txt('txt', '纯文本（每行一个单词）'),
-  csv('csv', 'CSV（含释义与例句）'),
-  json('json', 'JSON（结构化字段，可无损往返）');
+  txt('txt'),
+  csv('csv'),
+  json('json');
 
-  const WordBookExportFormat(this.extension, this.label);
+  const WordBookExportFormat(this.extension);
 
   final String extension;
-  final String label;
+
+  // The display name is localised by `lib/l10n/export_labels.dart`.
 }
 
 /// A book with its live words, as handed to the exporter.

@@ -1,19 +1,21 @@
 /// Domain enums shared by the scheduler, repositories and UI.
 ///
 /// The numeric/string values are persisted in SQLite and in the sync protocol,
-/// so they must never be renumbered.
+/// so they must never be renumbered. Display names are *not* part of the enums:
+/// they live in `lib/l10n` and are resolved per language at the UI boundary.
 library;
 
 /// The three answer levels the user can pick for a card.
 enum AnswerResult {
-  unknown(0, '不认识'),
-  hazy(1, '模糊'),
-  known(2, '认识');
+  unknown(0),
+  hazy(1),
+  known(2);
 
-  const AnswerResult(this.code, this.label);
+  const AnswerResult(this.code);
 
+  /// Persisted value. Never renumber: it is written to SQLite and to the sync
+  /// protocol. The display name comes from `enum_labels.dart`.
   final int code;
-  final String label;
 
   static AnswerResult fromCode(int code) => AnswerResult.values.firstWhere(
     (AnswerResult v) => v.code == code,
@@ -37,21 +39,20 @@ enum AnswerResult {
 /// Where a word currently sits in the learning pipeline.
 enum StudyStage {
   /// Never answered yet.
-  newWord(0, '未学习'),
+  newWord(0),
 
   /// Answered at least once, still on the short learning steps.
-  learning(1, '学习中'),
+  learning(1),
 
   /// On the long-term review ladder (1/3/7/14/30 days).
-  review(2, '复习中'),
+  review(2),
 
   /// Recently failed; must be re-learnt before returning to the ladder.
-  relearning(3, '重学中');
+  relearning(3);
 
-  const StudyStage(this.code, this.label);
+  const StudyStage(this.code);
 
   final int code;
-  final String label;
 
   static StudyStage fromCode(int code) => StudyStage.values.firstWhere(
     (StudyStage v) => v.code == code,
@@ -78,14 +79,13 @@ enum ReviewType {
 
 /// Application theme preference.
 enum ThemePreference {
-  system('system', '跟随系统'),
-  light('light', '浅色'),
-  dark('dark', '深色');
+  system('system'),
+  light('light'),
+  dark('dark');
 
-  const ThemePreference(this.code, this.label);
+  const ThemePreference(this.code);
 
   final String code;
-  final String label;
 
   static ThemePreference fromCode(String? code) =>
       ThemePreference.values.firstWhere(
@@ -96,15 +96,14 @@ enum ThemePreference {
 
 /// How the study session builds its queue.
 enum StudyMode {
-  mixed('mixed', '新词 + 复习'),
-  newOnly('new', '仅新词'),
-  reviewOnly('review', '仅复习'),
-  special('special', '专项复习');
+  mixed('mixed'),
+  newOnly('new'),
+  reviewOnly('review'),
+  special('special');
 
-  const StudyMode(this.code, this.label);
+  const StudyMode(this.code);
 
   final String code;
-  final String label;
 
   static StudyMode fromCode(String? code) => StudyMode.values.firstWhere(
     (StudyMode v) => v.code == code,
@@ -117,18 +116,17 @@ enum StudyMode {
 /// events (so they count towards today's review allowance and move the
 /// next-review date), but the queue itself is built from a different filter.
 enum SpecialReview {
-  none('none', '普通学习'),
-  hard('hard', '困难词专项'),
-  recentMistakes('mistakes', '近期错误专项'),
-  inBook('book', '词书内专项'),
-  favorites('favorites', '收藏词专项'),
-  sessionMistakes('session-mistakes', '本轮错词复练'),
-  sprint('sprint', '考前冲刺');
+  none('none'),
+  hard('hard'),
+  recentMistakes('mistakes'),
+  inBook('book'),
+  favorites('favorites'),
+  sessionMistakes('session-mistakes'),
+  sprint('sprint');
 
-  const SpecialReview(this.code, this.label);
+  const SpecialReview(this.code);
 
   final String code;
-  final String label;
 
   static SpecialReview fromCode(String? code) =>
       SpecialReview.values.firstWhere(
@@ -142,16 +140,14 @@ enum SpecialReview {
 /// review ladder: spelling a word correctly today says nothing about whether it
 /// is still known in 14 days.
 enum PracticeKind {
-  spelling('spelling', '拼写练习', '看中文释义，输入英文单词'),
-  dictation('dictation', '听写练习', '听发音，输入英文单词'),
-  choice('choice', '选择题', '从选项中选出正确单词'),
-  cloze('cloze', '例句挖空', '根据例句语境补全单词');
+  spelling('spelling'),
+  dictation('dictation'),
+  choice('choice'),
+  cloze('cloze');
 
-  const PracticeKind(this.code, this.label, this.description);
+  const PracticeKind(this.code);
 
   final String code;
-  final String label;
-  final String description;
 
   static PracticeKind fromCode(String? code) => PracticeKind.values.firstWhere(
     (PracticeKind v) => v.code == code,
@@ -219,15 +215,14 @@ class ReviewEventMode {
 
 /// Sort order of the word-management list.
 enum ManagedSort {
-  addedDesc('added', '添加时间（新→旧）'),
-  alpha('alpha', '字母顺序'),
-  wrongDesc('wrong', '错误次数（多→少）'),
-  lastStudiedDesc('last', '最近学习时间');
+  addedDesc('added'),
+  alpha('alpha'),
+  wrongDesc('wrong'),
+  lastStudiedDesc('last');
 
-  const ManagedSort(this.code, this.label);
+  const ManagedSort(this.code);
 
   final String code;
-  final String label;
 
   static ManagedSort fromCode(String? code) => ManagedSort.values.firstWhere(
     (ManagedSort v) => v.code == code,
@@ -237,18 +232,17 @@ enum ManagedSort {
 
 /// Learning-state filter of the word-management list.
 enum ManagedStageFilter {
-  all('all', '全部'),
-  unlearned('unlearned', '未学习'),
-  learning('learning', '学习中'),
-  review('review', '复习中'),
-  relearning('relearning', '重学中'),
-  hard('hard', '困难词'),
-  mastered('mastered', '已掌握');
+  all('all'),
+  unlearned('unlearned'),
+  learning('learning'),
+  review('review'),
+  relearning('relearning'),
+  hard('hard'),
+  mastered('mastered');
 
-  const ManagedStageFilter(this.code, this.label);
+  const ManagedStageFilter(this.code);
 
   final String code;
-  final String label;
 
   static ManagedStageFilter fromCode(String? code) =>
       ManagedStageFilter.values.firstWhere(

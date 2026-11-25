@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:materialword/l10n/l10n.dart';
 import 'package:materialword/app/app.dart';
 import 'package:materialword/app/navigation.dart';
 import 'package:materialword/app/providers.dart';
@@ -89,6 +90,9 @@ void main() {
       int index = 0;
       await tester.pumpWidget(
         MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          locale: const Locale('zh'),
           theme: AppTheme.light(),
           home: StatefulBuilder(
             builder: (context, setState) => Scaffold(
@@ -100,7 +104,7 @@ void main() {
           ),
         ),
       );
-      final item = find.byKey(const ValueKey('nav-词书'));
+      final item = find.byKey(const ValueKey('nav-wordLists'));
       final ink = find.descendant(of: item, matching: find.byType(InkWell));
       final inkElement = tester.element(ink);
       final widget = tester.widget<InkWell>(ink);
@@ -146,6 +150,9 @@ void main() {
   ) async {
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        locale: const Locale('zh'),
         home: MediaQuery(
           data: const MediaQueryData(size: Size(1800, 900)),
           child: Center(
@@ -191,7 +198,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
       await tester.pump(const Duration(milliseconds: 300));
-      await tester.tap(find.byKey(const ValueKey('nav-词典')));
+      await tester.tap(find.byKey(const ValueKey('nav-dictionary')));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
       await tester.pump(const Duration(milliseconds: 300));
@@ -224,6 +231,9 @@ void main() {
   ) async {
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        locale: const Locale('zh'),
         home: Builder(
           builder: (context) => Scaffold(
             body: TextButton(
@@ -278,7 +288,7 @@ void main() {
       expect(find.byType(StudyPage), findsOneWidget);
       expect(find.text(current), findsWidgets);
       expect(await env.db.select(env.db.reviewEvents).get(), hasLength(1));
-      await tester.tap(find.byTooltip('跳过（不计入作答）'));
+      await tester.tap(find.byTooltip('跳过'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
       expect(await env.db.select(env.db.reviewEvents).get(), hasLength(1));

@@ -8,6 +8,9 @@ import '../../core/database/app_database.dart';
 import '../../services/import_service.dart';
 import '../../services/word_intake_service.dart';
 import '../../shared/widgets/classic_select.dart';
+import '../../l10n/backup_labels.dart';
+import '../../l10n/error_labels.dart';
+import '../../l10n/l10n.dart';
 import '../../shared/widgets/common.dart';
 
 /// Wordbook import: pick a TXT / CSV / JSON file (or fetch an HTTPS link), see a
@@ -73,7 +76,7 @@ class _ImportPageState extends ConsumerState<ImportPage> {
     });
     try {
       final List<PlatformFile> files = await FilePicker.pickFiles(
-        dialogTitle: '选择词书文件',
+        dialogTitle: context.l10n.chooseWordListFile,
         type: FileType.custom,
         allowedExtensions: <String>['txt', 'csv', 'json'],
       );
@@ -81,7 +84,7 @@ class _ImportPageState extends ConsumerState<ImportPage> {
       final PlatformFile file = files.first;
       final String? path = file.path;
       if (path == null) {
-        setState(() => _error = '无法读取该文件（仅支持本机文件）');
+        setState(() => _error = context.l10n.cannotReadFile);
         return;
       }
       setState(() => _busy = true);
@@ -94,7 +97,7 @@ class _ImportPageState extends ConsumerState<ImportPage> {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _error = '解析失败：$e';
+        _error = context.l10n.parseFailed;
       });
     }
   }
@@ -153,7 +156,7 @@ class _ImportPageState extends ConsumerState<ImportPage> {
       if (!mounted || generation != _downloadGeneration) return;
       setState(() {
         _busy = false;
-        _error = '下载/解析失败：$e';
+        _error = context.l10n.downloadParseFailed;
       });
     }
   }
@@ -163,7 +166,7 @@ class _ImportPageState extends ConsumerState<ImportPage> {
     ref.read(importServiceProvider).cancel();
     setState(() {
       _busy = false;
-      _error = '已取消下载，未写入任何数据';
+      _error = context.l10n.downloadCancelled;
     });
   }
 
@@ -171,7 +174,7 @@ class _ImportPageState extends ConsumerState<ImportPage> {
     final ImportPreview? preview = _preview;
     if (preview == null || preview.entries.isEmpty) return;
     if (!_createNew && _bookId == null) {
-      setState(() => _error = '请选择目标词书');
+      setState(() => _error = context.l10n.chooseTargetList);
       return;
     }
     final int generation = _previewGeneration;
@@ -211,14 +214,14 @@ class _ImportPageState extends ConsumerState<ImportPage> {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _error = '${e.message}（未修改任何数据）';
+        _error = describeAppError(context.l10n, e.code);
       });
       await _loadBooks();
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _error = '导入失败（事务已回滚，未修改任何数据）：$e';
+        _error = context.l10n.importFailedUnchanged;
       });
     }
   }
@@ -227,7 +230,7 @@ class _ImportPageState extends ConsumerState<ImportPage> {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     return Scaffold(
-      appBar: ClassicAppBar(title: const Text('导入词书')),
+      appBar: ClassicAppBar(title: Text(context.l10n.importWordListTitle)),
       body: ListView(
         padding: const EdgeInsets.all(AppDimens.gutter),
         children: <Widget>[
@@ -243,7 +246,7 @@ class _ImportPageState extends ConsumerState<ImportPage> {
                     child: LinearProgressIndicator(minHeight: 3),
                   ),
                 SectionCard(
-                  title: '1. 选择来源',
+                  title: context.l10n.stepChooseSource,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: <Widget>[
@@ -253,7 +256,7 @@ class _ImportPageState extends ConsumerState<ImportPage> {
                             child: OutlinedButton.icon(
                               onPressed: _busy ? null : _pickFile,
                               icon: const Icon(Icons.folder_open),
-                              label: const Text('选择本机文件'),
+                              label: Text(context.l10n.chooseFile),
                             ),
                           ),
                           AppSpacing.w12,
@@ -263,7 +266,7 @@ class _ImportPageState extends ConsumerState<ImportPage> {
                                   ? null
                                   : () => _showFormatHelp(context),
                               icon: const Icon(Icons.help_outline),
-                              label: const Text('格式说明'),
+                              label: Text(context.l10n.formatHelp),
                             ),
                           ),
                         ],
@@ -274,8 +277,8 @@ class _ImportPageState extends ConsumerState<ImportPage> {
                           Expanded(
                             child: TextField(
                               controller: _url,
-                              decoration: const InputDecoration(
-                                labelText: 'HTTPS 链接（TXT / CSV / JSON）',
+                              decoration: InputDecoration(
+                                labelText: context.l10n.downloadLink,
                                 hintText: 'https://example.com/cet6.txt',
                               ),
                               onChanged: (_) {
@@ -291,7 +294,11 @@ class _ImportPageState extends ConsumerState<ImportPage> {
                           AppSpacing.w12,
                           OutlinedButton(
                             onPressed: _busy ? _cancelDownload : _fetchUrl,
-                            child: Text(_busy ? '取消下载' : '下载'),
+                            child: Text(
+                              _busy
+                                  ? context.l10n.cancelDownload
+                                  : context.l10n.download,
+                            ),
                           ),
                         ],
                       ),
@@ -301,7 +308,7 @@ class _ImportPageState extends ConsumerState<ImportPage> {
                 AppSpacing.h16,
                 if (_preview != null) ...<Widget>[
                   SectionCard(
-                    title: '2. 预览',
+                    title: context.l10n.stepPreview,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: <Widget>[
@@ -311,49 +318,51 @@ class _ImportPageState extends ConsumerState<ImportPage> {
                           children: <Widget>[
                             StatBlock(
                               value: '${_preview!.validCount}',
-                              label: '有效单词',
+                              label: context.l10n.statImportable,
                             ),
                             if (_stats != null) ...<Widget>[
                               StatBlock(
                                 value: '${_stats!.newWords}',
-                                label: '本机没有',
+                                label: context.l10n.statNewWords,
                               ),
                               StatBlock(
                                 value: '${_stats!.existingWords}',
-                                label: '本机已有',
+                                label: context.l10n.statExistingWords,
                               ),
                               StatBlock(
                                 value: '${_stats!.restorableWords}',
-                                label: '可恢复',
+                                label: context.l10n.statRestorable,
                               ),
                               StatBlock(
                                 value: '${_stats!.linkAdds}',
-                                label: '将新增关联',
+                                label: context.l10n.statWillLink,
                               ),
                             ],
                             StatBlock(
                               value: '${_preview!.duplicateCount}',
-                              label: '文件内重复',
+                              label: context.l10n.statDuplicates,
                             ),
                             StatBlock(
                               value: '${_preview!.invalidCount}',
-                              label: '无效行',
+                              label: context.l10n.statInvalid,
                             ),
                             StatBlock(
                               value: _preview!.format.toUpperCase(),
-                              label: '格式',
+                              label: context.l10n.statFormat,
                             ),
                             StatBlock(
                               value: '${_preview!.sectionCount}',
-                              label: '词书数',
+                              label: context.l10n.statLists,
                             ),
                           ],
                         ),
                         if (_preview!.droppedRows > 0) ...<Widget>[
                           AppSpacing.h12,
                           Text(
-                            '文件共有 ${_preview!.totalRows} 行，其中 '
-                            '${_preview!.droppedRows} 行不会被导入（见下方原因）。',
+                            context.l10n.fileRowsSummary(
+                              _preview!.totalRows,
+                              _preview!.droppedRows,
+                            ),
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: AppColors.unknown,
                             ),
@@ -363,15 +372,16 @@ class _ImportPageState extends ConsumerState<ImportPage> {
                             _stats!.restorableWords > 0) ...<Widget>[
                           AppSpacing.h8,
                           Text(
-                            '其中 ${_stats!.restorableWords} 个曾被你删除：本次是明确导入，'
-                            '会恢复这些词条并保留原有学习记录。在线刷新不会恢复它们。',
+                            context.l10n.restorableNote(
+                              _stats!.restorableWords,
+                            ),
                             style: theme.textTheme.bodySmall,
                           ),
                         ],
                         if (_preview!.issues.isNotEmpty) ...<Widget>[
                           AppSpacing.h16,
                           Text(
-                            '前 ${_preview!.issues.length} 个问题：',
+                            context.l10n.issuesHeader(_preview!.issues.length),
                             style: theme.textTheme.bodySmall,
                           ),
                           AppSpacing.h4,
@@ -379,7 +389,8 @@ class _ImportPageState extends ConsumerState<ImportPage> {
                             5,
                           ))
                             Text(
-                              '· ${issue.line} — ${issue.reason}',
+                              '· ${issue.line.isEmpty ? context.l10n.importIssueEmpty : issue.line}'
+                              ' — ${describeImportIssue(context.l10n, issue)}',
                               style: theme.textTheme.bodySmall,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
@@ -390,7 +401,7 @@ class _ImportPageState extends ConsumerState<ImportPage> {
                   ),
                   AppSpacing.h16,
                   SectionCard(
-                    title: '3. 目标词书',
+                    title: context.l10n.stepTargetList,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: <Widget>[
@@ -404,19 +415,19 @@ class _ImportPageState extends ConsumerState<ImportPage> {
                                   setState(() => _createNew = v ?? false);
                                   _refreshStats();
                                 },
-                          title: const Text('加入已有词书'),
+                          title: Text(context.l10n.addToExistingList),
                         ),
                         if (!_createNew)
                           Padding(
                             padding: const EdgeInsets.only(left: 16, bottom: 8),
                             child: ClassicSelect<String>(
-                              label: '词书',
+                              label: context.l10n.targetList,
                               value: _bookId ?? '',
                               options: <ClassicOption<String>>[
                                 if (_bookId == null)
-                                  const ClassicOption<String>(
+                                  ClassicOption<String>(
                                     value: '',
-                                    label: '请选择词书',
+                                    label: context.l10n.chooseWordList,
                                   ),
                                 for (final WordBook book in _books)
                                   ClassicOption<String>(
@@ -438,21 +449,21 @@ class _ImportPageState extends ConsumerState<ImportPage> {
                             setState(() => _createNew = v ?? true);
                             _refreshStats();
                           },
-                          title: const Text('新建词书'),
+                          title: Text(context.l10n.newWordList),
                         ),
                         if (_createNew)
                           Padding(
                             padding: const EdgeInsets.only(left: 16),
                             child: TextField(
                               controller: _newBookName,
-                              decoration: const InputDecoration(
-                                labelText: '词书名称',
+                              decoration: InputDecoration(
+                                labelText: context.l10n.wordListName,
                               ),
                             ),
                           ),
                         AppSpacing.h8,
                         Text(
-                          '已存在的单词不会重复创建，也不会清空学习进度；只补充缺失信息并把单词关联到目标词书。',
+                          context.l10n.importMergeNote,
                           style: theme.textTheme.bodySmall,
                         ),
                       ],
@@ -466,7 +477,7 @@ class _ImportPageState extends ConsumerState<ImportPage> {
                           onPressed: _busy
                               ? null
                               : () => setState(() => _preview = null),
-                          child: const Text('取消'),
+                          child: Text(context.l10n.commonCancel),
                         ),
                       ),
                       AppSpacing.w12,
@@ -476,7 +487,11 @@ class _ImportPageState extends ConsumerState<ImportPage> {
                               ? null
                               : _commit,
                           child: Text(
-                            _busy ? '导入中…' : '开始导入（${_preview!.validCount}）',
+                            _busy
+                                ? context.l10n.importing
+                                : context.l10n.startImportCount(
+                                    _preview!.validCount,
+                                  ),
                           ),
                         ),
                       ),
@@ -486,12 +501,16 @@ class _ImportPageState extends ConsumerState<ImportPage> {
                 if (_outcome != null) ...<Widget>[
                   AppSpacing.h16,
                   SectionCard(
-                    title: '导入完成',
+                    title: context.l10n.importComplete,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: <Widget>[
                         Text(
-                          _outcome!.summary,
+                          context.l10n.refreshDone(
+                            _outcome!.created,
+                            _outcome!.updated,
+                            _outcome!.existing,
+                          ),
                           style: theme.textTheme.bodyMedium,
                         ),
                         AppSpacing.h16,
@@ -500,7 +519,7 @@ class _ImportPageState extends ConsumerState<ImportPage> {
                             Expanded(
                               child: OutlinedButton(
                                 onPressed: () => Navigator.of(context).pop(),
-                                child: const Text('返回'),
+                                child: Text(context.l10n.commonDone),
                               ),
                             ),
                           ],
@@ -514,8 +533,8 @@ class _ImportPageState extends ConsumerState<ImportPage> {
                     padding: const EdgeInsets.only(top: 48),
                     child: EmptyState(
                       icon: Icons.file_upload_outlined,
-                      title: '尚未选择文件',
-                      message: 'TXT 每行一个单词；CSV 需包含 word 列；JSON 需包含 words 数组。',
+                      title: context.l10n.noFileChosen,
+                      message: context.l10n.formatSummary,
                     ),
                   ),
               ],
@@ -530,26 +549,24 @@ class _ImportPageState extends ConsumerState<ImportPage> {
     showDialog<void>(
       context: context,
       builder: (BuildContext context) => AlertDialog(
-        title: const Text('支持的格式'),
-        content: const SingleChildScrollView(
+        title: Text(context.l10n.supportedFormats),
+        content: SingleChildScrollView(
           child: Text(
-            'TXT\n每行一个单词，可在制表符或逗号后附带释义：\n  abandon\n  abandon\tv. 放弃\n\n'
-            'CSV\n首行表头，必须包含 word 列，可选 phonetic / pos / translation / definition / example / note。\n\n'
-            'JSON\n'
-            '{\n'
-            '  "schemaVersion": 1,\n'
-            '  "name": "CET-6 核心词",\n'
-            '  "words": [\n'
-            '    {"word": "abandon", "translation": "v. 放弃"}\n'
-            '  ]\n'
-            '}\n\n'
-            '导入前会自动用离线词典补全音标与释义；已有单词的学习进度与笔记不会被覆盖。',
+            <String>[
+              context.l10n.formatHelpTxt,
+              context.l10n.formatHelpCsv,
+              context.l10n.formatHelpJson,
+              context.l10n.formatHelpFooter(
+                ImportService.maxEntries,
+                ImportService.maxFileBytes ~/ (1024 * 1024),
+              ),
+            ].join('\n\n'),
           ),
         ),
         actions: <Widget>[
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('关闭'),
+            child: Text(context.l10n.commonClose),
           ),
         ],
       ),

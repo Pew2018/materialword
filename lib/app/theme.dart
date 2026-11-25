@@ -97,39 +97,184 @@ class AppMotion {
   static const Curve curve = Curves.easeInOut;
 }
 
-/// A classic Material Design 2 accent colour.
+/// Which set an accent swatch belongs to.
+///
+/// Only used to group the picker. It is not persisted and never decides
+/// behaviour.
+enum AccentGroup { classic, material }
+
+/// One accent colour preset.
+///
+/// [id] is a stable identifier (`classic.clearSkyBlue`, `material.blue`),
+/// deliberately independent of the display name and of the position in the
+/// list: presets can be reordered or renamed without touching a stored
+/// preference, and the Chinese and English names live in the ARB resources.
+///
+/// The *colour* is what gets persisted (as `#RRGGBB`), so a user's choice keeps
+/// working when the preset set changes — including a colour that is no longer
+/// part of any preset.
 class AccentPalette {
   const AccentPalette({
     required this.id,
-    required this.label,
     required this.color,
+    required this.group,
   });
 
   final String id;
-  final String label;
   final Color color;
+  final AccentGroup group;
 
   String get hex => hexOf(color);
 }
 
-/// 12 classic Material 2 palettes. Kept as plain hex strings so the selection
-/// persists as a single text column and a custom colour needs no migration.
-const List<AccentPalette> accentPalettes = <AccentPalette>[
-  AccentPalette(id: 'blue', label: '经典蓝', color: Color(0xFF1565C0)),
-  AccentPalette(id: 'indigo', label: '靛蓝', color: Color(0xFF303F9F)),
-  AccentPalette(id: 'teal', label: '蓝绿', color: Color(0xFF00796B)),
-  AccentPalette(id: 'green', label: '绿色', color: Color(0xFF2E7D32)),
-  AccentPalette(id: 'lightGreen', label: '浅绿', color: Color(0xFF558B2F)),
-  AccentPalette(id: 'amber', label: '琥珀', color: Color(0xFFB26A00)),
-  AccentPalette(id: 'orange', label: '橙色', color: Color(0xFFEF6C00)),
-  AccentPalette(id: 'deepOrange', label: '深橙', color: Color(0xFFD84315)),
-  AccentPalette(id: 'red', label: '红色', color: Color(0xFFC62828)),
-  AccentPalette(id: 'pink', label: '粉色', color: Color(0xFFAD1457)),
-  AccentPalette(id: 'purple', label: '紫色', color: Color(0xFF6A1B9A)),
-  AccentPalette(id: 'blueGrey', label: '蓝灰', color: Color(0xFF455A64)),
-  AccentPalette(id: 'brown', label: '棕色', color: Color(0xFF5D4037)),
-  AccentPalette(id: 'grey', label: '中性灰', color: Color(0xFF424242)),
+/// Classic accents (11), in the order of the reference design.
+const List<AccentPalette> classicAccentPalettes = <AccentPalette>[
+  AccentPalette(
+    id: 'classic.clearSkyBlue',
+    color: Color(0xFF00A8FC),
+    group: AccentGroup.classic,
+  ),
+  AccentPalette(
+    id: 'classic.deepSeaBlue',
+    color: Color(0xFF0073D4),
+    group: AccentGroup.classic,
+  ),
+  AccentPalette(
+    id: 'classic.goldenOrange',
+    color: Color(0xFFDA6945),
+    group: AccentGroup.classic,
+  ),
+  AccentPalette(
+    id: 'classic.lemonYellow',
+    color: Color(0xFFF2A227),
+    group: AccentGroup.classic,
+  ),
+  AccentPalette(
+    id: 'classic.grassGreen',
+    color: Color(0xFF65C400),
+    group: AccentGroup.classic,
+  ),
+  AccentPalette(
+    id: 'classic.jadeGreen',
+    color: Color(0xFF009C8C),
+    group: AccentGroup.classic,
+  ),
+  AccentPalette(
+    id: 'classic.violet',
+    color: Color(0xFF9B73D3),
+    group: AccentGroup.classic,
+  ),
+  AccentPalette(
+    id: 'classic.deepIndigo',
+    color: Color(0xFF3F3DA8),
+    group: AccentGroup.classic,
+  ),
+  AccentPalette(
+    id: 'classic.skyBlue',
+    color: Color(0xFF00CADD),
+    group: AccentGroup.classic,
+  ),
+  AccentPalette(
+    id: 'classic.vibrantPink',
+    color: Color(0xFFFF5592),
+    group: AccentGroup.classic,
+  ),
+  AccentPalette(
+    id: 'classic.orchidPink',
+    color: Color(0xFFC763CE),
+    group: AccentGroup.classic,
+  ),
 ];
+
+/// Material Design accents (12), in the order of the reference design.
+const List<AccentPalette> materialAccentPalettes = <AccentPalette>[
+  AccentPalette(
+    id: 'material.blue',
+    color: Color(0xFF2196F3),
+    group: AccentGroup.material,
+  ),
+  AccentPalette(
+    id: 'material.teal',
+    color: Color(0xFF009688),
+    group: AccentGroup.material,
+  ),
+  AccentPalette(
+    id: 'material.green',
+    color: Color(0xFF4CAF50),
+    group: AccentGroup.material,
+  ),
+  AccentPalette(
+    id: 'material.red',
+    color: Color(0xFFF44336),
+    group: AccentGroup.material,
+  ),
+  AccentPalette(
+    id: 'material.orange',
+    color: Color(0xFFFF9800),
+    group: AccentGroup.material,
+  ),
+  AccentPalette(
+    id: 'material.purple',
+    color: Color(0xFF9C27B0),
+    group: AccentGroup.material,
+  ),
+  AccentPalette(
+    id: 'material.cyan',
+    color: Color(0xFF00BCD4),
+    group: AccentGroup.material,
+  ),
+  AccentPalette(
+    id: 'material.indigo',
+    color: Color(0xFF3F51B5),
+    group: AccentGroup.material,
+  ),
+  AccentPalette(
+    id: 'material.pink',
+    color: Color(0xFFE91E63),
+    group: AccentGroup.material,
+  ),
+  AccentPalette(
+    id: 'material.blueGray',
+    color: Color(0xFF607D8B),
+    group: AccentGroup.material,
+  ),
+  AccentPalette(
+    id: 'material.deepOrange',
+    color: Color(0xFFFF5722),
+    group: AccentGroup.material,
+  ),
+  AccentPalette(
+    id: 'material.lightGreen',
+    color: Color(0xFF8BC34A),
+    group: AccentGroup.material,
+  ),
+];
+
+/// Every preset offered by the picker, grouped set first, in display order.
+const List<AccentPalette> accentPalettes = <AccentPalette>[
+  ...classicAccentPalettes,
+  ...materialAccentPalettes,
+];
+
+/// Ids stored by builds up to 1.2.0. They are still accepted so an upgrading
+/// user keeps the exact colour they picked, even where the id now means
+/// something else (the old `blue` was #1565C0, not Material blue).
+const Map<String, Color> _legacyAccentIds = <String, Color>{
+  'blue': Color(0xFF1565C0),
+  'indigo': Color(0xFF303F9F),
+  'teal': Color(0xFF00796B),
+  'green': Color(0xFF2E7D32),
+  'lightGreen': Color(0xFF558B2F),
+  'amber': Color(0xFFB26A00),
+  'orange': Color(0xFFEF6C00),
+  'deepOrange': Color(0xFFD84315),
+  'red': Color(0xFFC62828),
+  'pink': Color(0xFFAD1457),
+  'purple': Color(0xFF6A1B9A),
+  'blueGrey': Color(0xFF455A64),
+  'brown': Color(0xFF5D4037),
+  'grey': Color(0xFF424242),
+};
 
 /// `#RRGGBB` (upper case) for [color].
 String hexOf(Color color) {
@@ -142,9 +287,12 @@ String hexOf(Color color) {
 Color parseAccent(String? stored) {
   if (stored == null || stored.trim().isEmpty) return AppColors.defaultAccent;
   final String value = stored.trim();
+  final String lower = value.toLowerCase();
   for (final AccentPalette palette in accentPalettes) {
-    if (palette.id.toLowerCase() == value.toLowerCase()) return palette.color;
+    if (palette.id.toLowerCase() == lower) return palette.color;
   }
+  final Color? legacy = _legacyAccentIds[lower];
+  if (legacy != null) return legacy;
   final String hex = value.startsWith('#') ? value.substring(1) : value;
   if (hex.length == 6 || hex.length == 8) {
     final int? parsed = int.tryParse(hex, radix: 16);
@@ -180,10 +328,26 @@ class AppTheme {
   }) => _build(brightness, accent, platform ?? defaultTargetPlatform);
 
   /// The foreground colour that keeps text readable on [background].
-  static Color onColor(Color background) =>
-      ThemeData.estimateBrightnessForColor(background) == Brightness.dark
-      ? Colors.white
-      : Colors.black87;
+  ///
+  /// Picks whichever of white / near-black has the higher contrast ratio instead
+  /// of Flutter's brightness heuristic. The heuristic splits colours at a fixed
+  /// luminance, so mid-tone accents (violet, sky blue, pink) landed on white
+  /// text at ~3:1 — below the 4.5:1 the app bar title and filled buttons need.
+  /// With plain white or black the better of the two is always ≥ 4.5:1.
+  static Color onColor(Color background) {
+    final double withWhite = _contrastRatio(background, Colors.white);
+    final double withBlack = _contrastRatio(background, Colors.black);
+    return withWhite >= withBlack ? Colors.white : Colors.black87;
+  }
+
+  /// WCAG contrast ratio between two opaque colours.
+  static double _contrastRatio(Color a, Color b) {
+    final double la = a.computeLuminance();
+    final double lb = b.computeLuminance();
+    final double lighter = la > lb ? la : lb;
+    final double darker = la > lb ? lb : la;
+    return (lighter + 0.05) / (darker + 0.05);
+  }
 
   static ThemeData _build(
     Brightness brightness,

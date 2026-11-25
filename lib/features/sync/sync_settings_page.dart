@@ -14,6 +14,8 @@ import '../../services/sync/local_file_sync_provider.dart';
 import '../../services/sync/sync_coordinator.dart';
 import '../../services/sync/sync_provider.dart';
 import '../../services/sync/webdav_sync_provider.dart';
+import '../../l10n/l10n.dart';
+import '../../l10n/sync_labels.dart';
 import '../../shared/widgets/common.dart';
 import '../settings/diagnostics_page.dart';
 import 'webdav_directory_picker.dart';
@@ -32,21 +34,15 @@ class SyncSettingsPage extends ConsumerStatefulWidget {
 }
 
 class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
-  static const List<({String id, String label, String description})> _options =
-      <({String id, String label, String description})>[
-        (id: 'none', label: '不同步', description: '只使用本机数据，随时可以导出备份'),
-        (
-          id: 'local-file',
-          label: '本地文件',
-          description: '读写一个 JSON 文件，适合网盘同步目录或手动拷贝',
-        ),
-        (
-          id: 'github',
-          label: 'GitHub 私有仓库',
-          description: '推荐使用一个单独的数据仓库，只存放学习数据',
-        ),
-        (id: 'webdav', label: 'WebDAV', description: '自建或支持安全多设备同步的 WebDAV 目录'),
-      ];
+  /// Built per language: the ids are stable, the labels are not.
+  static List<({String id, String label, String description})> _optionsOf(
+    AppLocalizations l10n,
+  ) => <({String id, String label, String description})>[
+    (id: 'none', label: l10n.syncOff, description: l10n.syncOffHint),
+    (id: 'local-file', label: l10n.localFile, description: l10n.localFileHint),
+    (id: 'github', label: l10n.githubPrivateRepo, description: l10n.githubHint),
+    (id: 'webdav', label: 'WebDAV', description: l10n.webdavHint),
+  ];
 
   String _provider = 'none';
   String _savedToken = '', _savedUser = '';
@@ -75,6 +71,10 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
   String? _credentialNotice;
   DateTime? _lastSyncAt;
   String? _lastResult;
+
+  /// Set when a sync failed because the remote file disappeared. Drives the
+  /// "re-upload" affordance without parsing any user-visible text.
+  bool _remoteMissing = false;
   bool? _pendingChanges;
   SyncTestResult? _testResult;
   List<String> _syncNotes = const <String>[];
@@ -98,6 +98,8 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
   }
 
   Future<void> _load() async {
+    // Captured before the first await: every notice below is built after it.
+    final AppLocalizations l10n = context.l10n;
     final settings = ref.read(settingsRepositoryProvider);
     final Map<String, Object?>? config = await settings.syncConfig();
     final DateTime? lastAt = await settings.lastSyncAt();
@@ -114,10 +116,10 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
         hasPassword =
             (await credentials.read(CredentialKeys.webdavPassword)) != null;
       });
-    } on CredentialStoreUnavailable catch (e) {
+    } on CredentialStoreUnavailable {
       // The stored secrets are unreadable, not absent: ask the user to type
       // them again instead of pretending nothing was saved.
-      credentialNotice = '${e.reason}。已保存的同步凭据无法读取，请重新输入；离线学习不受影响。';
+      credentialNotice = l10n.credentialsUnavailable;
     }
     bool pending = false;
     try {
@@ -138,9 +140,9 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       // denied access. Either way the fix is the same — type it again.
       if (credentialNotice == null) {
         if (_provider == 'github' && (token?.isEmpty ?? true)) {
-          credentialNotice = '未读取到已保存的访问令牌，请重新输入后再同步。';
+          credentialNotice = context.l10n.tokenMissing;
         } else if (_provider == 'webdav' && !hasPassword) {
-          credentialNotice = '未读取到已保存的 WebDAV 密码，请重新输入后再同步。';
+          credentialNotice = context.l10n.passwordMissing;
         }
       }
       _credentialNotice = credentialNotice;
@@ -225,7 +227,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
                 (_webdavPassword.text.isNotEmpty &&
                     _webdavPassword.text != '••••••••')));
     if (draftChanged) {
-      showMessage(context, '连接草稿尚未保存，自动选项将在「立即同步」时一并保存和验证');
+      showMessage(context, context.l10n.draftNotSaved);
       return;
     }
     try {
@@ -235,7 +237,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
         expected: config,
       );
       if (!saved && mounted) {
-        showMessage(context, '连接配置已改变，请重新打开同步页后设置', error: true);
+        showMessage(context, context.l10n.configChanged, error: true);
       } else if (saved &&
           value &&
           mounted &&
@@ -243,10 +245,12 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
           !(_capability?.safeBidirectionalSync ?? false)) {
         // The preference is kept, but the promise is not: automatic sync will
         // not run until the server passes the safety verification.
-        showMessage(context, '已保存偏好。自动同步需要先通过「测试连接」验证安全写入，在此之前不会运行。');
+        showMessage(context, context.l10n.preferencesSaved);
       }
     } catch (_) {
-      if (mounted) showMessage(context, '自动同步选项保存失败，请重试', error: true);
+      if (mounted) {
+        showMessage(context, context.l10n.preferencesSaveFailed, error: true);
+      }
     }
   }
 
@@ -322,10 +326,10 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
             }
           }
         });
-      } on CredentialStoreUnavailable catch (e) {
+      } on CredentialStoreUnavailable {
         if (mounted) {
           setState(() {
-            _credentialNotice = '${e.reason}。凭据没有保存，请重新输入；离线学习不受影响。';
+            _credentialNotice = context.l10n.credentialsNotStored;
           });
         }
         return false;
@@ -392,13 +396,13 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _error = e.message;
+        _error = _describeSyncError(e);
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _error = '连接测试失败：$e';
+        _error = context.l10n.connectionTestFailed;
       });
     } finally {
       if (provider is GitHubSyncProvider) {
@@ -434,12 +438,18 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
         _webdavDir.text = chosen;
         _testResult = null;
         _capability = null;
-        _status = '已选择远程目录：${chosen.isEmpty ? '服务器基础目录' : chosen}';
+        _status = context.l10n.remoteFolderChosen(
+          chosen.isEmpty ? context.l10n.serverRootFolder : chosen,
+        );
       });
-    } on SyncException catch (e) {
-      if (mounted) showMessage(context, e.message, error: true);
-    } catch (e) {
-      if (mounted) showMessage(context, '无法浏览远程目录：$e', error: true);
+    } on SyncException {
+      if (mounted) {
+        showMessage(context, context.l10n.cannotBrowseRemote, error: true);
+      }
+    } catch (_) {
+      if (mounted) {
+        showMessage(context, context.l10n.cannotBrowseRemote, error: true);
+      }
     } finally {
       provider.clearCapturedCredentials();
       provider.close();
@@ -455,12 +465,12 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
     if (provider == null) return;
     final SyncCoordinator coordinator = ref.read(syncCoordinatorProvider);
     if (coordinator.isRunning) {
-      setState(() => _error = '同步正在进行中');
+      setState(() => _error = context.l10n.syncInProgress);
       return;
     }
 
     // A server that is known *not* to support conditional writes must not offer
-    // "立即同步": that would be an unconditional overwrite wearing a safe name.
+    // context.l10n.syncNow: that would be an unconditional overwrite wearing a safe name.
     final SyncCapability? capability = _provider == 'webdav'
         ? _capability
         : null;
@@ -473,11 +483,9 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       if (!mounted) return;
       final bool ok = await confirmDialog(
         context,
-        title: '首次同步',
-        message:
-            '首次同步会把远程数据与本机数据合并，'
-            '不会用远程数据覆盖本地学习进度，也不会删除本地单词。\n\n继续吗？',
-        confirmLabel: '开始合并',
+        title: context.l10n.firstSyncTitle,
+        message: context.l10n.firstSyncBody,
+        confirmLabel: context.l10n.startMerging,
       );
       if (!ok) return;
     }
@@ -490,26 +498,24 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
     final String? choice = await showDialog<String>(
       context: context,
       builder: (BuildContext dialogContext) => AlertDialog(
-        title: Text(capability.summary),
+        title: Text(syncCapabilitySummary(context.l10n, capability)),
         scrollable: true,
         content: Text(
-          '${capability.detail ?? '服务器没有通过条件写入验证。'}\n\n'
-          '正常情况下这里会用条件请求写入，确保两台设备同时修改时不会互相覆盖。'
-          '这台服务器做不到，所以自动合并和「立即同步」都不会执行。\n\n'
-          '可以改用「导出备份」，或用其他支持 WebDAV 条件请求的服务。',
+          '${capability.detail ?? context.l10n.serverNoConditionalWrite}\n\n'
+          '${context.l10n.unsafeServerBody}',
         ),
         actions: <Widget>[
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop('test'),
-            child: const Text('重新测试连接'),
+            child: Text(context.l10n.retestConnection),
           ),
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop('export'),
-            child: const Text('导出备份'),
+            child: Text(context.l10n.exportBackup),
           ),
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('取消'),
+            child: Text(context.l10n.commonCancel),
           ),
         ],
       ),
@@ -545,7 +551,9 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
         allowRemoteRecreate: allowRemoteRecreate,
         onProgress: (SyncStage stage, String detail) {
           if (!mounted) return;
-          setState(() => _status = '${stage.label}：$detail');
+          // The stage is localised; `detail` is a developer string and stays in
+          // the diagnostics log only.
+          setState(() => _status = syncStageLabel(context.l10n, stage));
         },
       );
       ref.invalidate(todayProgressProvider);
@@ -571,7 +579,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _error = e.message;
+        _error = _describeSyncError(e);
         _status = null;
       });
       await _load();
@@ -579,7 +587,12 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _error = '同步失败：$e';
+        // Never the raw exception: the code carries the meaning, the detail goes
+        // to diagnostics.
+        _remoteMissing = e is SyncRemoteMissingException;
+        _error = _remoteMissing
+            ? context.l10n.remoteFileMissingNotice
+            : context.l10n.syncFailed;
       });
     }
   }
@@ -596,16 +609,13 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
     if (!mounted) return;
     final bool ok = await confirmDialog(
       context,
-      title: error.previouslySynced ? '远程文件变成空文件' : '远程文件为空',
+      title: error.previouslySynced
+          ? context.l10n.remoteBecameEmpty
+          : context.l10n.remoteIsEmpty,
       message: error.previouslySynced
-          ? '这个同步目标之前成功同步过，但远程文件现在是 0 字节。\n\n'
-                '继续会用本机数据重新初始化它，远端原本的内容将被替换。'
-                '只有在你确认远端数据已经不需要时才继续。'
-          : '远程同步文件为空。\n\n'
-                '是否使用本机学习数据初始化这个文件？\n\n'
-                '初始化会带上该文件当前的版本标识；如果其他设备在此期间写入，'
-                '本次初始化会被拒绝，不会覆盖对方的数据。',
-      confirmLabel: '初始化并同步',
+          ? '${context.l10n.remoteEmptiedBody}\n\n${context.l10n.remoteEmptiedConfirm}'
+          : context.l10n.emptyInitBody,
+      confirmLabel: context.l10n.initialiseAndSync,
       destructive: error.previouslySynced,
     );
     if (!ok || !mounted) return;
@@ -618,11 +628,9 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
     if (_busy) return;
     final bool ok = await confirmDialog(
       context,
-      title: '合并远端数据？',
-      message:
-          '会解除同步暂停，并把远端设备的数据合并到本机（只补充缺失内容，'
-          '不删除本机内容）。合并结果会随后上传，因此远端会包含本机恢复后的数据。',
-      confirmLabel: '合并',
+      title: context.l10n.mergeRemoteTitle,
+      message: context.l10n.mergeRemoteBody,
+      confirmLabel: context.l10n.mergeOnlyAddsShort,
     );
     if (!ok || !mounted) return;
     setState(() => _busy = true);
@@ -635,7 +643,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       if (provider == null) {
         setState(() {
           _busy = false;
-          _error = '尚未配置同步目标';
+          _error = context.l10n.noTargetConfigured;
         });
         await _load();
         return;
@@ -656,14 +664,14 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _error = e.message;
+        _error = _describeSyncError(e);
       });
       await _load();
     }
   }
 
   Future<void> _stayPaused() async {
-    setState(() => _status = '同步保持暂停，远端数据未被修改');
+    setState(() => _status = context.l10n.syncStaysPausedRemoteUntouched);
     await _load();
   }
 
@@ -680,12 +688,9 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
     if (provider == null) return;
     final bool ok = await confirmDialog(
       context,
-      title: '重新创建远端数据？',
-      message:
-          '远端数据文件已不存在（可能是仓库文件被删除，或权限/路径变化）。'
-          '继续会把本机当前数据重新上传到该位置。\n\n'
-          '如果你并不想删除远端数据，请先取消并检查仓库与配置。',
-      confirmLabel: '重新上传',
+      title: context.l10n.recreateRemoteTitle,
+      message: context.l10n.recreateRemoteBody,
+      confirmLabel: context.l10n.reupload,
       destructive: true,
     );
     if (!ok || !mounted) return;
@@ -699,13 +704,11 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
   Future<void> _restoreConflict(StoredSyncConflict conflict) async {
     final bool ok = await confirmDialog(
       context,
-      title: '恢复被覆盖的内容？',
+      title: context.l10n.restoreConflictTitle,
       message:
-          '「${conflict.label.isEmpty ? conflict.entityId : conflict.label}」的 '
-          '${_fieldLabel(conflict.field)} 将改回：\n'
-          '${_displayValue(conflict.field, conflict.discardedValue)}\n\n'
-          '这会作为一次新的修改同步到其他设备。',
-      confirmLabel: '恢复',
+          '${context.l10n.restoreConflictBody(conflict.label.isEmpty ? conflict.entityId : conflict.label, _fieldLabel(conflict.field))}\n\n'
+          '${_displayValue(conflict.field, conflict.discardedValue)}',
+      confirmLabel: context.l10n.commonRestore,
     );
     if (!ok || !mounted) return;
     try {
@@ -717,17 +720,17 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       if (!mounted) return;
       setState(() {
         _status =
-            '已恢复「${_fieldLabel(outcome.field)}」'
-            '（将作为一次新的编辑同步）';
+            '${context.l10n.restoredField(_fieldLabel(outcome.field))} '
+            '${context.l10n.restoredAsNewEdit}';
         _error = null;
       });
       await _load();
-    } on ConflictRestoreException catch (e) {
+    } on ConflictRestoreException {
       if (!mounted) return;
-      setState(() => _error = '恢复失败：${e.message}（冲突记录已保留）');
-    } catch (e) {
+      setState(() => _error = context.l10n.restoreFailedKept);
+    } catch (_) {
       if (!mounted) return;
-      setState(() => _error = '恢复失败：$e（冲突记录已保留）');
+      setState(() => _error = context.l10n.restoreFailedKept);
     }
   }
 
@@ -737,30 +740,32 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
   }
 
   String _fieldLabel(String field) => switch (field) {
-    'word' => '单词',
-    'phonetic' => '音标',
-    'partOfSpeech' => '词性',
-    'translation' => '释义',
-    'definition' => '英文释义',
-    'example' => '例句',
-    'phrase' => '短语',
-    'note' => '笔记',
-    'source' => '来源',
-    'examTags' => '考试标签',
-    'bncRank' => 'BNC 词频',
-    'frqRank' => 'COCA 词频',
-    'deletedAt' => '删除状态',
-    'name' => '词书名称',
-    'description' => '词书描述',
-    'sourceType' => '词书来源类型',
-    'sourceUrl' => '词书来源链接',
+    'word' => context.l10n.fieldWord,
+    'phonetic' => context.l10n.fieldPhonetic,
+    'partOfSpeech' => context.l10n.fieldPos,
+    'translation' => context.l10n.fieldTranslation,
+    'definition' => context.l10n.fieldDefinition,
+    'example' => context.l10n.fieldExample,
+    'phrase' => context.l10n.fieldPhrase,
+    'note' => context.l10n.fieldNote,
+    'source' => context.l10n.fieldSource,
+    'examTags' => context.l10n.fieldExamTags,
+    'bncRank' => context.l10n.fieldBnc,
+    'frqRank' => context.l10n.fieldCoca,
+    'deletedAt' => context.l10n.fieldDeleted,
+    'name' => context.l10n.fieldBookName,
+    'description' => context.l10n.fieldBookDescription,
+    'sourceType' => context.l10n.fieldBookSourceType,
+    'sourceUrl' => context.l10n.fieldBookSourceUrl,
     _ => field,
   };
 
   String _displayValue(String field, Object? value) {
-    if (field == 'deletedAt') return value == null ? '未删除' : '已删除';
-    if (value == null) return '（空）';
-    if (value is String) return value.isEmpty ? '（空）' : value;
+    if (field == 'deletedAt') {
+      return value == null ? context.l10n.notDeleted : context.l10n.deleted;
+    }
+    if (value == null) return context.l10n.emptyValue;
+    if (value is String) return value.isEmpty ? context.l10n.emptyValue : value;
     return '$value';
   }
 
@@ -770,22 +775,44 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
     try {
       final saved = await BackupFiles(ref.read(backupServiceProvider))
           .export(now: ref.read(clockProvider).now());
-      if (saved && mounted) showMessage(context, '备份已导出');
+      if (saved && mounted) showMessage(context, context.l10n.backupExported);
     } catch (_) {
-      if (mounted) showMessage(context, '导出失败，请重新选择保存位置', error: true);
+      if (mounted) {
+        showMessage(context, context.l10n.exportPickFailed, error: true);
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
+  /// Turns a sync failure into a user sentence.
+  ///
+  /// The exception's own message is a developer-facing string; it is logged for
+  /// diagnostics and never shown, so the interface stays accurate in both
+  /// languages and a partial run is never reported as a clean success.
+  String _describeSyncError(Object error) {
+    if (error is SyncRemoteMissingException) {
+      _remoteMissing = true;
+      return context.l10n.remoteFileMissingNotice;
+    }
+    if (error is SyncPartialException) {
+      return context.l10n.syncUploadPending;
+    }
+    if (error is SyncConflictException) {
+      return context.l10n.syncConflictRetry;
+    }
+    if (error is SyncDataException) {
+      return context.l10n.syncFileUnreadable;
+    }
+    return context.l10n.syncFailed;
+  }
+
   Future<void> _disconnect() async {
     final bool ok = await confirmDialog(
       context,
-      title: '关闭同步',
-      message:
-          '本机保存的同步设置和凭据（访问令牌 / 密码）会被删除。远程数据不会被删除，'
-          '学习记录仍然保存在本机。',
-      confirmLabel: '关闭',
+      title: context.l10n.turnOffSync,
+      message: context.l10n.turnOffSyncBody,
+      confirmLabel: context.l10n.commonClose,
       destructive: true,
     );
     if (!ok) return;
@@ -803,7 +830,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       _githubToken.clear();
       _webdavUser.clear();
       _webdavPassword.clear();
-      _status = '已关闭同步';
+      _status = context.l10n.syncTurnedOff;
       _testResult = null;
     });
   }
@@ -817,7 +844,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       _error = null;
     });
     if (_provider != 'none') {
-      showMessage(context, '切换同步方式后请重新测试连接。');
+      showMessage(context, context.l10n.retestAfterSwitch);
     }
   }
 
@@ -835,12 +862,12 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
     /// The remote file disappeared after a successful sync. Re-creating it is a
     /// deliberate user decision, so the affordance must appear for an automatic
     /// run's result too — not only for a manual one that set [_error].
-    final bool remoteMissing =
-        (_error ?? '').contains('远程数据文件已被删除') ||
-        (_lastResult ?? '').contains('远程数据文件已被删除');
+    // A structured flag, not a substring of a translated sentence: the text
+    // changes with the language, the meaning does not.
+    final bool remoteMissing = _remoteMissing;
 
     return Scaffold(
-      appBar: ClassicAppBar(title: const Text('数据同步')),
+      appBar: ClassicAppBar(title: Text(context.l10n.syncTitle)),
       body: ContentColumn(
         child: ListView(
           padding: const EdgeInsets.only(bottom: 40),
@@ -870,10 +897,13 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: <Widget>[
-                        Text('同步已暂停', style: theme.textTheme.titleSmall),
+                        Text(
+                          context.l10n.syncPausedTitle,
+                          style: theme.textTheme.titleSmall,
+                        ),
                         AppSpacing.h4,
                         Text(
-                          _pausedReason ?? '本机数据来自历史恢复。确认远端如何处理之前，自动同步不会运行。',
+                          _pausedReason ?? context.l10n.syncPausedRestoreBody,
                           style: theme.textTheme.bodySmall,
                         ),
                         AppSpacing.h8,
@@ -884,16 +914,16 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
                               onPressed: _busy
                                   ? null
                                   : _mergeRemoteAfterRestore,
-                              child: const Text('合并远端数据'),
+                              child: Text(context.l10n.mergeRemote),
                             ),
                             TextButton(
                               onPressed: _busy ? null : _stayPaused,
-                              child: const Text('保持本机状态'),
+                              child: Text(context.l10n.keepLocal),
                             ),
                           ],
                         ),
                         Text(
-                          '不会自动用任一方的数据覆盖另一方：合并只补充缺失内容。',
+                          context.l10n.mergeOnlyAdds,
                           style: theme.textTheme.bodySmall,
                         ),
                       ],
@@ -901,12 +931,12 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
                   ),
                 ),
               ),
-            SectionHeader(title: '同步方式'),
+            SectionHeader(title: context.l10n.syncMethod),
             SettingsGroup(
               children: <Widget>[
                 for (final ({String id, String label, String description})
                     option
-                    in _options)
+                    in _optionsOf(context.l10n))
                   RadioListTile<String>(
                     dense: true,
                     contentPadding: const EdgeInsets.symmetric(horizontal: 12),
@@ -923,16 +953,16 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
               ],
             ),
             if (_provider != 'none') ...<Widget>[
-              SectionHeader(title: '连接配置'),
+              SectionHeader(title: context.l10n.connectionSettings),
               _configGroup(),
-              SectionHeader(title: '同步'),
+              SectionHeader(title: context.l10n.syncTitle),
               SettingsGroup(
                 children: <Widget>[
                   SettingsSwitchTile(
                     value: autoStart,
                     icon: Icons.play_circle_outline,
-                    title: '启动时同步',
-                    subtitle: '不阻塞启动：应用始终先显示本地数据',
+                    title: context.l10n.syncOnStart,
+                    subtitle: context.l10n.syncOnStartHint,
                     onChanged: !canAuto || _busy
                         ? null
                         : (value) => _setAutoOption('autoOnStart', value),
@@ -940,8 +970,8 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
                   SettingsSwitchTile(
                     value: autoResume,
                     icon: Icons.refresh,
-                    title: '返回应用时同步',
-                    subtitle: '切回应用后自动检查更新；失败时会稍后重试',
+                    title: context.l10n.syncOnResume,
+                    subtitle: context.l10n.syncOnResumeHint,
                     onChanged: !canAuto || _busy
                         ? null
                         : (value) => _setAutoOption('autoOnResume', value),
@@ -949,8 +979,8 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
                   SettingsSwitchTile(
                     value: _fields['autoOnChange'] == 'true',
                     icon: Icons.edit_note,
-                    title: '数据变化后自动同步',
-                    subtitle: '停止操作约 20 秒后自动同步，不会在每次作答后立即联网',
+                    title: context.l10n.syncOnChange,
+                    subtitle: context.l10n.syncOnChangeHint,
                     onChanged: !canAuto || _busy
                         ? null
                         : (value) => _setAutoOption('autoOnChange', value),
@@ -958,8 +988,8 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
                   SettingsSwitchTile(
                     value: _fields['autoAfterSession'] == 'true',
                     icon: Icons.school_outlined,
-                    title: '本轮学习结束后同步',
-                    subtitle: '学习结束后自动同步，不影响结束流程',
+                    title: context.l10n.syncOnSessionEnd,
+                    subtitle: context.l10n.syncOnSessionEndHint,
                     onChanged: !canAuto || _busy
                         ? null
                         : (value) => _setAutoOption('autoAfterSession', value),
@@ -968,7 +998,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
                     Padding(
                       padding: const EdgeInsets.all(16),
                       child: Text(
-                        '本地文件只用于手动合并；需要自动同步时请选择 GitHub 私有仓库或 WebDAV。',
+                        context.l10n.localFileManualOnly,
                         style: theme.textTheme.bodySmall,
                       ),
                     ),
@@ -985,17 +1015,19 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
                         OutlinedButton.icon(
                           onPressed: _busy ? null : _runTest,
                           icon: const Icon(Icons.wifi_tethering),
-                          label: const Text('测试连接'),
+                          label: Text(context.l10n.testConnection),
                         ),
                         ElevatedButton.icon(
                           onPressed: _busy ? null : _syncNow,
                           icon: const Icon(Icons.sync),
-                          label: Text(_busy ? '同步中…' : '立即同步'),
+                          label: Text(
+                            _busy ? context.l10n.syncing : context.l10n.syncNow,
+                          ),
                         ),
                         OutlinedButton.icon(
                           onPressed: _busy ? null : _exportBackup,
                           icon: const Icon(Icons.save_alt),
-                          label: const Text('导出备份'),
+                          label: Text(context.l10n.exportBackup),
                         ),
                       ],
                     ),
@@ -1010,8 +1042,13 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                       child: Text(
                         _capability == null
-                            ? '自动同步尚未启用：请先「测试连接」完成安全写入验证。'
-                            : '自动同步尚未启用：${_capability!.summary}。',
+                            ? context.l10n.autoSyncNotEnabled
+                            : context.l10n.autoSyncNotEnabledReason(
+                                syncCapabilitySummary(
+                                  context.l10n,
+                                  _capability!,
+                                ),
+                              ),
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: AppColors.hazy,
                         ),
@@ -1025,7 +1062,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
                 ],
               ),
               if (_conflicts.isNotEmpty) ...<Widget>[
-                SectionHeader(title: '被覆盖的内容（最多 50 条）'),
+                SectionHeader(title: context.l10n.syncConflicts),
                 SettingsGroup(
                   children: <Widget>[
                     for (final StoredSyncConflict conflict in _conflicts)
@@ -1036,8 +1073,8 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
                           ' · ${_fieldLabel(conflict.field)}',
                         ),
                         subtitle: Text(
-                          '保留：${_displayValue(conflict.field, conflict.adoptedValue)}\n'
-                          '被覆盖：${_displayValue(conflict.field, conflict.discardedValue)}',
+                          '${context.l10n.keptValue(_displayValue(conflict.field, conflict.adoptedValue))}\n'
+                          '${context.l10n.discardedValue(_displayValue(conflict.field, conflict.discardedValue))}',
                           maxLines: 3,
                           overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.bodySmall,
@@ -1051,19 +1088,19 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
                               conflict,
                             ))
                               IconButton(
-                                tooltip: '恢复被覆盖的内容',
+                                tooltip: context.l10n.restoreOverwritten,
                                 icon: const Icon(Icons.undo),
                                 onPressed: _busy
                                     ? null
                                     : () => _restoreConflict(conflict),
                               )
                             else
-                              const Tooltip(
-                                message: '这一项仅用于诊断，无法恢复',
+                              Tooltip(
+                                message: context.l10n.diagnosticOnly,
                                 child: Icon(Icons.info_outline),
                               ),
                             IconButton(
-                              tooltip: '忽略这条记录',
+                              tooltip: context.l10n.ignoreRecord,
                               icon: const Icon(Icons.close),
                               onPressed: _busy
                                   ? null
@@ -1077,27 +1114,28 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
                   child: Text(
-                    '另一台设备也修改了同一项内容。MaterialWord 保留了较新的版本，'
-                    '把另一份内容留在这里备用。恢复会把它改回来，并作为一次新的修改同步到其他设备；'
-                    '没有恢复按钮的记录只用于排查问题。',
+                    context.l10n.conflictExplain,
                     style: theme.textTheme.bodySmall,
                   ),
                 ),
               ],
-              SectionHeader(title: '同步状态'),
+              SectionHeader(title: context.l10n.syncStatus),
               SettingsGroup(
                 children: <Widget>[
                   SettingsTile(
                     leading: const Icon(Icons.schedule),
-                    title: '最近同步时间',
+                    title: context.l10n.lastSynced,
                     subtitle: _lastSyncAt == null
-                        ? '从未同步'
+                        ? context.l10n.neverSynced
                         : formatDateTime(_lastSyncAt!),
                   ),
                   SettingsTile(
                     leading: const Icon(Icons.info_outline),
-                    title: '最近同步结果',
-                    subtitle: _lastResult ?? '—',
+                    title: context.l10n.syncResult,
+                    subtitle: describeStoredSyncResult(
+                      context.l10n,
+                      _lastResult,
+                    ),
                   ),
                   SettingsTile(
                     leading: Icon(
@@ -1105,10 +1143,10 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
                           ? Icons.cloud_upload_outlined
                           : Icons.cloud_done_outlined,
                     ),
-                    title: '待同步的更改',
+                    title: context.l10n.pendingChanges,
                     subtitle: _pendingChanges == true
-                        ? '有本地修改尚未上传'
-                        : '本地与上次同步一致',
+                        ? context.l10n.hasLocalChanges
+                        : context.l10n.inSyncWithLast,
                   ),
                   if (_status != null)
                     Padding(
@@ -1120,7 +1158,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                       child: OutlinedButton(
                         onPressed: _busy ? null : _recreateRemote,
-                        child: const Text('重新创建远端数据…'),
+                        child: Text(context.l10n.recreateRemoteAction),
                       ),
                     ),
                   for (final String note in _syncNotes)
@@ -1132,8 +1170,8 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
                   // stays behind the diagnostics switch and is redacted.
                   SettingsTile(
                     leading: const Icon(Icons.bug_report_outlined),
-                    title: '同步诊断信息',
-                    subtitle: '查看并导出最近的同步请求记录（不含密码与学习内容）',
+                    title: context.l10n.syncDiagnostics,
+                    subtitle: context.l10n.syncDiagnosticsHint,
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () => Navigator.of(context).push(
                       MaterialPageRoute<void>(
@@ -1152,19 +1190,15 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
                   Icons.help_outline,
                   size: AppDimens.iconSize,
                 ),
-                title: Text('同步与合并说明', style: theme.textTheme.bodyLarge),
+                title: Text(
+                  context.l10n.aboutSync,
+                  style: theme.textTheme.bodyLarge,
+                ),
                 tilePadding: const EdgeInsets.symmetric(horizontal: 16),
                 childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                 children: <Widget>[
                   Text(
-                    '远程数据和本机数据会合并，不会互相覆盖。\n'
-                    '· 同一个单词只保留一条记录；\n'
-                    '· 每次作答都单独保留，合并后重新计算学习状态；\n'
-                    '· 已经删除的单词和词书不会被旧备份恢复；\n'
-                    '· 两台设备改了同一项时，保留较新的一次，另一份留在'
-                    '「被覆盖的内容」里，可以随时改回来。\n'
-                    '令牌与密码只保存在本机系统安全存储（钥匙串 / Keystore）中，'
-                    '不会写进数据库、备份文件或日志。',
+                    context.l10n.aboutSyncBody,
                     style: theme.textTheme.bodySmall,
                   ),
                 ],
@@ -1179,7 +1213,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
                       foregroundColor: AppColors.unknown,
                     ),
                     icon: const Icon(Icons.link_off),
-                    label: const Text('关闭同步'),
+                    label: Text(context.l10n.turnOffSync),
                   ),
                 ),
               ),
@@ -1209,7 +1243,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
         return _StatusVisual(
           icon: _testResult!.ok ? Icons.check_circle : Icons.error_outline,
           color: _testResult!.ok ? AppColors.known : AppColors.unknown,
-          text: _testResult!.message,
+          text: describeSyncTestResult(context.l10n, _testResult!),
           hint: null,
           details: details,
         );
@@ -1217,8 +1251,10 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       return _StatusVisual(
         icon: Icons.help_outline,
         color: neutral,
-        text: '尚未验证连接',
-        hint: _provider == 'webdav' ? '填写地址与账号后点「测试连接」。同步前必须先验证安全写入能力。' : null,
+        text: context.l10n.connectionNotVerified,
+        hint: _provider == 'webdav'
+            ? context.l10n.connectionNotVerifiedHint
+            : null,
         details: const <String>[],
       );
     }
@@ -1253,7 +1289,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
     return _StatusVisual(
       icon: visual.$1,
       color: visual.$2,
-      text: capability.summary,
+      text: syncCapabilitySummary(context.l10n, capability),
       hint: capability.detail,
       details: details,
     );
@@ -1289,7 +1325,10 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
             ExpansionTile(
               tilePadding: EdgeInsets.zero,
               childrenPadding: const EdgeInsets.only(bottom: 4),
-              title: Text('技术详情', style: theme.textTheme.bodySmall),
+              title: Text(
+                context.l10n.technicalDetails,
+                style: theme.textTheme.bodySmall,
+              ),
               children: <Widget>[
                 for (final String detail in visual.details)
                   Align(
@@ -1300,7 +1339,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
                         detail.startsWith('NO_CONDITIONAL_WRITE')
                             ? detail.replaceFirst(
                                 'NO_CONDITIONAL_WRITE:',
-                                '注意：',
+                                context.l10n.noteLabel,
                               )
                             : '· $detail',
                         style: theme.textTheme.bodySmall,
@@ -1378,14 +1417,13 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
           children: <Widget>[
             field(
               'path',
-              '同步文件路径',
+              context.l10n.syncFilePath,
               hint: '/Users/you/MaterialWord/materialword-data.json',
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
               child: Text(
-                '手机上无法长期访问任意文件夹，请使用应用内的文件，'
-                '或改用「备份与恢复」中的导出 / 导入。',
+                context.l10n.mobileFolderLimit,
                 style: theme.textTheme.bodySmall,
               ),
             ),
@@ -1394,19 +1432,23 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       case 'github':
         return SettingsGroup(
           children: <Widget>[
-            field('owner', 'GitHub 用户名或组织', hint: 'your-name'),
-            field('repo', '仓库名', hint: 'materialword-data'),
-            field('branch', '分支', fallback: 'main'),
-            field('path', '数据文件路径', fallback: 'materialword-data.json'),
+            field('owner', context.l10n.githubOwner, hint: 'your-name'),
+            field('repo', context.l10n.repoName, hint: 'materialword-data'),
+            field('branch', context.l10n.branch, fallback: 'main'),
+            field(
+              'path',
+              context.l10n.dataFilePath,
+              fallback: 'materialword-data.json',
+            ),
             secretField(
-              '访问令牌（Access Token）',
+              context.l10n.accessToken,
               controller: _githubToken,
-              helper: '用于访问你的私有仓库，仅保存在本机系统安全存储中',
+              helper: context.l10n.accessTokenHint,
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
               child: Text(
-                '建议新建一个专用私有仓库保存学习数据，请勿使用公开仓库。',
+                context.l10n.privateRepoNote,
                 style: theme.textTheme.bodySmall,
               ),
             ),
@@ -1417,11 +1459,11 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
           children: <Widget>[
             field(
               'url',
-              '服务器地址（HTTPS）',
+              context.l10n.serverAddress,
               hint: 'https://dav.jianguoyun.com/dav/',
             ),
             _SyncTextField(
-              label: '用户名',
+              label: context.l10n.username,
               controller: _webdavUser,
               onChanged: (String value) {
                 _fields['user'] = value;
@@ -1429,14 +1471,14 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
               },
             ),
             secretField(
-              '密码 / 服务专用密码',
+              context.l10n.appPassword,
               controller: _webdavPassword,
-              helper: '留空表示保持不变',
+              helper: context.l10n.leaveBlankToKeep,
               onChanged: (String _) => _invalidateVerification(),
             ),
             _SyncTextField(
               key: const ValueKey<String>('sync_field_dir'),
-              label: '远程目录',
+              label: context.l10n.remoteFolder,
               hint: 'MaterialWord',
               controller: _webdavDir,
               onChanged: (String value) {
@@ -1451,26 +1493,26 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
                 child: OutlinedButton.icon(
                   onPressed: _busy ? null : _pickRemoteDirectory,
                   icon: const Icon(Icons.folder_open),
-                  label: const Text('选择远程文件夹'),
+                  label: Text(context.l10n.chooseRemoteFolder),
                 ),
               ),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
               child: Text(
-                '留空表示使用服务器地址本身。'
-                '不确定真实路径时，用上面的按钮浏览服务器文件夹，'
-                '不要照抄网盘客户端里显示的名称。',
+                context.l10n.remoteFolderHint,
                 style: theme.textTheme.bodySmall,
               ),
             ),
-            field('file', '数据文件名', fallback: 'materialword-data.json'),
+            field(
+              'file',
+              context.l10n.fileName,
+              fallback: 'materialword-data.json',
+            ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
               child: Text(
-                '只使用 HTTPS，不会关闭证书校验。'
-                '同步使用条件请求（ETag）保护多设备同时修改；'
-                '服务器不支持时，本页不会启用自动同步。',
+                context.l10n.httpsOnly + context.l10n.etagNote,
                 style: theme.textTheme.bodySmall,
               ),
             ),

@@ -10,6 +10,15 @@ import 'package:materialword/core/database/app_database.dart';
 
 import 'helpers/test_env.dart';
 
+const Map<String, String> kNavIds = <String, String>{
+  '今日': 'today',
+  '词书': 'wordLists',
+  '词典': 'dictionary',
+  '统计': 'statistics',
+  '设置': 'settings',
+  '词汇': 'allWords',
+};
+
 /// Pumps the real application with an in-memory database.
 Future<TestEnv> pumpApp(
   WidgetTester tester, {
@@ -46,7 +55,7 @@ void main() {
 
     expect(find.text('MaterialWord'), findsOneWidget);
     expect(find.text('今日任务'), findsOneWidget);
-    expect(find.text('当前学习词书'), findsOneWidget);
+    expect(find.text('学习词书'), findsOneWidget);
     // Empty database → onboarding card instead of study buttons.
     expect(find.text('还没有单词'), findsOneWidget);
 
@@ -114,13 +123,15 @@ void main() {
             reason: 'the full rail shows its brand block',
           );
           expect(
-            tester.getSize(find.byKey(const ValueKey<String>('nav-今日'))).width,
+            tester
+                .getSize(find.byKey(const ValueKey<String>('nav-today')))
+                .width,
             closeTo(AppDimens.navRailWidth, 0.5),
           );
           for (final String label in <String>['今日', '词书', '词典', '统计', '设置']) {
             expect(
               find.descendant(
-                of: find.byKey(ValueKey<String>('nav-$label')),
+                of: find.byKey(ValueKey<String>('nav-${kNavIds[label]!}')),
                 matching: find.text(label),
               ),
               findsOneWidget,
@@ -129,7 +140,9 @@ void main() {
           }
         }
         for (final String label in <String>['词书', '词典', '统计', '设置', '今日']) {
-          await tester.tap(find.byKey(ValueKey<String>('nav-$label')));
+          await tester.tap(
+            find.byKey(ValueKey<String>('nav-${kNavIds[label]!}')),
+          );
           await settle(tester);
           expect(tester.takeException(), isNull);
         }

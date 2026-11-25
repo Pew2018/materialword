@@ -1142,8 +1142,8 @@ class WebDavSyncProvider implements SyncProvider {
       return SyncTestResult(
         ok: connected,
         message: connected
-            ? capability.summary
-            : '${capability.summary}：${capability.detail ?? ''}'.trim(),
+            ? capability.status.name
+            : '${capability.status.name}: ${capability.detail ?? ''}'.trim(),
         details: details,
         capability: capability,
       );

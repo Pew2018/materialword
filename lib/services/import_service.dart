@@ -10,6 +10,7 @@ import 'package:drift/drift.dart'
 import 'package:http/http.dart' as http;
 
 import '../core/database/app_database.dart';
+import '../core/errors/app_error.dart';
 import '../core/repositories/word_repository.dart';
 import '../core/repositories/wordbook_repository.dart';
 import '../core/text/dictionary_text.dart';
@@ -101,11 +102,20 @@ class ParsedEntry {
   );
 }
 
+/// Why one line of an import file was rejected.
+///
+/// A code, not a sentence: the preview lists these, and the wording has to follow
+/// the interface language.
+enum ImportIssueCode { notEnglishWord, rowWordInvalid, notEntry, invalidEntry }
+
 class ImportIssue {
-  const ImportIssue(this.line, this.reason);
+  const ImportIssue(this.line, this.code, {this.row});
 
   final String line;
-  final String reason;
+  final ImportIssueCode code;
+
+  /// 1-based row number, for [ImportIssueCode.rowWordInvalid].
+  final int? row;
 }
 
 /// Intermediate parse result for a JSON row list.
@@ -276,21 +286,6 @@ class ImportOutcome {
   final int skippedDeleted;
   final int books;
   final String? bookId;
-
-  String get summary {
-    final List<String> parts = <String>[
-      '新增 $created 个词条',
-      if (revived > 0) '恢复 $revived 个已删除词条',
-      '已存在 $existing 个',
-      if (updated > 0) '更新 $updated 个',
-      '关联 $linked 个到词书',
-      if (books > 1) '涉及 $books 个词书',
-      if (skippedDeleted > 0) '跳过 $skippedDeleted 个已删除词条（在线刷新不自动恢复）',
-      if (duplicateInFile > 0) '文件内重复 $duplicateInFile 个',
-      if (invalid > 0) '忽略无效 $invalid 行',
-    ];
-    return parts.join('，');
-  }
 }
 
 /// Raised when the user cancels a download or a long parse.
@@ -572,7 +567,9 @@ class ImportService {
       final String word = parts.first;
       if (!_looksLikeWord(word)) {
         invalid++;
-        if (issues.length < 20) issues.add(ImportIssue(line, '不是合法英文单词'));
+        if (issues.length < 20) {
+          issues.add(ImportIssue(line, ImportIssueCode.notEnglishWord));
+        }
         continue;
       }
       final ParsedEntry entry = ParsedEntry.clean(
@@ -660,7 +657,13 @@ class ImportService {
       if (!_looksLikeWord(word)) {
         invalid++;
         if (issues.length < 20) {
-          issues.add(ImportIssue(row.join(','), '第 ${i + 1} 行 word 无效'));
+          issues.add(
+            ImportIssue(
+              row.join(','),
+              ImportIssueCode.rowWordInvalid,
+              row: i + 1,
+            ),
+          );
         }
         continue;
       }
@@ -889,14 +892,16 @@ class ImportService {
       } else {
         invalid++;
         if (issues.length < 20) {
-          issues.add(ImportIssue('$node', '无效词条（应为字符串或对象）'));
+          issues.add(ImportIssue('$node', ImportIssueCode.notEntry));
         }
         continue;
       }
       if (!_looksLikeWord(word)) {
         invalid++;
         if (issues.length < 20) {
-          issues.add(ImportIssue(word.isEmpty ? '(空)' : word, '无效词条'));
+          issues.add(
+            ImportIssue(word.isEmpty ? '' : word, ImportIssueCode.invalidEntry),
+          );
         }
         continue;
       }
@@ -1185,7 +1190,7 @@ class ImportService {
         if (bookId != null) {
           final WordBook? book = await wordBooks.byId(bookId);
           if (book == null || book.deletedAt != null) {
-            throw const WordIntakeException('目标词书已被删除，请重新选择词书后再导入');
+            throw const WordIntakeException(AppErrorCode.wordListDeleted);
           }
           target = book.id;
         } else {

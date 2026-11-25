@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:materialword/l10n/l10n.dart';
 import 'package:materialword/app/providers.dart';
 import 'package:materialword/app/theme.dart';
 import 'package:materialword/features/settings/diagnostics_page.dart';
@@ -114,6 +115,9 @@ void main() {
           syncHttpClientProvider.overrideWithValue(mock.client),
         ],
         child: MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          locale: const Locale('zh'),
           theme: AppTheme.light(),
           home: const SyncSettingsPage(),
         ),
@@ -290,7 +294,7 @@ void main() {
 
       expect(find.byType(DiagnosticsPage), findsOneWidget);
       expect(find.text('诊断信息'), findsOneWidget);
-      expect(find.text('导出诊断信息'), findsOneWidget);
+      expect(find.text('导出诊断报告'), findsOneWidget);
     });
   });
 
@@ -305,6 +309,9 @@ void main() {
       String? chosen;
       await tester.pumpWidget(
         MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          locale: const Locale('zh'),
           theme: AppTheme.light(),
           home: Builder(
             builder: (BuildContext context) => Scaffold(

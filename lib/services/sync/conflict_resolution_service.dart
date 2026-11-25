@@ -113,7 +113,7 @@ class SyncConflictResolutionService {
         await _restoreBook(conflict, value, now);
       }
     } on WordIntakeException catch (e) {
-      throw ConflictRestoreException(e.message);
+      throw ConflictRestoreException('intake rejected: ${e.code.name}');
     } on StateError catch (e) {
       throw ConflictRestoreException(e.message);
     }

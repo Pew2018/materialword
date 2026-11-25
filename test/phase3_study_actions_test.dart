@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:materialword/l10n/l10n.dart';
 import 'package:materialword/app/app.dart';
 import 'package:materialword/app/providers.dart';
 import 'package:materialword/app/theme.dart';
@@ -59,6 +60,9 @@ void main() {
             ttsServiceProvider.overrideWithValue(tts),
           ],
           child: MaterialApp(
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            locale: const Locale('zh'),
             theme: AppTheme.light(),
             home: const SettingsPage(),
           ),
@@ -132,6 +136,9 @@ void main() {
             clockProvider.overrideWithValue(e.clock),
           ],
           child: MaterialApp(
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            locale: const Locale('zh'),
             theme: AppTheme.light(),
             home: WordDetailPage(wordId: id),
           ),
@@ -172,11 +179,17 @@ void main() {
             clockProvider.overrideWithValue(e.clock),
             ttsServiceProvider.overrideWithValue(tts),
           ],
-          child: MaterialApp(theme: AppTheme.light(), home: const StudyPage()),
+          child: MaterialApp(
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            locale: const Locale('zh'),
+            theme: AppTheme.light(),
+            home: const StudyPage(),
+          ),
         ),
       );
       await settle(tester);
-      await tester.tap(find.byTooltip('编辑当前词条'));
+      await tester.tap(find.byTooltip('编辑单词'));
       await settle(tester);
       expect(find.byType(WordDetailPage), findsOneWidget);
       final note = find.widgetWithText(TextField, '个人笔记');

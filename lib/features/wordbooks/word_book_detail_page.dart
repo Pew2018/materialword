@@ -8,6 +8,9 @@ import '../../app/providers.dart';
 import '../../app/theme.dart';
 import '../../core/database/app_database.dart';
 import '../../core/models/enums.dart';
+import '../../l10n/enum_labels.dart';
+import '../../l10n/export_labels.dart';
+import '../../l10n/l10n.dart';
 import '../../core/repositories/word_repository.dart';
 import '../../services/wordbook_export.dart';
 import '../../shared/widgets/common.dart';
@@ -67,6 +70,8 @@ class _WordBookDetailPageState extends ConsumerState<WordBookDetailPage> {
   /// Writes the book's *content* to a user-chosen file. Not a backup: learning
   /// history stays in the database and in the real backup file.
   Future<void> _export(WordBookExportFormat format) async {
+    // Captured before the await so the picker title never reads a stale context.
+    final String exportTitle = context.l10n.exportListTitle;
     final WordBook? book = _book;
     if (book == null) return;
     try {
@@ -90,16 +95,18 @@ class _WordBookDetailPageState extends ConsumerState<WordBookDetailPage> {
           WordBookExportFormat.csv => 'text/csv',
           WordBookExportFormat.json => 'application/json',
         },
-        dialogTitle: '导出词书内容',
+        dialogTitle: exportTitle,
       );
       if (!mounted) return;
       showMessage(
         context,
-        saved == null ? '已取消导出' : '已导出 ${words.length} 个单词（不含学习记录）',
+        saved == null
+            ? context.l10n.exportCancelled
+            : context.l10n.exportDoneSingle(words.length),
       );
     } catch (e) {
       if (!mounted) return;
-      showMessage(context, '导出失败：$e', error: true);
+      showMessage(context, context.l10n.exportFailed, error: true);
     }
   }
 
@@ -109,10 +116,10 @@ class _WordBookDetailPageState extends ConsumerState<WordBookDetailPage> {
 
     return Scaffold(
       appBar: ClassicAppBar(
-        title: Text(_book?.name ?? '词书'),
+        title: Text(_book?.name ?? context.l10n.navWordLists),
         actions: <Widget>[
           IconButton(
-            tooltip: '词书内专项复习',
+            tooltip: context.l10n.specialBook,
             icon: const Icon(Icons.replay_outlined),
             onPressed: () async {
               await Navigator.of(context).push<void>(
@@ -128,7 +135,7 @@ class _WordBookDetailPageState extends ConsumerState<WordBookDetailPage> {
             },
           ),
           IconButton(
-            tooltip: '添加单词',
+            tooltip: context.l10n.actionAddWord,
             icon: const Icon(Icons.add),
             onPressed: () async {
               await Navigator.of(context).push<void>(
@@ -141,7 +148,7 @@ class _WordBookDetailPageState extends ConsumerState<WordBookDetailPage> {
             },
           ),
           IconButton(
-            tooltip: '导入到该词书',
+            tooltip: context.l10n.importIntoList,
             icon: const Icon(Icons.file_upload_outlined),
             onPressed: () async {
               await Navigator.of(context).push<void>(
@@ -154,7 +161,7 @@ class _WordBookDetailPageState extends ConsumerState<WordBookDetailPage> {
             },
           ),
           PopupMenuButton<WordBookExportFormat>(
-            tooltip: '导出词书内容',
+            tooltip: context.l10n.exportListTitle,
             icon: const Icon(Icons.ios_share),
             onSelected: _export,
             itemBuilder: (BuildContext context) =>
@@ -163,7 +170,7 @@ class _WordBookDetailPageState extends ConsumerState<WordBookDetailPage> {
                       in WordBookExportFormat.values)
                     PopupMenuItem<WordBookExportFormat>(
                       value: format,
-                      child: Text(format.label),
+                      child: Text(exportFormatLabel(context.l10n, format)),
                     ),
                 ],
           ),
@@ -176,7 +183,7 @@ class _WordBookDetailPageState extends ConsumerState<WordBookDetailPage> {
             child: TextField(
               controller: _search,
               decoration: InputDecoration(
-                hintText: '搜索单词、释义或笔记',
+                hintText: context.l10n.searchWordsHint,
                 prefixIcon: const Icon(
                   Icons.search,
                   size: AppDimens.iconSizeSmall,
@@ -206,7 +213,9 @@ class _WordBookDetailPageState extends ConsumerState<WordBookDetailPage> {
                     AsyncSnapshot<List<WordWithState>> snapshot,
                   ) {
                     if (snapshot.hasError) {
-                      return ErrorBanner(message: '读取失败：${snapshot.error}');
+                      return ErrorBanner(
+                        message: context.l10n.wordListLoadFailed,
+                      );
                     }
                     if (!snapshot.hasData) {
                       return const Center(child: CircularProgressIndicator());
@@ -215,8 +224,12 @@ class _WordBookDetailPageState extends ConsumerState<WordBookDetailPage> {
                     if (rows.isEmpty) {
                       return EmptyState(
                         icon: Icons.inbox_outlined,
-                        title: _query.isEmpty ? '词书还是空的' : '没有匹配的单词',
-                        message: _query.isEmpty ? '使用右上角的按钮添加单词或导入词表。' : null,
+                        title: _query.isEmpty
+                            ? context.l10n.wordListEmpty
+                            : context.l10n.noMatchingWords,
+                        message: _query.isEmpty
+                            ? context.l10n.wordListEmptyMessage
+                            : null,
                         action: _query.isEmpty
                             ? ElevatedButton(
                                 onPressed: () async {
@@ -230,7 +243,7 @@ class _WordBookDetailPageState extends ConsumerState<WordBookDetailPage> {
                                   );
                                   ref.invalidate(bookSummariesProvider);
                                 },
-                                child: const Text('添加单词'),
+                                child: Text(context.l10n.actionAddWord),
                               )
                             : null,
                       );
@@ -267,7 +280,7 @@ class _WordBookDetailPageState extends ConsumerState<WordBookDetailPage> {
                             crossAxisAlignment: CrossAxisAlignment.end,
                             children: <Widget>[
                               TagChip(
-                                label: stage.label,
+                                label: stage.label(context.l10n),
                                 dense: true,
                                 color: switch (stage) {
                                   StudyStage.newWord => theme.hintColor,
@@ -280,7 +293,9 @@ class _WordBookDetailPageState extends ConsumerState<WordBookDetailPage> {
                                 Padding(
                                   padding: const EdgeInsets.only(top: 2),
                                   child: Text(
-                                    '错 ${row.state!.wrongCount} 次',
+                                    context.l10n.wrongCountChip(
+                                      row.state!.wrongCount,
+                                    ),
                                     style: theme.textTheme.bodySmall?.copyWith(
                                       color: AppColors.unknown,
                                       fontSize: 11,

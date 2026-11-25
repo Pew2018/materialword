@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:materialword/l10n/l10n.dart';
 import 'package:materialword/app/providers.dart';
 import 'package:materialword/app/theme.dart';
 import 'package:materialword/core/models/enums.dart';
@@ -61,6 +62,9 @@ void main() {
           ttsServiceProvider.overrideWithValue(_SilentTts()),
         ],
         child: MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          locale: const Locale('zh'),
           theme: AppTheme.light(),
           home: PracticePage(kind: kind),
         ),
@@ -83,7 +87,7 @@ void main() {
     await tester.tap(find.text('提交'));
     await settle(tester);
 
-    expect(find.text('不正确'), findsOneWidget);
+    expect(find.text('错误'), findsOneWidget);
     expect(find.text('正确拼写：$answer'), findsOneWidget);
     final events = await env.db.select(env.db.reviewEvents).get();
     expect(events.length, 1);
@@ -137,6 +141,9 @@ void main() {
           ttsServiceProvider.overrideWithValue(tts),
         ],
         child: MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          locale: const Locale('zh'),
           theme: AppTheme.light(),
           home: const PracticePage(kind: PracticeKind.dictation),
         ),

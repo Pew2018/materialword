@@ -6,6 +6,10 @@ import '../../app/providers.dart';
 import '../../app/theme.dart';
 import '../../core/database/app_database.dart';
 import '../../core/models/enums.dart';
+import '../../l10n/enum_labels.dart';
+import '../../l10n/l10n.dart';
+import '../../l10n/relative_time.dart';
+import '../../l10n/source_labels.dart';
 import '../../core/text/dictionary_text.dart';
 import '../../core/time_utils.dart';
 import '../../shared/widgets/common.dart';
@@ -118,10 +122,12 @@ class _WordDetailPageState extends ConsumerState<WordDetailPage> {
       ref.invalidate(statisticsProvider);
       ref.invalidate(bookSummariesProvider);
       if (!mounted) return;
-      showMessage(context, '已保存');
+      showMessage(context, context.l10n.saved);
       await _load();
     } catch (e) {
-      if (mounted) showMessage(context, '保存失败：$e', error: true);
+      if (mounted) {
+        showMessage(context, context.l10n.errorSaveFailed, error: true);
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -134,7 +140,7 @@ class _WordDetailPageState extends ConsumerState<WordDetailPage> {
     final entry = await dictionary.lookup(word.word);
     if (!mounted) return;
     if (entry == null) {
-      showMessage(context, '离线词典未收录该单词');
+      showMessage(context, context.l10n.wordNotInDictionary);
       return;
     }
     setState(() {
@@ -145,17 +151,21 @@ class _WordDetailPageState extends ConsumerState<WordDetailPage> {
       }
       if (_definition.text.trim().isEmpty) _definition.text = entry.definition;
     });
-    showMessage(context, '已用词典补全空白字段，记得保存');
+    showMessage(context, context.l10n.filledFromDictionary);
   }
 
   Future<void> _markMastered({bool undo = false}) async {
     final bool ok = await confirmDialog(
       context,
-      title: undo ? '取消掌握' : '标记为已掌握',
+      title: undo
+          ? context.l10n.unmarkMasteredTitle
+          : context.l10n.markMasteredTitle,
       message: undo
-          ? '撤回人工掌握，按原有作答历史恢复状态和复习计划，不增加作答次数。'
-          : '标记为掌握，30 天后复习。保留历史，不计入作答次数和正确率。',
-      confirmLabel: undo ? '取消掌握' : '标记',
+          ? context.l10n.unmarkMasteredBody
+          : context.l10n.markMasteredBodyOne,
+      confirmLabel: undo
+          ? context.l10n.unmarkMastered
+          : context.l10n.markMastered,
     );
     if (!ok || !mounted) return;
     final String device = await ref.read(settingsRepositoryProvider).deviceId();
@@ -174,11 +184,9 @@ class _WordDetailPageState extends ConsumerState<WordDetailPage> {
   Future<void> _resetProgress() async {
     final bool ok = await confirmDialog(
       context,
-      title: '重置学习进度',
-      message:
-          '清除该单词的学习状态（次数、间隔、下次复习时间）。'
-          '单词与作答历史保留，重置会记录为可同步的事件。',
-      confirmLabel: '重置',
+      title: context.l10n.resetProgressTitle,
+      message: context.l10n.resetProgressBodyOne,
+      confirmLabel: context.l10n.reset,
       destructive: true,
     );
     if (!ok) return;
@@ -201,14 +209,17 @@ class _WordDetailPageState extends ConsumerState<WordDetailPage> {
     final ThemeData theme = Theme.of(context);
     if (_loading) {
       return Scaffold(
-        appBar: ClassicAppBar(title: const Text('词条')),
+        appBar: ClassicAppBar(title: Text(context.l10n.wordEntry)),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
     if (_wordRow == null) {
       return Scaffold(
-        appBar: ClassicAppBar(title: const Text('词条')),
-        body: const EmptyState(icon: Icons.search_off, title: '词条不存在或已被删除'),
+        appBar: ClassicAppBar(title: Text(context.l10n.wordEntry)),
+        body: EmptyState(
+          icon: Icons.search_off,
+          title: context.l10n.wordNotFound,
+        ),
       );
     }
 
@@ -232,10 +243,11 @@ class _WordDetailPageState extends ConsumerState<WordDetailPage> {
                   if (widget.bookId == null) return;
                   final bool ok = await confirmDialog(
                     context,
-                    title: '移出词书',
-                    message:
-                        '把「${_wordRow!.word}」从当前词书移除？单词本身、其他词书中的关联和学习进度都保留。',
-                    confirmLabel: '移出',
+                    title: context.l10n.removeFromWordList,
+                    message: context.l10n.removeFromListBodyWord(
+                      _wordRow!.word,
+                    ),
+                    confirmLabel: context.l10n.commonRemove,
                     destructive: true,
                   );
                   if (!ok) return;
@@ -253,11 +265,9 @@ class _WordDetailPageState extends ConsumerState<WordDetailPage> {
                 case 'delete':
                   final bool ok = await confirmDialog(
                     context,
-                    title: '删除单词',
-                    message:
-                        '从全部用户词汇中删除「${_wordRow!.word}」？所有词书都会移除它，'
-                        '已有学习记录会保留。只想移除一个词书请用「移出词书」。',
-                    confirmLabel: '删除',
+                    title: context.l10n.wordManagementDeleteWord,
+                    message: context.l10n.deleteWordBodyName(_wordRow!.word),
+                    confirmLabel: context.l10n.commonDelete,
                     destructive: true,
                   );
                   if (!ok) return;
@@ -274,24 +284,31 @@ class _WordDetailPageState extends ConsumerState<WordDetailPage> {
               }
             },
             itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-              const PopupMenuItem<String>(
+              PopupMenuItem<String>(
                 value: 'dict',
-                child: Text('用离线词典补全空白'),
+                child: Text(context.l10n.fillFromDictionary),
               ),
               PopupMenuItem<String>(
                 value: _manualMastery ? 'unmastered' : 'mastered',
-                child: Text(_manualMastery ? '取消掌握' : '标记为已掌握'),
+                child: Text(
+                  _manualMastery
+                      ? context.l10n.unmarkMastered
+                      : context.l10n.markMastered,
+                ),
               ),
-              const PopupMenuItem<String>(
+              PopupMenuItem<String>(
                 value: 'reset',
-                child: Text('重置学习进度'),
+                child: Text(context.l10n.resetProgress),
               ),
               if (widget.bookId != null)
-                const PopupMenuItem<String>(
+                PopupMenuItem<String>(
                   value: 'remove',
-                  child: Text('移出当前词书'),
+                  child: Text(context.l10n.removeFromCurrentList),
                 ),
-              const PopupMenuItem<String>(value: 'delete', child: Text('删除单词')),
+              PopupMenuItem<String>(
+                value: 'delete',
+                child: Text(context.l10n.wordManagementDeleteWord),
+              ),
             ],
           ),
         ],
@@ -308,13 +325,15 @@ class _WordDetailPageState extends ConsumerState<WordDetailPage> {
                 _StateCard(word: _wordRow!, state: _state),
                 AppSpacing.h16,
                 SectionCard(
-                  title: '词条内容',
+                  title: context.l10n.wordInfo,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: <Widget>[
                       TextField(
                         controller: _word,
-                        decoration: const InputDecoration(labelText: '单词'),
+                        decoration: InputDecoration(
+                          labelText: context.l10n.wordField,
+                        ),
                       ),
                       AppSpacing.h12,
                       Row(
@@ -323,8 +342,8 @@ class _WordDetailPageState extends ConsumerState<WordDetailPage> {
                             flex: 2,
                             child: TextField(
                               controller: _phonetic,
-                              decoration: const InputDecoration(
-                                labelText: '音标',
+                              decoration: InputDecoration(
+                                labelText: context.l10n.phonetics,
                               ),
                             ),
                           ),
@@ -332,8 +351,8 @@ class _WordDetailPageState extends ConsumerState<WordDetailPage> {
                           Expanded(
                             child: TextField(
                               controller: _pos,
-                              decoration: const InputDecoration(
-                                labelText: '词性',
+                              decoration: InputDecoration(
+                                labelText: context.l10n.partOfSpeech,
                               ),
                             ),
                           ),
@@ -344,39 +363,49 @@ class _WordDetailPageState extends ConsumerState<WordDetailPage> {
                         controller: _translation,
                         minLines: 2,
                         maxLines: 6,
-                        decoration: const InputDecoration(labelText: '中文释义'),
+                        decoration: InputDecoration(
+                          labelText: context.l10n.chineseMeaning,
+                        ),
                       ),
                       AppSpacing.h12,
                       TextField(
                         controller: _definition,
                         minLines: 2,
                         maxLines: 6,
-                        decoration: const InputDecoration(labelText: '英文释义'),
+                        decoration: InputDecoration(
+                          labelText: context.l10n.englishDefinition,
+                        ),
                       ),
                       AppSpacing.h12,
                       TextField(
                         controller: _example,
                         minLines: 2,
                         maxLines: 5,
-                        decoration: const InputDecoration(labelText: '例句'),
+                        decoration: InputDecoration(
+                          labelText: context.l10n.exampleSentence,
+                        ),
                       ),
                       AppSpacing.h12,
                       TextField(
                         controller: _phrase,
                         minLines: 1,
                         maxLines: 3,
-                        decoration: const InputDecoration(labelText: '短语 / 搭配'),
+                        decoration: InputDecoration(
+                          labelText: context.l10n.phrases,
+                        ),
                       ),
                       AppSpacing.h12,
                       TextField(
                         controller: _note,
                         minLines: 2,
                         maxLines: 6,
-                        decoration: const InputDecoration(labelText: '个人笔记'),
+                        decoration: InputDecoration(
+                          labelText: context.l10n.notes,
+                        ),
                       ),
                       AppSpacing.h16,
                       Text(
-                        '保存后该词条标记为用户自定义，词典更新不会覆盖你填写的内容。',
+                        context.l10n.savedAsCustom,
                         style: theme.textTheme.bodySmall,
                       ),
                       AppSpacing.h16,
@@ -384,7 +413,11 @@ class _WordDetailPageState extends ConsumerState<WordDetailPage> {
                         alignment: Alignment.centerRight,
                         child: ElevatedButton(
                           onPressed: _saving ? null : _save,
-                          child: Text(_saving ? '保存中…' : '保存修改'),
+                          child: Text(
+                            _saving
+                                ? context.l10n.saving
+                                : context.l10n.commonSave,
+                          ),
                         ),
                       ),
                     ],
@@ -392,9 +425,12 @@ class _WordDetailPageState extends ConsumerState<WordDetailPage> {
                 ),
                 AppSpacing.h16,
                 SectionCard(
-                  title: '作答历史（${_events.length}）',
+                  title: context.l10n.answerHistory(_events.length),
                   child: _events.isEmpty
-                      ? Text('还没有作答记录。', style: theme.textTheme.bodySmall)
+                      ? Text(
+                          context.l10n.noAnswerHistory,
+                          style: theme.textTheme.bodySmall,
+                        )
                       : Column(
                           children: <Widget>[
                             for (final ReviewEvent event in _events.take(20))
@@ -406,7 +442,7 @@ class _WordDetailPageState extends ConsumerState<WordDetailPage> {
                                   children: <Widget>[
                                     TagChip(
                                       label: AnswerResult.fromCode(event.result)
-                                          .label,
+                                          .label(context.l10n),
                                       color: switch (AnswerResult.fromCode(
                                         event.result,
                                       )) {
@@ -421,8 +457,8 @@ class _WordDetailPageState extends ConsumerState<WordDetailPage> {
                                     Text(
                                       ReviewType.fromCode(event.type) ==
                                               ReviewType.study
-                                          ? '新词学习'
-                                          : '复习',
+                                          ? context.l10n.eventNewStudy
+                                          : context.l10n.eventReview,
                                       style: theme.textTheme.bodySmall,
                                     ),
                                     const Spacer(),
@@ -467,7 +503,7 @@ class _StateCard extends StatelessWidget {
             isUtc: true,
           ).toLocal();
     return SectionCard(
-      title: '学习状态',
+      title: context.l10n.learningProgress,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -475,13 +511,18 @@ class _StateCard extends StatelessWidget {
             spacing: 8,
             runSpacing: 8,
             children: <Widget>[
-              TagChip(label: stage.label),
+              TagChip(label: stage.label(context.l10n)),
               if (word.customized)
-                const TagChip(label: '用户自定义', color: AppColors.known),
+                TagChip(label: context.l10n.editedTag, color: AppColors.known),
               if (word.examTags.isNotEmpty)
                 TagChip(label: word.examTags.toUpperCase(), dense: true),
               if (word.source.isNotEmpty)
-                TagChip(label: '来源：${word.source}', dense: true),
+                TagChip(
+                  label: context.l10n.sourceLabel(
+                    wordSourceLabel(context.l10n, word.source),
+                  ),
+                  dense: true,
+                ),
             ],
           ),
           AppSpacing.h16,
@@ -490,27 +531,27 @@ class _StateCard extends StatelessWidget {
               Expanded(
                 child: StatBlock(
                   value: '${state?.correctCount ?? 0}',
-                  label: '正确',
+                  label: AnswerResult.known.label(context.l10n),
                 ),
               ),
               Expanded(
                 child: StatBlock(
                   value: '${state?.hazyCount ?? 0}',
-                  label: '模糊',
+                  label: AnswerResult.hazy.label(context.l10n),
                   color: AppColors.hazy,
                 ),
               ),
               Expanded(
                 child: StatBlock(
                   value: '${state?.wrongCount ?? 0}',
-                  label: '错误',
+                  label: AnswerResult.unknown.label(context.l10n),
                   color: AppColors.unknown,
                 ),
               ),
               Expanded(
                 child: StatBlock(
-                  value: '${state?.intervalDays ?? 0} 天',
-                  label: '当前间隔',
+                  value: context.l10n.intervalDays(state?.intervalDays ?? 0),
+                  label: context.l10n.intervalLabel,
                 ),
               ),
             ],
@@ -518,7 +559,10 @@ class _StateCard extends StatelessWidget {
           if (next != null) ...<Widget>[
             AppSpacing.h12,
             Text(
-              '下次复习：${formatDateTime(next)}（${relativeTime(next, DateTime.now())}）',
+              context.l10n.nextReviewAt(
+                formatDateTime(next),
+                relativeTime(next, DateTime.now(), context.l10n),
+              ),
               style: theme.textTheme.bodySmall,
             ),
           ],

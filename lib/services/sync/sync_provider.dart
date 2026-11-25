@@ -134,17 +134,7 @@ class SyncCapability {
   /// Sync is possible at all (manual merge at minimum).
   bool get usable => directoryAccessible && canRead;
 
-  /// Short user-facing sentence; the technical detail stays in [detail] and in
-  /// the diagnostics log.
-  String get summary => switch (status) {
-    SyncCapabilityStatus.unknown => '尚未验证连接',
-    SyncCapabilityStatus.connectionFailed => '无法连接服务器',
-    SyncCapabilityStatus.authenticationFailed => '认证失败：账号或密码不正确',
-    SyncCapabilityStatus.directoryUnavailable => '已连接，但无法访问此文件夹',
-    SyncCapabilityStatus.readOnly => '已连接，但只能读取，无法写入',
-    SyncCapabilityStatus.basicReadWrite => '此服务器暂不支持安全的多设备同步',
-    SyncCapabilityStatus.safeConditionalWrite => '连接成功，可以同步',
-  };
+  // The user-facing verdict lives in `lib/l10n/sync_labels.dart`.
 
   SyncCapability copyWith({
     SyncCapabilityStatus? status,
@@ -314,6 +304,34 @@ class SyncUploadResult {
   final bool ok;
   final String message;
   final String? revision;
+}
+
+/// What a sync run actually achieved.
+///
+/// Stable and language-independent: the page localises it, and the last result
+/// is persisted as this code (plus counts) instead of a translated sentence, so
+/// switching the app language does not leave Chinese text in the history.
+enum SyncOutcome {
+  /// A full run finished: pulled, merged and pushed.
+  synced,
+
+  /// Nothing to upload: both sides already match.
+  unchanged,
+
+  /// The remote already contained everything this device has.
+  remoteHasData,
+
+  /// A previously empty remote file was initialised from this device.
+  initialised,
+
+  /// The local merge succeeded but the upload did not finish.
+  partialUpload,
+
+  /// The run failed.
+  failed,
+
+  /// Written by a build that stored a sentence; shown verbatim.
+  legacy,
 }
 
 class SyncException implements Exception {

@@ -13,6 +13,8 @@ dependencies:
     sdk: flutter
   flutter_localizations:
     sdk: flutter
+  # Message formatting for the gen_l10n output (dates, plurals, numbers).
+  intl: ^0.20.3
 
   # State management (small, no codegen).
   flutter_riverpod: ^3.5.0
@@ -44,6 +46,10 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  # gen_l10n reads l10n.yaml. The generated code is committed under
+  # lib/l10n/generated so a checkout builds without running codegen first, and
+  # CI regenerates it to prove the ARB files are the only source of truth.
+  generate: true
   assets:
     # Offline dictionary, generated from ECDICT (MIT) by tool/build_dictionary.py.
     - assets/dictionary/ecdict_core.db

@@ -4,11 +4,13 @@ import 'package:drift/drift.dart' show QueryRow, Value;
 import 'package:file_picker/file_picker.dart';
 
 import '../core/database/app_database.dart';
+import '../core/errors/app_error.dart';
 import '../core/models/enums.dart';
 import '../core/repositories/settings_repository.dart';
 import '../core/repositories/study_repository.dart';
 import '../core/time_utils.dart';
 import 'backup_service.dart';
+import 'diagnostics_service.dart';
 import 'practice_session.dart';
 import 'study_session.dart';
 
@@ -82,11 +84,6 @@ class BackupInfo {
   final String? datasetId;
   final bool hasDeviceSettings;
   final String appVersion;
-
-  String get summary => valid
-      ? '词条 $words · 词书 $books · 关联 $entries · 学习记录 $events'
-            '${tags > 0 ? ' · 标签 $tags' : ''}${favorites > 0 ? ' · 收藏 $favorites' : ''}'
-      : '无法读取：${problem ?? '未知原因'}';
 }
 
 /// Result of a point-in-time restore.
@@ -109,10 +106,6 @@ class RestoreOutcome {
   /// True when the device-local book selection pointed at a book the snapshot
   /// does not contain, so it was cleared instead of leaving a dangling id.
   final bool currentBookCleared;
-
-  String get summary =>
-      '已恢复 ${report.newWords + report.updatedWords} 个词条、'
-      '${report.addedEvents} 条学习记录（恢复前已保存保护性备份）';
 }
 
 class AutoBackupResult {
@@ -426,12 +419,22 @@ class BackupManager {
 
   /// Convenience for UI code: returns null when the operation may proceed, or a
   /// user-facing reason when the protective copy could not be made.
-  Future<String?> protectiveBackupFailure(String reason) async {
+  /// Creates the pre-operation backup, or reports a stable error code.
+  ///
+  /// [reason] is an internal identifier (`delete-word-list`), logged for
+  /// diagnostics; it is never shown to the user, and the caller localises the
+  /// failure through [AppErrorCode.protectiveBackupFailed].
+  Future<AppErrorCode?> protectiveBackupFailure(String reason) async {
     try {
       await createProtectiveBackup(reason: reason);
       return null;
     } catch (e) {
-      return '无法创建保护性备份（$reason），已取消该操作：$e';
+      DiagnosticsService.instance.log(
+        'backup',
+        'protective backup failed ($reason): $e',
+        error: true,
+      );
+      return AppErrorCode.protectiveBackupFailed;
     }
   }
 

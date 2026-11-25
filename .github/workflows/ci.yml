@@ -42,6 +42,12 @@ jobs:
       - name: Code generation (drift)
         run: dart run build_runner build
 
+      # The ARB files are the only source of truth for user-visible text; the
+      # generated Dart is committed so a checkout builds without codegen, and
+      # regenerating here proves it can be reproduced from the resources.
+      - name: Code generation (localisations)
+        run: flutter gen-l10n
+
       - name: Format check
         run: dart format --output=none --set-exit-if-changed lib test
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:materialword/l10n/l10n.dart';
 import 'package:materialword/app/providers.dart';
 import 'package:materialword/app/theme.dart';
 import 'package:materialword/core/models/enums.dart';
@@ -42,10 +43,16 @@ void main() {
           databaseProvider.overrideWithValue(e.db),
           clockProvider.overrideWithValue(e.clock),
         ],
-        child: MaterialApp(theme: AppTheme.light(), home: const SprintPage()),
+        child: MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          locale: const Locale('zh'),
+          theme: AppTheme.light(),
+          home: const SprintPage(),
+        ),
       ),
     );
-    await waitFor(tester, find.text('开始本轮冲刺'));
+    await waitFor(tester, find.text('开始冲刺'));
     await settle(tester);
   }
 
@@ -75,7 +82,7 @@ void main() {
       );
       await mount(tester, e);
       expect(find.text('距离考试 7 天'), findsOneWidget);
-      await tester.tap(find.text('开始本轮冲刺').hitTestable());
+      await tester.tap(find.text('开始冲刺').hitTestable());
       await waitFor(tester, find.byType(StudyPage));
       await settle(tester);
       await tester.tap(find.text('显示释义'));
@@ -96,7 +103,7 @@ void main() {
       );
       await tester.pageBack();
       await settle(tester);
-      expect(find.text('继续本轮冲刺'), findsOneWidget);
+      expect(find.text('继续冲刺'), findsOneWidget);
       final exit = find.text('退出冲刺，保留普通计划');
       await tester.ensureVisible(exit);
       await settle(tester);

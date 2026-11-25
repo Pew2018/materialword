@@ -1,6 +1,8 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+
+import 'package:materialword/core/errors/app_error.dart';
 import 'package:materialword/core/models/enums.dart';
 import 'package:materialword/core/models/sprint_plan.dart';
 import 'package:materialword/core/repositories/sprint_repository.dart';
@@ -57,7 +59,7 @@ void main() {
     ]) {
       expect(
         () => SprintPlan.fromJson({...valid, ...bad}),
-        throwsFormatException,
+        throwsA(isA<AppError>()),
       );
     }
     await e.settings.save(
@@ -203,7 +205,7 @@ void main() {
     );
     next.reveal();
     expect(await next.submit(AnswerResult.known), isNull);
-    expect(next.error, contains('计划已改变'));
+    expect(next.error, AppErrorCode.sprintChanged);
   });
 
   test('SPRINT smoothed evidence and coverage prevent a sparse error from owning every slot', () {

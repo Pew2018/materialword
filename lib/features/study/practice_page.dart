@@ -3,6 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/providers.dart';
 import '../../app/theme.dart';
+import '../../l10n/enum_labels.dart';
+import '../../l10n/error_labels.dart';
+import '../../l10n/l10n.dart';
 import '../../core/database/app_database.dart';
 import '../../core/models/enums.dart';
 import '../../shared/widgets/common.dart';
@@ -180,11 +183,7 @@ class _PracticePageState extends ConsumerState<PracticePage>
       // in Chinese. Never a fake "played" state.
       setState(() => _showHint = true);
       if (announceFailure) {
-        showMessage(
-          context,
-          _tts.lastError ?? '系统语音不可用，已显示中文提示；可以继续用拼写或选择题练习',
-          error: true,
-        );
+        showMessage(context, context.l10n.practiceVoiceHintUsed, error: true);
       }
     }
   }
@@ -199,7 +198,11 @@ class _PracticePageState extends ConsumerState<PracticePage>
     if (!mounted) return;
     if (outcome == null) {
       if (_session.error != null) {
-        showMessage(context, _session.error!, error: true);
+        showMessage(
+          context,
+          describeAppError(context.l10n, _session.error!),
+          error: true,
+        );
       }
       return;
     }
@@ -224,13 +227,21 @@ class _PracticePageState extends ConsumerState<PracticePage>
     final bool ok = await _session.undo();
     if (!mounted) return;
     if (!ok && _session.error != null) {
-      showMessage(context, _session.error!, error: true);
+      showMessage(
+        context,
+        describeAppError(context.l10n, _session.error!),
+        error: true,
+      );
     }
   }
 
   void _skip() {
     if (!_session.skip() && _session.error != null) {
-      showMessage(context, _session.error!, error: true);
+      showMessage(
+        context,
+        describeAppError(context.l10n, _session.error!),
+        error: true,
+      );
     }
   }
 
@@ -240,16 +251,16 @@ class _PracticePageState extends ConsumerState<PracticePage>
     final bool hasQuestion = _session.current != null;
     return Scaffold(
       appBar: ClassicAppBar(
-        title: Text(widget.kind.label),
+        title: Text(widget.kind.label(context.l10n)),
         actions: <Widget>[
           IconButton(
-            tooltip: '撤销上一题',
+            tooltip: context.l10n.undoLastQuestion,
             onPressed: _session.canUndo ? _undo : null,
             icon: const Icon(Icons.undo),
           ),
           if (_session.phase == PracticePhase.question && hasQuestion)
             IconButton(
-              tooltip: '跳过（不记录作答）',
+              tooltip: context.l10n.skip,
               onPressed: _skip,
               icon: const Icon(Icons.skip_next),
             ),
@@ -274,7 +285,7 @@ class _PracticePageState extends ConsumerState<PracticePage>
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                 child: ErrorBanner(
-                  message: _session.error!,
+                  message: describeAppError(context.l10n, _session.error!),
                   onRetry: _session.isFinished || _session.isEmpty
                       ? () => _start()
                       : null,
@@ -310,13 +321,15 @@ class _PracticePageState extends ConsumerState<PracticePage>
     if (_session.isEmpty) {
       return EmptyState(
         icon: Icons.school_outlined,
-        title: _session.error == null ? '没有可练习的单词' : '练习无法开始',
+        title: _session.error == null
+            ? context.l10n.nothingToPractice
+            : context.l10n.practiceCannotStart,
         message: widget.kind == PracticeKind.cloze
-            ? '例句挖空只使用词条自带的例句；没有例句的词不会进入练习。可以先补充例句或改用其他练习方式。'
-            : '练习需要带中文释义的词条。先导入或添加单词后再回来。',
+            ? context.l10n.clozeEmptyMessage
+            : context.l10n.practiceEmptyMessage,
         action: ElevatedButton(
           onPressed: () => Navigator.of(context).maybePop(),
-          child: const Text('返回'),
+          child: Text(context.l10n.back),
         ),
       );
     }
@@ -387,13 +400,18 @@ class _PromptCard extends StatelessWidget {
         if (question.kind == PracticeKind.dictation) ...<Widget>[
           Center(
             child: IconButton(
-              tooltip: '再听一次',
+              tooltip: context.l10n.playAgain,
               iconSize: 56,
               onPressed: onSpeak,
               icon: Icon(Icons.volume_up, color: theme.colorScheme.primary),
             ),
           ),
-          Center(child: Text('听发音，输入单词', style: theme.textTheme.bodySmall)),
+          Center(
+            child: Text(
+              context.l10n.listenAndType,
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
           AppSpacing.h12,
         ],
         if (question.kind == PracticeKind.cloze)
@@ -440,7 +458,7 @@ class _PromptCard extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(top: 12),
             child: Text(
-              '提示：${question.word.translation}',
+              context.l10n.hintWithText(question.word.translation),
               style: theme.textTheme.bodySmall,
             ),
           ),
@@ -488,19 +506,22 @@ class _FeedbackCard extends StatelessWidget {
               ),
               AppSpacing.w8,
               Text(
-                outcome.correct ? '正确' : '不正确',
+                outcome.correct ? context.l10n.correct : context.l10n.incorrect,
                 style: theme.textTheme.titleSmall?.copyWith(color: color),
               ),
             ],
           ),
           AppSpacing.h8,
-          SelectableText('正确拼写：${outcome.answer}'),
+          SelectableText(context.l10n.correctSpelling(outcome.answer)),
           if (!outcome.correct && outcome.submitted.trim().isNotEmpty)
             Text(
-              '你的答案：${outcome.submitted.trim()}',
+              context.l10n.yourAnswer(outcome.submitted.trim()),
               style: theme.textTheme.bodySmall,
             ),
-          Text('本次练习只记录作答，不会改变该词的长期复习间隔。', style: theme.textTheme.bodySmall),
+          Text(
+            context.l10n.practiceAnswerNote,
+            style: theme.textTheme.bodySmall,
+          ),
         ],
       ),
     );
@@ -550,7 +571,11 @@ class _AnswerArea extends StatelessWidget {
                   onPressed: onNext,
                   // The last question shows its feedback too; the button then
                   // leads to the summary instead of pretending the round is over.
-                  child: Text(isLast ? '查看本组结果' : '下一题'),
+                  child: Text(
+                    isLast
+                        ? context.l10n.viewResults
+                        : context.l10n.nextQuestion,
+                  ),
                 ),
               )
             : Row(
@@ -567,11 +592,11 @@ class _AnswerArea extends StatelessWidget {
                         onSubmitted: (_) => onSubmit(),
                         decoration: InputDecoration(
                           isDense: true,
-                          hintText: '输入英文单词',
+                          hintText: context.l10n.typeTheWord,
                           suffixIcon: onSpeak == null
                               ? null
                               : IconButton(
-                                  tooltip: '再听一次',
+                                  tooltip: context.l10n.playAgain,
                                   onPressed: onSpeak,
                                   icon: const Icon(Icons.volume_up_outlined),
                                 ),
@@ -583,19 +608,21 @@ class _AnswerArea extends StatelessWidget {
                       height: 48,
                       child: ElevatedButton(
                         onPressed: busy ? null : onSubmit,
-                        child: const Text('提交'),
+                        child: Text(context.l10n.submit),
                       ),
                     ),
                   ] else
                     Expanded(
                       child: Text(
-                        '从上面选择你认为正确的单词',
+                        context.l10n.chooseCorrectWord,
                         style: theme.textTheme.bodySmall,
                       ),
                     ),
                   if (kind == PracticeKind.dictation) ...<Widget>[
                     IconButton(
-                      tooltip: showHint ? '隐藏中文提示' : '显示中文提示',
+                      tooltip: showHint
+                          ? context.l10n.hideHint
+                          : context.l10n.showHint,
                       onPressed: onToggleHint,
                       icon: Icon(
                         showHint
@@ -640,7 +667,7 @@ class _SummaryView extends StatelessWidget {
               ),
               AppSpacing.h12,
               Text(
-                '本组练习完成',
+                context.l10n.practiceComplete,
                 textAlign: TextAlign.center,
                 style: theme.textTheme.titleLarge,
               ),
@@ -650,32 +677,45 @@ class _SummaryView extends StatelessWidget {
                   Expanded(
                     child: StatBlock(
                       value: '${summary.answered}',
-                      label: '实际作答',
+                      label: context.l10n.answersCount,
                     ),
                   ),
                   Expanded(
-                    child: StatBlock(value: '${summary.correct}', label: '正确'),
+                    child: StatBlock(
+                      value: '${summary.correct}',
+                      label: context.l10n.correct,
+                    ),
                   ),
                   Expanded(
-                    child: StatBlock(value: '${summary.skipped}', label: '跳过'),
+                    child: StatBlock(
+                      value: '${summary.skipped}',
+                      label: context.l10n.skipped,
+                    ),
                   ),
                 ],
               ),
               AppSpacing.h12,
               Text(
-                '正确率：${summary.accuracy == null ? '—' : '${(summary.accuracy! * 100).toStringAsFixed(1)}%'}'
-                '（${summary.uniqueWords} 个单词）',
+                context.l10n.practiceAccuracy(
+                  summary.accuracy == null
+                      ? '—'
+                      : '${(summary.accuracy! * 100).toStringAsFixed(1)}%',
+                  summary.uniqueWords,
+                ),
                 textAlign: TextAlign.center,
               ),
               if (summary.wrongWords.isNotEmpty) ...<Widget>[
                 AppSpacing.h16,
-                Text('需要再看一遍', style: theme.textTheme.titleSmall),
+                Text(
+                  context.l10n.worthAnotherLook,
+                  style: theme.textTheme.titleSmall,
+                ),
                 AppSpacing.h8,
                 SelectableText(summary.wrongWords.join(' · ')),
               ],
               AppSpacing.h12,
               Text(
-                '练习作答计入统计，但不会改变长期复习间隔。',
+                context.l10n.practiceStatsNote,
                 style: theme.textTheme.bodySmall,
                 textAlign: TextAlign.center,
               ),
@@ -685,14 +725,14 @@ class _SummaryView extends StatelessWidget {
                   Expanded(
                     child: OutlinedButton(
                       onPressed: onAgain,
-                      child: const Text('再来一组'),
+                      child: Text(context.l10n.continuePracticing),
                     ),
                   ),
                   AppSpacing.w8,
                   Expanded(
                     child: ElevatedButton(
                       onPressed: onDone,
-                      child: const Text('返回'),
+                      child: Text(context.l10n.commonDone),
                     ),
                   ),
                 ],

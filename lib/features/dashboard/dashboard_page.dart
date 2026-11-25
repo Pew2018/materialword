@@ -9,6 +9,8 @@ import '../../core/database/app_database.dart';
 import '../../core/models/enums.dart';
 import '../../core/models/study_models.dart';
 import '../../core/repositories/wordbook_repository.dart';
+import '../../l10n/enum_labels.dart';
+import '../../l10n/l10n.dart';
 import '../../services/import_service.dart';
 import '../../shared/widgets/classic_select.dart';
 import '../../shared/widgets/common.dart';
@@ -45,6 +47,7 @@ class DashboardPage extends ConsumerWidget {
             (books.value?.any((b) => b.book.id == resume.bookId) ?? false));
     final TodayProgress? today = progress.value;
     final ThemeData theme = Theme.of(context);
+    final AppLocalizations l10n = context.l10n;
 
     return RefreshIndicator(
       onRefresh: () async {
@@ -60,7 +63,7 @@ class DashboardPage extends ConsumerWidget {
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
                 child: ErrorBanner(
-                  message: '读取学习进度失败：${progress.error}',
+                  message: l10n.errorLoadFailed,
                   onRetry: () => ref.invalidate(todayProgressProvider),
                 ),
               ),
@@ -76,10 +79,13 @@ class DashboardPage extends ConsumerWidget {
             ),
             SettingsTile(
               leading: const Icon(Icons.flag_outlined),
-              title: '考前冲刺',
+              title: l10n.specialSprint,
               subtitle: sprint?.enabled == true
-                  ? '考试日期 ${sprint!.examDate} · 每轮 ${sprint.roundSize} 个'
-                  : '设置考试日期与目标词书，独立安排重点练习',
+                  ? l10n.sprintTileSubtitleOn(
+                      sprint!.examDate ?? '',
+                      sprint.roundSize,
+                    )
+                  : l10n.sprintTileSubtitleOff,
               trailing: const Icon(Icons.chevron_right),
               onTap: () => Navigator.of(context).push<void>(
                 MaterialPageRoute(builder: (_) => const SprintPage()),
@@ -88,8 +94,8 @@ class DashboardPage extends ConsumerWidget {
             if (canResume)
               SettingsTile(
                 leading: const Icon(Icons.play_circle_outline),
-                title: '继续学习',
-                subtitle: '已完成 ${resume.position} / ${resume.total} 项',
+                title: l10n.continueStudying,
+                subtitle: l10n.resumeProgress(resume.position, resume.total),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => Navigator.of(context).push<void>(
                   MaterialPageRoute(
@@ -109,18 +115,22 @@ class DashboardPage extends ConsumerWidget {
               )
             else if (today.totalWords == 0) ...<Widget>[
               SectionHeader(
-                title: '今日任务',
+                title: l10n.todayTasks,
                 trailing: Text(
-                  today.scopedToBook ? '范围：当前词书' : '范围：全部词书',
+                  today.scopedToBook
+                      ? l10n.scopeCurrentList
+                      : l10n.scopeAllLists,
                   style: theme.textTheme.bodySmall,
                 ),
               ),
               const _FirstRunPanel(),
             ] else ...<Widget>[
               SectionHeader(
-                title: '今日任务',
+                title: l10n.todayTasks,
                 trailing: Text(
-                  today.scopedToBook ? '范围：当前词书' : '范围：全部词书',
+                  today.scopedToBook
+                      ? l10n.scopeCurrentList
+                      : l10n.scopeAllLists,
                   style: theme.textTheme.bodySmall,
                 ),
               ),
@@ -129,15 +139,15 @@ class DashboardPage extends ConsumerWidget {
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
                   child: Text(
-                    '${today.backlog} 个到期单词超出今日复习上限，会顺延到明天，不会丢失。',
+                    l10n.backlogNote(today.backlog),
                     style: theme.textTheme.bodySmall,
                   ),
                 ),
-              SectionHeader(title: '开始学习'),
+              SectionHeader(title: l10n.sectionStartStudy),
               _StartActions(progress: today),
-              SectionHeader(title: '专项复习'),
+              SectionHeader(title: l10n.sectionSpecialReview),
               _SpecialReviewGroup(progress: today),
-              SectionHeader(title: '练习'),
+              SectionHeader(title: l10n.sectionPractice),
               const _PracticeActions(),
             ],
           ],
@@ -197,18 +207,24 @@ class _BookSelector extends StatelessWidget {
               color: theme.colorScheme.primary,
             ),
             AppSpacing.w8,
-            Text('当前学习词书', style: theme.textTheme.bodySmall),
+            Text(context.l10n.studyWordList, style: theme.textTheme.bodySmall),
             AppSpacing.w12,
             Flexible(
               child: ClassicSelectChip<String>(
-                label: '全部词书',
+                label: context.l10n.scopeAllLists,
                 value: selectedId,
                 options: <ClassicOption<String>>[
-                  const ClassicOption<String>(value: '', label: '全部词书'),
+                  ClassicOption<String>(
+                    value: '',
+                    label: context.l10n.scopeAllLists,
+                  ),
                   for (final WordBookSummary summary in books)
                     ClassicOption<String>(
                       value: summary.book.id,
-                      label: '${summary.book.name}（${summary.wordCount} 词）',
+                      label: context.l10n.wordListOptionLabel(
+                        summary.book.name,
+                        summary.wordCount,
+                      ),
                     ),
                 ],
                 onChanged: (String id) => onChanged(id.isEmpty ? null : id),
@@ -237,23 +253,29 @@ class _TodayPanel extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
             ProgressRow(
-              label: '新词',
+              label: context.l10n.newWords,
               done: progress.newDone,
               total: progress.newGoal,
               color: theme.colorScheme.primary,
               hint: progress.unlearnedTotal == 0
-                  ? '当前范围内已没有未学习的单词'
-                  : '剩余额度 ${progress.newRemainingAllowance}，未学习单词 ${progress.unlearnedTotal}',
+                  ? context.l10n.noNewWordsInScope
+                  : context.l10n.newWordsHintRemaining(
+                      progress.newRemainingAllowance,
+                      progress.unlearnedTotal,
+                    ),
             ),
             AppSpacing.h12,
             ProgressRow(
-              label: '复习',
+              label: context.l10n.review,
               done: progress.reviewDone,
               total: progress.reviewGoal,
               color: AppColors.hazy,
               hint: progress.dueTotal == 0
-                  ? '当前没有到期单词'
-                  : '到期 ${progress.dueTotal}，剩余额度 ${progress.reviewRemainingAllowance}',
+                  ? context.l10n.noDueWords
+                  : context.l10n.reviewHintRemaining(
+                      progress.dueTotal,
+                      progress.reviewRemainingAllowance,
+                    ),
             ),
             const Divider(height: 20),
             Row(
@@ -261,25 +283,28 @@ class _TodayPanel extends StatelessWidget {
                 Expanded(
                   child: StatBlock(
                     value: '${progress.newAvailableToday}',
-                    label: '今日可学新词',
+                    label: context.l10n.newWordsAvailable,
                   ),
                 ),
                 Expanded(
                   child: StatBlock(
                     value: '${progress.reviewAvailableToday}',
-                    label: '今日可复习',
+                    label: context.l10n.reviewsAvailable,
                     color: progress.reviewAvailableToday > 0
                         ? AppColors.hazy
                         : null,
                   ),
                 ),
                 Expanded(
-                  child: StatBlock(value: '${progress.backlog}', label: '积压复习'),
+                  child: StatBlock(
+                    value: '${progress.backlog}',
+                    label: context.l10n.overdueReviews,
+                  ),
                 ),
                 Expanded(
                   child: StatBlock(
                     value: '${progress.hardWords}',
-                    label: '困难词',
+                    label: context.l10n.difficultWords,
                     color: progress.hardWords > 0 ? AppColors.unknown : null,
                   ),
                 ),
@@ -287,7 +312,10 @@ class _TodayPanel extends StatelessWidget {
             ),
             AppSpacing.h8,
             Text(
-              '已学 ${progress.learnedWords} / ${progress.totalWords}',
+              context.l10n.learnedOfTotal(
+                progress.learnedWords,
+                progress.totalWords,
+              ),
               style: theme.textTheme.bodySmall,
             ),
           ],
@@ -319,9 +347,19 @@ class _StartActions extends ConsumerWidget {
             ),
             AppSpacing.w8,
             Expanded(
-              child: Text(
-                '今天的任务已完成，没有可开始的学习队列。可以调整每日目标、导入新词，或稍后回来复习。',
-                style: theme.textTheme.bodySmall,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    context.l10n.todayDone,
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                  AppSpacing.h4,
+                  Text(
+                    context.l10n.todayDoneHint,
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ],
               ),
             ),
           ],
@@ -335,7 +373,7 @@ class _StartActions extends ConsumerWidget {
             ? () => _openStudy(context, ref)
             : null,
         icon: const Icon(Icons.play_arrow),
-        label: const Text('开始学习'),
+        label: Text(context.l10n.startStudying),
       ),
     );
     final Widget secondary = Builder(
@@ -344,7 +382,7 @@ class _StartActions extends ConsumerWidget {
             ? () => _openStudy(context, ref, reviewOnly: true)
             : null,
         icon: const Icon(Icons.replay),
-        label: const Text('只做复习'),
+        label: Text(context.l10n.reviewOnly),
       ),
     );
 
@@ -384,10 +422,10 @@ class _SpecialReviewGroup extends ConsumerWidget {
       children: <Widget>[
         SettingsTile(
           leading: const Icon(Icons.local_fire_department_outlined),
-          title: '困难词专项',
+          title: context.l10n.specialHard,
           subtitle: progress.hardWords > 0
-              ? '${progress.hardWords} 个答错或模糊过的单词'
-              : '暂时没有困难词',
+              ? context.l10n.hardWordsSubtitle(progress.hardWords)
+              : context.l10n.noHardWordsYet,
           trailing: const Icon(Icons.chevron_right),
           onTap: progress.hardWords > 0
               ? () => _openStudy(context, ref, special: SpecialReview.hard)
@@ -395,8 +433,8 @@ class _SpecialReviewGroup extends ConsumerWidget {
         ),
         SettingsTile(
           leading: const Icon(Icons.error_outline),
-          title: '近期错误专项',
-          subtitle: '按最近答错的单词集中复习',
+          title: context.l10n.specialMistakes,
+          subtitle: context.l10n.mistakesSubtitle,
           trailing: const Icon(Icons.chevron_right),
           onTap: () =>
               _openStudy(context, ref, special: SpecialReview.recentMistakes),
@@ -426,10 +464,10 @@ class _PracticeActions extends ConsumerWidget {
               PracticeKind.choice => Icons.checklist_outlined,
               PracticeKind.cloze => Icons.short_text_outlined,
             }),
-            title: kind.label,
+            title: kind.label(context.l10n),
             subtitle: kind == PracticeKind.cloze
-                ? '${kind.description}（只用词条自带例句）'
-                : kind.description,
+                ? '${kind.description(context.l10n)} ${context.l10n.clozeUsesOwnSentence}'
+                : kind.description(context.l10n),
             onTap: () async {
               await Navigator.of(context).push<void>(
                 MaterialPageRoute<void>(
@@ -443,7 +481,7 @@ class _PracticeActions extends ConsumerWidget {
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
           child: Text(
-            '练习不会占用每日新词/复习额度，也不会改变长期复习间隔。',
+            context.l10n.practiceNote,
             style: theme.textTheme.bodySmall,
           ),
         ),
@@ -463,13 +501,9 @@ class _FirstRunPanel extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Text('还没有单词', style: theme.textTheme.titleLarge),
+          Text(context.l10n.noWordsYet, style: theme.textTheme.titleLarge),
           AppSpacing.h8,
-          Text(
-            '导入你自己的单词表（每行一个单词即可），或先载入一份示例词书熟悉学习流程。'
-            '也可以直接点右下角「+」手动添加。',
-            style: theme.textTheme.bodyMedium,
-          ),
+          Text(context.l10n.firstRunBody, style: theme.textTheme.bodyMedium),
           AppSpacing.h16,
           Wrap(
             spacing: 8,
@@ -486,23 +520,36 @@ class _FirstRunPanel extends ConsumerWidget {
                   ref.invalidate(bookSummariesProvider);
                 },
                 icon: const Icon(Icons.file_upload_outlined),
-                label: const Text('导入词表'),
+                label: Text(context.l10n.importWordList),
               ),
               OutlinedButton.icon(
                 onPressed: () async {
                   try {
-                    final String message = await loadSampleWordbook(ref);
-                    if (context.mounted) showMessage(context, message);
-                  } catch (e) {
+                    final SampleWordListResult result =
+                        await loadSampleWordbook(ref);
                     if (context.mounted) {
-                      showMessage(context, '载入失败：$e', error: true);
+                      showMessage(
+                        context,
+                        context.l10n.sampleLoaded(
+                          result.name,
+                          result.wordCount,
+                        ),
+                      );
+                    }
+                  } catch (_) {
+                    if (context.mounted) {
+                      showMessage(
+                        context,
+                        context.l10n.sampleAddFailed,
+                        error: true,
+                      );
                     }
                   }
                   ref.invalidate(todayProgressProvider);
                   ref.invalidate(bookSummariesProvider);
                 },
                 icon: const Icon(Icons.auto_stories_outlined),
-                label: const Text('载入示例词书'),
+                label: Text(context.l10n.addSampleList),
               ),
             ],
           ),
@@ -512,9 +559,20 @@ class _FirstRunPanel extends ConsumerWidget {
   }
 }
 
+/// Outcome of adding the bundled demo word list.
+class SampleWordListResult {
+  const SampleWordListResult({required this.name, required this.wordCount});
+
+  final String name;
+  final int wordCount;
+}
+
 /// Loads the bundled demo word list (30 CET-6 words, from ECDICT, MIT) so a
 /// brand-new install can try the learning loop immediately.
-Future<String> loadSampleWordbook(WidgetRef ref) async {
+///
+/// Returns data, not a sentence: the caller localises the confirmation, so the
+/// service layer stays language-independent.
+Future<SampleWordListResult> loadSampleWordbook(WidgetRef ref) async {
   final ImportService service = ref.read(importServiceProvider);
   final String content = await rootBundle.loadString(
     'assets/wordbooks/sample_cet6.json',
@@ -525,13 +583,13 @@ Future<String> loadSampleWordbook(WidgetRef ref) async {
     name: 'sample_cet6.json',
   );
   if (preview.entries.isEmpty) {
-    throw const FormatException('示例词表为空');
+    throw StateError('sample word list is empty');
   }
   final WordBook book = await ref
       .read(wordBookRepositoryProvider)
       .ensureBook(
         name: preview.detectedBookName,
-        description: '示例词书：30 个 CET-6 单词（ECDICT，MIT 许可）',
+        description: 'Sample word list: 30 CET-6 words (ECDICT, MIT)',
         sourceType: 'sample',
         now: DateTime.now(),
       );
@@ -543,5 +601,5 @@ Future<String> loadSampleWordbook(WidgetRef ref) async {
   await ref
       .read(settingsRepositoryProvider)
       .save(currentWordBookId: Value<String?>(book.id));
-  return '已载入「${book.name}」：${outcome.created} 个单词';
+  return SampleWordListResult(name: book.name, wordCount: outcome.created);
 }

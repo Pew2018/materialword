@@ -46,29 +46,6 @@ DateTime endOfLocalDay(DateTime moment) {
 DateTime localDayStartPlus(DateTime moment, int days) =>
     startOfLocalDay(moment).add(Duration(days: days));
 
-/// Human friendly "3 分钟前" / "2 天后" style label (kept deliberately small).
-String relativeTime(DateTime moment, DateTime now) {
-  final Duration diff = moment.difference(now);
-  final bool future = diff.isNegative == false;
-  final Duration abs = diff.abs();
-  String value;
-  if (abs.inMinutes < 1) {
-    value = '刚刚';
-    return value;
-  } else if (abs.inMinutes < 60) {
-    value = '${abs.inMinutes} 分钟';
-  } else if (abs.inHours < 24) {
-    value = '${abs.inHours} 小时';
-  } else if (abs.inDays < 30) {
-    value = '${abs.inDays} 天';
-  } else if (abs.inDays < 365) {
-    value = '${abs.inDays ~/ 30} 个月';
-  } else {
-    value = '${abs.inDays ~/ 365} 年';
-  }
-  return future ? '$value后' : '$value前';
-}
-
 /// `2026-11-24 21:03`
 String formatDateTime(DateTime moment) {
   final DateTime local = moment.toLocal();

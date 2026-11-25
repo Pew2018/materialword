@@ -2,6 +2,7 @@ import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 
 import '../core/database/app_database.dart';
+import '../core/errors/app_error.dart';
 import '../core/repositories/content_sync_repository.dart';
 import '../core/repositories/word_repository.dart';
 import '../core/repositories/wordbook_repository.dart';
@@ -9,13 +10,21 @@ import '../core/text/dictionary_text.dart';
 
 /// Thrown when an add/re-add request cannot be applied. The message is meant for
 /// the user, not for a log.
+/// A rejected "add word" request.
+///
+/// Carries a stable code, not a sentence: the page decides the wording, and the
+/// same failure can be logged in English for diagnostics.
 class WordIntakeException implements Exception {
-  const WordIntakeException(this.message);
+  const WordIntakeException(this.code, {this.detail});
 
-  final String message;
+  final AppErrorCode code;
+
+  /// Technical context for diagnostics. Never shown to the user.
+  final String? detail;
 
   @override
-  String toString() => message;
+  String toString() =>
+      'WordIntakeException(${code.name}${detail == null ? '' : ': $detail'})';
 }
 
 /// The seven dictionary-owned text fields of a word, plus `note`.
@@ -109,22 +118,6 @@ class WordIntakeResult {
 
   bool get isNew => kind == IntakeKind.created;
   bool get isRevived => kind == IntakeKind.revived;
-
-  /// A user-facing line that never claims more than what happened.
-  String describe() => switch (kind) {
-    IntakeKind.created => '已添加「${word.word}」',
-    IntakeKind.revived =>
-      linkAdded
-          ? '已恢复「${word.word}」并加入词书（学习记录保留）'
-          : '已恢复「${word.word}」（学习记录保留）',
-    IntakeKind.updated =>
-      changedFields.isEmpty
-          ? '「${word.word}」内容无变化'
-          : '已更新「${word.word}」的 ${changedFields.length} 个字段',
-    IntakeKind.unchanged =>
-      alreadyLinked ? '「${word.word}」已在词书中' : '「${word.word}」已存在，内容无变化',
-    IntakeKind.deletedSkipped => '「${word.word}」已被删除，未自动恢复',
-  };
 }
 
 /// One request to create, reuse or restore a word.
@@ -219,7 +212,9 @@ class WordIntakeService {
     DateTime? now,
   }) async {
     final Word? existing = await words.byId(id);
-    if (existing == null) throw const WordIntakeException('词条不存在');
+    if (existing == null) {
+      throw const WordIntakeException(AppErrorCode.wordNotFound);
+    }
     return add(
       WordIntakeRequest(text: existing.word, allowRevive: true),
       bookId: bookId,
@@ -230,7 +225,7 @@ class WordIntakeService {
   Future<void> _requireLiveBook(String bookId) async {
     final WordBook? book = await wordBooks.byId(bookId);
     if (book == null || book.deletedAt != null) {
-      throw const WordIntakeException('目标词书已被删除，请重新选择词书后再保存');
+      throw const WordIntakeException(AppErrorCode.wordListDeleted);
     }
   }
 
@@ -241,8 +236,10 @@ class WordIntakeService {
   }) async {
     final String text = request.text.trim();
     final String key = normalizeWordKey(text);
-    if (key.isEmpty) throw const WordIntakeException('单词不能为空');
-    if (text.length > 64) throw const WordIntakeException('单词过长（最多 64 个字符）');
+    if (key.isEmpty) throw const WordIntakeException(AppErrorCode.wordEmpty);
+    if (text.length > 64) {
+      throw const WordIntakeException(AppErrorCode.wordTooLong);
+    }
     if (bookId != null) await _requireLiveBook(bookId);
 
     final Word? found = await words.byNormalized(key, includeDeleted: true);

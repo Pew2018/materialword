@@ -88,23 +88,6 @@ class MergeReport {
       newEntries > 0 ||
       removedEntries > 0 ||
       rebuiltStates > 0;
-
-  String get summary {
-    final List<String> parts = <String>[
-      '新增学习记录 $addedEvents 条',
-      if (duplicateEvents > 0) '重复记录 $duplicateEvents 条已忽略',
-      if (newWords > 0) '新增词条 $newWords 个',
-      if (updatedWords > 0) '更新词条 $updatedWords 个',
-      if (deletedWords > 0) '同步删除 $deletedWords 个',
-      if (newBooks > 0) '新增词书 $newBooks 个',
-      if (newEntries > 0) '新增词书关联 $newEntries 条',
-      if (removedEntries > 0) '同步移出词书 $removedEntries 条',
-      if (rebuiltStates > 0) '重算学习状态 $rebuiltStates 个',
-      if (metadataUpdates > 0) '收藏与标签变更 $metadataUpdates 项',
-      if (conflicts > 0) '内容冲突 $conflicts 个（按字段版本、时间和来源确定保留值）',
-    ];
-    return parts.join('，');
-  }
 }
 
 class BackupException implements Exception {

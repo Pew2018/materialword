@@ -7,7 +7,11 @@ import 'package:uuid/uuid.dart';
 import '../../app/providers.dart';
 import '../../app/theme.dart';
 import '../../core/database/app_database.dart';
+import '../../core/errors/app_error.dart';
 import '../../core/models/enums.dart';
+import '../../l10n/enum_labels.dart';
+import '../../l10n/l10n.dart';
+import '../../l10n/relative_time.dart';
 import '../../core/models/study_models.dart';
 import '../../core/text/dictionary_text.dart';
 import '../../core/time_utils.dart';
@@ -120,7 +124,7 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
       if (mounted) {
         setState(() {
           _loading = false;
-          _error = '读取词书失败，请重试';
+          _error = context.l10n.wordListsLoadFailed;
         });
       }
     }
@@ -176,7 +180,7 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
       if (!mounted || generation != _generation) return;
       setState(() {
         _loading = false;
-        _error = '加载失败，请重试';
+        _error = context.l10n.errorLoadFailed;
       });
     }
   }
@@ -216,7 +220,7 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
       });
     } catch (_) {
       if (mounted && generation == _generation) {
-        showMessage(context, '加载失败，请重试', error: true);
+        showMessage(context, context.l10n.errorLoadFailed, error: true);
       }
     } finally {
       if (mounted && generation == _generation) {
@@ -225,11 +229,16 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
     }
   }
 
-  Future<void> _runBatch(Future<String> Function() operation) async {
+  Future<void> _runBatch(
+    Future<String> Function(AppLocalizations l10n) operation,
+  ) async {
     if (_busy || !mounted) return;
+    // Captured here, before the first await: the closure then formats its result
+    // without reaching back into a possibly-unmounted [BuildContext].
+    final AppLocalizations l10n = context.l10n;
     setState(() => _busy = true);
     try {
-      final String message = await operation();
+      final String message = await operation(l10n);
       if (!mounted) return;
       ref.invalidate(todayProgressProvider);
       ref.invalidate(statisticsProvider);
@@ -237,7 +246,9 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
       showMessage(context, message);
       await _load();
     } catch (_) {
-      if (mounted) showMessage(context, '操作失败，数据未更改。请重试', error: true);
+      if (mounted) {
+        showMessage(context, l10n.operationFailedNothingChanged, error: true);
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -281,7 +292,9 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
           ..addAll(ids);
       });
     } catch (_) {
-      if (mounted) showMessage(context, '选择失败，请重试', error: true);
+      if (mounted) {
+        showMessage(context, context.l10n.selectionFailed, error: true);
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -295,7 +308,7 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
       tagId = await pickUserTag(context, ref);
       if (tagId == null || !mounted) return;
     }
-    await _runBatch(() async {
+    await _runBatch((AppLocalizations l10n) async {
       final repo = ref.read(wordMetadataRepositoryProvider),
           now = ref.read(clockProvider).now();
       if (tagId != null) {
@@ -303,7 +316,7 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
       } else {
         await repo.setFavorite(ids, action == 'favorite-add', now: now);
       }
-      return '已更新 ${ids.length} 个单词';
+      return l10n.updatedWordsCount(ids.length);
     });
   }
 
@@ -316,16 +329,19 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
     final List<String> ids = selection.toList(growable: false);
     final bool ok = await confirmDialog(
       context,
-      title: undo ? '取消掌握' : '标记为已掌握',
+      title: undo
+          ? context.l10n.unmarkMasteredTitle
+          : context.l10n.markMasteredTitle,
       message: undo
-          ? '仅撤回所选单词的人工掌握，按原有作答历史恢复状态和复习计划，不增加作答次数。'
-          : '将选中的 ${ids.length} 个单词标记为掌握，30 天后复习。'
-                '保留学习历史，不计入作答次数和正确率。',
-      confirmLabel: undo ? '取消掌握' : '标记掌握',
+          ? context.l10n.unmarkMasteredBody
+          : context.l10n.markMasteredBody(ids.length),
+      confirmLabel: undo
+          ? context.l10n.unmarkMastered
+          : context.l10n.markMastered,
     );
     if (!ok) return;
     if (!mounted) return;
-    await _runBatch(() async {
+    await _runBatch((AppLocalizations l10n) async {
       final repository = ref.read(studyRepositoryProvider);
       final device = await _deviceId();
       int changed = 0;
@@ -341,7 +357,9 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
           );
         }
       });
-      return undo ? '已取消 $changed 个单词的掌握状态' : '已标记 $changed 个单词为已掌握';
+      return undo
+          ? l10n.unmarkMasteredDone(changed)
+          : l10n.markMasteredDone(changed);
     });
   }
 
@@ -349,26 +367,26 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
     final List<String> ids = selection.toList(growable: false);
     final bool ok = await confirmDialog(
       context,
-      title: '重置学习进度',
-      message:
-          '将清除选中的 ${ids.length} 个单词的学习状态（次数、间隔、下次复习时间），'
-          '单词本身和作答历史仍然保留。重置会记录为可同步的事件。',
-      confirmLabel: '重置',
+      title: context.l10n.resetProgressTitle,
+      message: context.l10n.resetProgressBodyBulk(ids.length),
+      confirmLabel: context.l10n.reset,
       destructive: true,
     );
     if (!ok) return;
     if (!mounted) return;
     // A batch reset changes a lot of derived state at once: keep a recovery
     // copy first, and abort if it cannot be written.
-    final String? backupFailure = await ref
+    final AppErrorCode? backupFailure = await ref
         .read(backupManagerProvider)
-        .protectiveBackupFailure('批量重置学习进度');
+        .protectiveBackupFailure('reset-progress-batch');
     if (backupFailure != null) {
-      if (mounted) showMessage(context, backupFailure, error: true);
+      if (mounted) {
+        showMessage(context, context.l10n.protectiveBackupFailed, error: true);
+      }
       return;
     }
     if (!mounted) return;
-    await _runBatch(() async {
+    await _runBatch((AppLocalizations l10n) async {
       await ref
           .read(studyRepositoryProvider)
           .resetProgressBatch(
@@ -377,20 +395,20 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
             now: ref.read(clockProvider).now(),
             eventIdFor: (_) => _uuid.v4(),
           );
-      return '已重置 ${ids.length} 个单词';
+      return l10n.resetDone(ids.length);
     });
   }
 
   Future<void> _addToBook(Iterable<String> selection) async {
     final List<String> ids = selection.toList(growable: false);
     if (_books.isEmpty) {
-      showMessage(context, '还没有词书，请先创建', error: true);
+      showMessage(context, context.l10n.addListFirst, error: true);
       return;
     }
     final String? picked = await showDialog<String>(
       context: context,
       builder: (BuildContext context) => SimpleDialog(
-        title: const Text('加入词书'),
+        title: Text(context.l10n.addToWordList),
         children: <Widget>[
           for (final WordBook book in _books)
             SimpleDialogOption(
@@ -401,11 +419,11 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
       ),
     );
     if (picked == null || !mounted) return;
-    await _runBatch(() async {
+    await _runBatch((AppLocalizations l10n) async {
       final linked = await ref
           .read(wordBookRepositoryProvider)
           .addWords(picked, ids, now: ref.read(clockProvider).now());
-      return '已加入 $linked 个单词';
+      return l10n.addedToWordList(linked);
     });
   }
 
@@ -413,7 +431,7 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
     final List<String> ids = selection.toList(growable: false);
     final String? bookId = _bookId;
     if (bookId == null) {
-      showMessage(context, '请先在上方选择一个词书，再执行「移出词书」', error: true);
+      showMessage(context, context.l10n.chooseListFirst, error: true);
       return;
     }
     final String bookName = _books
@@ -421,20 +439,18 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
         .name;
     final bool ok = await confirmDialog(
       context,
-      title: '移出词书',
-      message:
-          '把选中的 ${ids.length} 个单词从「$bookName」移除？'
-          '单词和其他词书中的关联不受影响，学习进度保留。',
-      confirmLabel: '移出',
+      title: context.l10n.removeFromWordList,
+      message: context.l10n.removeFromListBody(ids.length, bookName),
+      confirmLabel: context.l10n.commonRemove,
       destructive: true,
     );
     if (!ok) return;
     if (!mounted) return;
-    await _runBatch(() async {
+    await _runBatch((AppLocalizations l10n) async {
       final removed = await ref
           .read(wordBookRepositoryProvider)
           .removeWords(bookId, ids, now: ref.read(clockProvider).now());
-      return '已从词书移出 $removed 个单词';
+      return l10n.removedFromWordList(removed);
     });
   }
 
@@ -442,29 +458,28 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
     final List<String> ids = selection.toList(growable: false);
     final bool ok = await confirmDialog(
       context,
-      title: '删除单词',
-      message:
-          '从全部用户词汇中删除选中的 ${ids.length} 个单词？'
-          '它们会从所有词书中消失。删除单词不会清除已有学习记录，'
-          '旧备份也不会让它们重新出现。\n\n如果只是想从某个词书移除，请用「移出词书」。',
-      confirmLabel: '删除',
+      title: context.l10n.deleteWordsTitle,
+      message: context.l10n.deleteWordsBodyBulk(ids.length),
+      confirmLabel: context.l10n.commonDelete,
       destructive: true,
     );
     if (!ok) return;
     if (!mounted) return;
-    final String? backupFailure = await ref
+    final AppErrorCode? backupFailure = await ref
         .read(backupManagerProvider)
-        .protectiveBackupFailure('批量删除词条');
+        .protectiveBackupFailure('delete-words-batch');
     if (backupFailure != null) {
-      if (mounted) showMessage(context, backupFailure, error: true);
+      if (mounted) {
+        showMessage(context, context.l10n.protectiveBackupFailed, error: true);
+      }
       return;
     }
     if (!mounted) return;
-    await _runBatch(() async {
+    await _runBatch((AppLocalizations l10n) async {
       final deleted = await ref
           .read(wordRepositoryProvider)
           .softDeleteMany(ids, now: ref.read(clockProvider).now());
-      return '已删除 $deleted 个单词';
+      return l10n.deletedWordsCount(deleted);
     });
   }
 
@@ -473,10 +488,14 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
     final ThemeData theme = Theme.of(context);
     return Scaffold(
       appBar: ClassicAppBar(
-        title: Text('词汇管理${_total > 0 ? '（$_total）' : ''}'),
+        title: Text(
+          _total > 0
+              ? context.l10n.navAllWordsWithCount(_total)
+              : context.l10n.navAllWords,
+        ),
         actions: <Widget>[
           IconButton(
-            tooltip: '收藏词专项学习',
+            tooltip: context.l10n.specialFavorites,
             icon: const Icon(Icons.star_border),
             onPressed: () => Navigator.push<void>(
               context,
@@ -489,7 +508,7 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
             ),
           ),
           IconButton(
-            tooltip: '标签管理',
+            tooltip: context.l10n.tagsManagement,
             icon: const Icon(Icons.label_outline),
             onPressed: () => Navigator.push<void>(
               context,
@@ -497,12 +516,12 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
             ),
           ),
           IconButton(
-            tooltip: '刷新',
+            tooltip: context.l10n.commonRefresh,
             icon: const Icon(Icons.refresh),
             onPressed: _load,
           ),
           IconButton(
-            tooltip: '添加单词',
+            tooltip: context.l10n.actionAddWord,
             icon: const Icon(Icons.add),
             onPressed: () async {
               await Navigator.of(context).push<void>(
@@ -531,10 +550,10 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
                 : _rows.isEmpty
                 ? EmptyState(
                     icon: Icons.filter_alt_off_outlined,
-                    title: '没有符合条件的单词',
+                    title: context.l10n.noMatchingWordsGroup,
                     message: _search.text.isEmpty
-                        ? '换个筛选条件，或先添加/导入单词。'
-                        : '没有匹配「${_search.text}」的词条。',
+                        ? context.l10n.emptyFilterHint
+                        : context.l10n.noMatchForQuery(_search.text),
                   )
                 : LayoutBuilder(
                     builder: (context, constraints) {
@@ -563,7 +582,7 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
               controller: _search,
               decoration: InputDecoration(
                 isDense: true,
-                hintText: '搜索单词 / 中文释义 / 笔记',
+                hintText: context.l10n.searchWordsHint,
                 prefixIcon: const Icon(
                   Icons.search,
                   size: AppDimens.iconSizeSmall,
@@ -590,7 +609,7 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
               child: Row(
                 children: <Widget>[
                   FilterChip(
-                    label: const Text('仅收藏'),
+                    label: Text(context.l10n.favoritesOnly),
                     selected: _favoritesOnly,
                     onSelected: (value) {
                       setState(() => _favoritesOnly = value);
@@ -599,11 +618,14 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
                   ),
                   AppSpacing.w8,
                   ClassicSelectChip<String>(
-                    label: '标签',
+                    label: context.l10n.tags,
                     icon: Icons.label_outline,
                     value: _tagId ?? '',
                     options: <ClassicOption<String>>[
-                      const ClassicOption<String>(value: '', label: '全部标签'),
+                      ClassicOption<String>(
+                        value: '',
+                        label: context.l10n.allTags,
+                      ),
                       for (final tag in _tags)
                         ClassicOption<String>(value: tag.id, label: tag.name),
                     ],
@@ -614,11 +636,14 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
                   ),
                   AppSpacing.w8,
                   ClassicSelectChip<String>(
-                    label: '词书',
+                    label: context.l10n.navWordLists,
                     icon: Icons.menu_book_outlined,
                     value: _bookId ?? '',
                     options: <ClassicOption<String>>[
-                      const ClassicOption<String>(value: '', label: '全部词书'),
+                      ClassicOption<String>(
+                        value: '',
+                        label: context.l10n.allWordLists,
+                      ),
                       for (final WordBook book in _books)
                         ClassicOption<String>(value: book.id, label: book.name),
                     ],
@@ -629,7 +654,7 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
                   ),
                   AppSpacing.w8,
                   ClassicSelectChip<ManagedStageFilter>(
-                    label: '状态',
+                    label: context.l10n.statusLabel,
                     icon: Icons.filter_list,
                     value: _stage,
                     options: <ClassicOption<ManagedStageFilter>>[
@@ -637,7 +662,7 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
                           in ManagedStageFilter.values)
                         ClassicOption<ManagedStageFilter>(
                           value: filter,
-                          label: filter.label,
+                          label: filter.label(context.l10n),
                         ),
                     ],
                     onChanged: (ManagedStageFilter value) {
@@ -647,14 +672,14 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
                   ),
                   AppSpacing.w8,
                   ClassicSelectChip<ManagedSort>(
-                    label: '排序',
+                    label: context.l10n.sortLabel,
                     icon: Icons.sort,
                     value: _sort,
                     options: <ClassicOption<ManagedSort>>[
                       for (final ManagedSort sort in ManagedSort.values)
                         ClassicOption<ManagedSort>(
                           value: sort,
-                          label: sort.label,
+                          label: sort.label(context.l10n),
                         ),
                     ],
                     onChanged: (ManagedSort value) {
@@ -666,14 +691,14 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
                   if (_total > _rows.length)
                     TextButton(
                       onPressed: _busy || _loading ? null : _selectFiltered,
-                      child: Text('选择筛选结果全部 $_total 项'),
+                      child: Text(context.l10n.selectAllResults(_total)),
                     ),
                   TextButton(
                     onPressed: _busy || _loading ? null : _selectAll,
                     child: Text(
                       _selected.length == _rows.length && _rows.isNotEmpty
-                          ? '取消选择'
-                          : '选择已加载的 ${_rows.length} 项',
+                          ? context.l10n.clearSelection
+                          : context.l10n.selectLoaded(_rows.length),
                     ),
                   ),
                 ],
@@ -696,53 +721,62 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: Text(
-              '已选 ${_selected.length}',
+              context.l10n.selectedCount(_selected.length),
               style: theme.textTheme.bodyMedium,
             ),
           ),
           PopupMenuButton<String>(
-            tooltip: '收藏与标签批量操作',
+            tooltip: context.l10n.batchFavoritesAndTags,
             enabled: !_busy,
             icon: const Icon(Icons.label_outline),
             onSelected: _batchMetadata,
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'favorite-add', child: Text('收藏所选')),
-              PopupMenuItem(value: 'favorite-remove', child: Text('取消收藏所选')),
-              PopupMenuItem(value: 'tag-add', child: Text('添加标签')),
-              PopupMenuItem(value: 'tag-remove', child: Text('移除标签')),
+            itemBuilder: (_) => [
+              PopupMenuItem(
+                value: 'favorite-add',
+                child: Text(context.l10n.favoriteSelected),
+              ),
+              PopupMenuItem(
+                value: 'favorite-remove',
+                child: Text(context.l10n.unfavoriteSelected),
+              ),
+              PopupMenuItem(value: 'tag-add', child: Text(context.l10n.addTag)),
+              PopupMenuItem(
+                value: 'tag-remove',
+                child: Text(context.l10n.removeTag),
+              ),
             ],
           ),
           IconButton(
-            tooltip: '加入词书',
+            tooltip: context.l10n.addToWordList,
             icon: const Icon(Icons.playlist_add),
             onPressed: _busy ? null : () => _addToBook(_selected),
           ),
           IconButton(
-            tooltip: '移出当前词书',
+            tooltip: context.l10n.removeFromCurrentList,
             icon: const Icon(Icons.playlist_remove),
             onPressed: _busy || _bookId == null
                 ? null
                 : () => _removeFromBook(_selected),
           ),
           IconButton(
-            tooltip: '标记已掌握',
+            tooltip: context.l10n.markMastered,
             icon: const Icon(Icons.verified_outlined),
             onPressed: _busy ? null : () => _markMastered(_selected),
           ),
           IconButton(
-            tooltip: '取消掌握',
+            tooltip: context.l10n.unmarkMastered,
             icon: const Icon(Icons.verified),
             onPressed: _busy
                 ? null
                 : () => _markMastered(_selected, undo: true),
           ),
           IconButton(
-            tooltip: '重置进度',
+            tooltip: context.l10n.resetProgress,
             icon: const Icon(Icons.restart_alt),
             onPressed: _busy ? null : () => _resetProgress(_selected),
           ),
           IconButton(
-            tooltip: '删除单词',
+            tooltip: context.l10n.deleteWordsTitle,
             icon: const Icon(Icons.delete_outline),
             color: AppColors.unknown,
             onPressed: _busy ? null : () => _deleteWords(_selected),
@@ -765,7 +799,10 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
             child: Center(
               child: _loadingMore
                   ? const CircularProgressIndicator()
-                  : TextButton(onPressed: _loadMore, child: const Text('加载更多')),
+                  : TextButton(
+                      onPressed: _loadMore,
+                      child: Text(context.l10n.loadMore),
+                    ),
             ),
           );
         }
@@ -800,7 +837,9 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
                 if (row.errorRate != null && row.errorRate! > 0) ...<Widget>[
                   AppSpacing.w8,
                   TagChip(
-                    label: '错 ${(row.errorRate! * 100).round()}%',
+                    label: context.l10n.errorRateChip(
+                      (row.errorRate! * 100).round(),
+                    ),
                     color: AppColors.unknown,
                     dense: true,
                   ),
@@ -809,7 +848,7 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
             ),
             subtitle: Text(
               row.word.translation.isEmpty
-                  ? '（无中文释义）'
+                  ? context.l10n.noChineseMeaningShort
                   : row.word.translation.replaceAll('\n', ' '),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -819,7 +858,9 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
                 TagChip(
-                  label: row.isMastered ? '已掌握' : row.stage.label,
+                  label: row.isMastered
+                      ? context.l10n.mastered
+                      : row.stage.label(context.l10n),
                   dense: true,
                   color: row.stage.code == 0
                       ? theme.disabledColor
@@ -855,8 +896,8 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
     if (row == null) {
       return EmptyState(
         icon: Icons.touch_app_outlined,
-        title: '选择一个单词',
-        message: '左侧列表中选择单词查看学习历史与操作。',
+        title: context.l10n.selectAWord,
+        message: context.l10n.selectAWordHint,
       );
     }
     return _WordDetailPane(
@@ -878,7 +919,7 @@ class _WordDetailScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: ClassicAppBar(title: const Text('词条详情')),
+      appBar: ClassicAppBar(title: Text(context.l10n.wordDetailTitle)),
       body: _WordDetailPane(wordId: wordId, onChanged: onChanged),
     );
   }
@@ -942,7 +983,10 @@ class _WordDetailPaneState extends ConsumerState<_WordDetailPane> {
     }
     final ManagedWord? row = _row;
     if (row == null) {
-      return const EmptyState(icon: Icons.search_off, title: '词条不存在或已删除');
+      return EmptyState(
+        icon: Icons.search_off,
+        title: context.l10n.wordNotFound,
+      );
     }
     final String translation = normalizeDictionaryText(row.word.translation);
     final String definition = normalizeDictionaryText(row.word.definition);
@@ -969,7 +1013,9 @@ class _WordDetailPaneState extends ConsumerState<_WordDetailPane> {
           Text(row.word.partOfSpeech, style: theme.textTheme.bodySmall),
         AppSpacing.h12,
         Text(
-          translation.isEmpty ? '（无中文释义）' : translation,
+          translation.isEmpty
+              ? context.l10n.noChineseMeaningShort
+              : translation,
           style: theme.textTheme.bodyLarge?.copyWith(height: 1.5),
         ),
         if (definition.isNotEmpty) ...<Widget>[
@@ -984,27 +1030,43 @@ class _WordDetailPaneState extends ConsumerState<_WordDetailPane> {
           spacing: 8,
           runSpacing: 8,
           children: <Widget>[
-            TagChip(label: row.isMastered ? '已掌握' : row.stage.label),
             TagChip(
-              label:
-                  '错误率 ${row.errorRate == null ? '无记录' : '${(row.errorRate! * 100).round()}%'}',
+              label: row.isMastered
+                  ? context.l10n.mastered
+                  : row.stage.label(context.l10n),
+            ),
+            TagChip(
+              label: context.l10n.errorRateLabel(
+                row.errorRate == null
+                    ? context.l10n.noRecord
+                    : '${(row.errorRate! * 100).round()}%',
+              ),
               color: (row.errorRate ?? 0) > 0 ? AppColors.unknown : null,
               dense: true,
             ),
-            TagChip(label: '作答 ${row.answerCount} 次', dense: true),
-            TagChip(label: '所属词书 ${row.bookCount}', dense: true),
+            TagChip(
+              label: context.l10n.answersTimes(row.answerCount),
+              dense: true,
+            ),
+            TagChip(
+              label: context.l10n.inWordLists(row.bookCount),
+              dense: true,
+            ),
           ],
         ),
         AppSpacing.h12,
         Text(
           next == null
-              ? '下次复习：无（未学习或已重置）'
-              : '下次复习：${formatDateTime(next)}（${relativeTime(next, DateTime.now())}）',
+              ? context.l10n.nextReviewNone
+              : context.l10n.nextReviewAt(
+                  formatDateTime(next),
+                  relativeTime(next, DateTime.now(), context.l10n),
+                ),
           style: theme.textTheme.bodySmall,
         ),
         if (row.word.note.isNotEmpty) ...<Widget>[
           AppSpacing.h12,
-          Text('笔记', style: theme.textTheme.bodyMedium),
+          Text(context.l10n.notes, style: theme.textTheme.bodyMedium),
           Text(row.word.note, style: theme.textTheme.bodySmall),
         ],
         AppSpacing.h16,
@@ -1026,31 +1088,38 @@ class _WordDetailPaneState extends ConsumerState<_WordDetailPane> {
                 await widget.onChanged();
               },
               icon: const Icon(Icons.edit_outlined),
-              label: const Text('编辑词条'),
+              label: Text(context.l10n.editWord),
             ),
             TextButton.icon(
               onPressed: () => _markMastered(undo: _manualMastery),
               icon: const Icon(Icons.verified_outlined),
-              label: Text(_manualMastery ? '取消掌握' : '标记掌握'),
+              label: Text(
+                _manualMastery
+                    ? context.l10n.unmarkMastered
+                    : context.l10n.markMastered,
+              ),
             ),
             TextButton.icon(
               onPressed: () => _reset(),
               icon: const Icon(Icons.restart_alt),
-              label: const Text('重置进度'),
+              label: Text(context.l10n.resetProgress),
             ),
             TextButton.icon(
               onPressed: () => _delete(),
               style: TextButton.styleFrom(foregroundColor: AppColors.unknown),
               icon: const Icon(Icons.delete_outline),
-              label: const Text('删除单词'),
+              label: Text(context.l10n.wordManagementDeleteWord),
             ),
           ],
         ),
         const Divider(height: 24),
-        Text('作答历史（最近 ${_events.length} 条）', style: theme.textTheme.bodyMedium),
+        Text(
+          context.l10n.answerHistory(_events.length),
+          style: theme.textTheme.bodyMedium,
+        ),
         AppSpacing.h8,
         if (_events.isEmpty)
-          Text('还没有作答记录。', style: theme.textTheme.bodySmall)
+          Text(context.l10n.noAnswerHistory, style: theme.textTheme.bodySmall)
         else
           for (final dynamic event in _events)
             Padding(
@@ -1058,7 +1127,8 @@ class _WordDetailPaneState extends ConsumerState<_WordDetailPane> {
               child: Row(
                 children: <Widget>[
                   TagChip(
-                    label: AnswerResult.fromCode(event.result as int).label,
+                    label: AnswerResult.fromCode(event.result as int)
+                        .label(context.l10n),
                     color: AppColors.forAnswer(event.result as int),
                     dense: true,
                   ),
@@ -1066,8 +1136,8 @@ class _WordDetailPaneState extends ConsumerState<_WordDetailPane> {
                   Text(
                     ReviewType.fromCode(event.type as String) ==
                             ReviewType.study
-                        ? '新词学习'
-                        : '复习',
+                        ? context.l10n.eventNewStudy
+                        : context.l10n.eventReview,
                     style: theme.textTheme.bodySmall,
                   ),
                   if ((event.mode as String) !=
@@ -1075,11 +1145,11 @@ class _WordDetailPaneState extends ConsumerState<_WordDetailPane> {
                     AppSpacing.w8,
                     Text(
                       (event.mode as String) == ReviewEventMode.reset
-                          ? '重置'
+                          ? context.l10n.eventReset
                           : (event.mode as String) ==
                                 ReviewEventMode.manualMastered
-                          ? '手动标记'
-                          : '专项',
+                          ? context.l10n.eventManual
+                          : context.l10n.eventSpecial,
                       style: theme.textTheme.bodySmall,
                     ),
                   ],
@@ -1103,11 +1173,15 @@ class _WordDetailPaneState extends ConsumerState<_WordDetailPane> {
   Future<void> _markMastered({bool undo = false}) async {
     final bool ok = await confirmDialog(
       context,
-      title: undo ? '取消掌握' : '标记为已掌握',
+      title: undo
+          ? context.l10n.unmarkMasteredTitle
+          : context.l10n.markMasteredTitle,
       message: undo
-          ? '取消掌握后恢复到学习阶段并安排近期复习。保留历史，不增加作答次数。'
-          : '标记为掌握，30 天后复习。保留学习历史，不计入作答次数和正确率。',
-      confirmLabel: undo ? '取消掌握' : '标记',
+          ? context.l10n.unmarkMasteredBodyOne
+          : context.l10n.markMasteredBodyOne,
+      confirmLabel: undo
+          ? context.l10n.unmarkMastered
+          : context.l10n.markMastered,
     );
     if (!ok || !mounted) return;
     final String device = await ref.read(settingsRepositoryProvider).deviceId();
@@ -1128,11 +1202,9 @@ class _WordDetailPaneState extends ConsumerState<_WordDetailPane> {
   Future<void> _reset() async {
     final bool ok = await confirmDialog(
       context,
-      title: '重置学习进度',
-      message:
-          '清除该单词的学习状态（次数、间隔、下次复习时间）。'
-          '单词本身和作答历史保留，重置会记录为可同步的事件。',
-      confirmLabel: '重置',
+      title: context.l10n.resetProgressTitle,
+      message: context.l10n.resetProgressBodyOne,
+      confirmLabel: context.l10n.reset,
       destructive: true,
     );
     if (!ok) return;
@@ -1155,10 +1227,8 @@ class _WordDetailPaneState extends ConsumerState<_WordDetailPane> {
   Future<void> _delete() async {
     final bool ok = await confirmDialog(
       context,
-      title: '删除单词',
-      message:
-          '从全部用户词汇中删除该单词（所有词书都会移除）。'
-          '如果只想从一个词书移除，请使用「移出词书」。',
+      title: context.l10n.deleteWordsTitle,
+      message: context.l10n.deleteWordsBodyOne,
       confirmLabel: '删除',
       destructive: true,
     );

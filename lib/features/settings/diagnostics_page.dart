@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app/app_info.dart';
 import '../../app/providers.dart';
 import '../../services/diagnostics_service.dart';
+import '../../l10n/l10n.dart';
 import '../../shared/widgets/common.dart';
 
 /// Diagnostics moved off the settings list onto its own page.
@@ -40,6 +41,8 @@ class _DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
 
   Future<void> _export() async {
     if (_busy) return;
+    // Captured before the first await; the picker title is needed later.
+    final AppLocalizations l10n = context.l10n;
     setState(() => _busy = true);
     try {
       final String report = await DiagnosticsService.instance.buildReport(
@@ -56,13 +59,18 @@ class _DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
         fileName: 'materialword-diagnostics.txt',
         bytes: utf8.encode(report),
         mimeType: 'text/plain',
-        dialogTitle: '保存诊断信息',
+        dialogTitle: l10n.saveDiagnostics,
       );
       if (!mounted) return;
-      showMessage(context, result == null ? '已取消导出' : '诊断信息已导出（不含账号与学习内容）');
+      showMessage(
+        context,
+        result == null
+            ? context.l10n.exportCancelled
+            : context.l10n.diagnosticsExported,
+      );
     } catch (e) {
       if (!mounted) return;
-      showMessage(context, '导出失败：$e', error: true);
+      showMessage(context, context.l10n.diagnosticsExportFailed, error: true);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -72,17 +80,17 @@ class _DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     return Scaffold(
-      appBar: ClassicAppBar(title: const Text('诊断信息')),
+      appBar: ClassicAppBar(title: Text(context.l10n.diagnostics)),
       body: ListView(
         padding: const EdgeInsets.only(bottom: 24),
         children: <Widget>[
-          SectionHeader(title: '日志'),
+          SectionHeader(title: context.l10n.logsSection),
           SettingsGroup(
             children: <Widget>[
               SwitchListTile(
                 value: _enabled,
-                title: const Text('记录详细运行日志'),
-                subtitle: const Text('默认关闭；开启后只保留最近 400 条、24 小时，自动脱敏'),
+                title: Text(context.l10n.detailedLogging),
+                subtitle: Text(context.l10n.detailedLoggingHint),
                 onChanged: (bool value) async {
                   await DiagnosticsService.instance.setEnabled(
                     ref.read(databaseProvider),
@@ -93,8 +101,8 @@ class _DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
               ),
               SettingsTile(
                 leading: const Icon(Icons.bug_report_outlined),
-                title: '导出诊断信息',
-                subtitle: '版本、数据库与词典统计、同步状态；不含账号和学习内容',
+                title: context.l10n.exportDiagnosticsReport,
+                subtitle: context.l10n.exportDiagnosticsHint,
                 trailing: _busy
                     ? const SizedBox(
                         width: 18,
@@ -106,25 +114,27 @@ class _DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
               ),
               SettingsTile(
                 leading: const Icon(Icons.delete_sweep_outlined),
-                title: '清除已记录的日志',
+                title: context.l10n.clearLogs,
                 subtitle: DiagnosticsService.instance.entries.isEmpty
-                    ? '当前没有记录'
-                    : '${DiagnosticsService.instance.entries.length} 条记录',
+                    ? context.l10n.noLogs
+                    : context.l10n.logCount(
+                        DiagnosticsService.instance.entries.length,
+                      ),
                 onTap: () {
                   DiagnosticsService.instance.clear();
                   setState(() {});
-                  showMessage(context, '已清除运行日志');
+                  showMessage(context, context.l10n.logsCleared);
                 },
               ),
             ],
           ),
-          SectionHeader(title: '设备'),
+          SectionHeader(title: context.l10n.deviceSection),
           SettingsGroup(
             children: <Widget>[
               SettingsTile(
                 leading: const Icon(Icons.memory_outlined),
-                title: '本机设备标识',
-                subtitle: _deviceId ?? '读取中…',
+                title: context.l10n.deviceIdLabel,
+                subtitle: _deviceId ?? context.l10n.reading,
                 onTap: _deviceId == null
                     ? null
                     : () async {
@@ -132,14 +142,13 @@ class _DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
                           ClipboardData(text: _deviceId!),
                         );
                         if (!context.mounted) return;
-                        showMessage(context, '已复制设备标识（仅用于排查同步问题）');
+                        showMessage(context, context.l10n.deviceIdCopied);
                       },
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
                 child: Text(
-                  '诊断信息不会包含密码、认证信息、词条内容或个人笔记；'
-                  '同步配置只记录同步方式，不记录地址、账号或路径。',
+                  context.l10n.diagnosticsPrivacy,
                   style: theme.textTheme.bodySmall,
                 ),
               ),

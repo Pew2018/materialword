@@ -71,7 +71,7 @@ apple,"n. 苹果\nn. 苹果树"''',
       await env.dispose();
     });
 
-    test('可学新词 = min(剩余额度, 实际未学习数)', () async {
+    test('可学新词 = min(剩余额度, 实际未学数)', () async {
       final TestEnv env = await TestEnv.create();
       await env.seedBook(words: List<String>.generate(5, (int i) => 'w$i'));
       final today = await env.study.todayProgress(
@@ -230,7 +230,7 @@ apple,"n. 苹果\nn. 苹果树"''',
         eventId: 'r1',
       );
       state = await env.words.stateFor(row.word.id);
-      expect(state, isNull, reason: '重置后应回到未学习状态');
+      expect(state, isNull, reason: '重置后应回到未学状态');
 
       // The history is preserved and replayable.
       final events = await env.words.eventsForWord(row.word.id);
@@ -240,7 +240,7 @@ apple,"n. 苹果\nn. 苹果树"''',
     });
   });
 
-  group('词汇管理查询', () {
+  group('全部单词查询', () {
     test('筛选、排序与搜索都只返回真实词条', () async {
       final TestEnv env = await TestEnv.create();
       final book = await env.seedBook(

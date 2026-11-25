@@ -22,32 +22,31 @@ import 'webdav_sync_provider.dart';
 /// Every stage is a statement about *this device*: "merged" means the local
 /// database already changed, even if the upload is still pending.
 enum SyncStage {
-  idle('准备'),
-  validating('校验配置'),
-  downloading('读取远程数据'),
-  merging('合并到本地'),
-  rebuilding('重建学习状态'),
-  uploading('上传数据'),
-  verifying('校验上传结果'),
-  done('完成'),
-  mergedNotUploaded('本机已合并，上传未完成'),
-  waitingBackoff('等待退避'),
-  authFailed('认证失败'),
-  remoteMissing('远程数据缺失'),
-  remoteCorrupt('远程数据不可用'),
-  configChanged('配置已变化'),
-  pausedAfterRestore('恢复后已暂停同步'),
-  failed('失败');
+  idle,
+  validating,
+  downloading,
+  merging,
+  rebuilding,
+  uploading,
+  verifying,
+  done,
+  mergedNotUploaded,
+  waitingBackoff,
+  authFailed,
+  remoteMissing,
+  remoteCorrupt,
+  configChanged,
+  pausedAfterRestore,
+  failed,
 
-  const SyncStage(this.label);
-
-  final String label;
+  /// Progress steps are localised by `lib/l10n/sync_labels.dart`.
 }
 
 class SyncReport {
   const SyncReport({
     required this.ok,
     required this.message,
+    this.outcome = SyncOutcome.synced,
     required this.at,
     this.merge,
     this.uploaded = false,
@@ -60,6 +59,10 @@ class SyncReport {
   });
 
   final bool ok;
+
+  /// The report as structured data. [message] is a diagnostic string only and is
+  /// never rendered: the sync page localises [outcome] and [merge].
+  final SyncOutcome outcome;
   final String message;
   final DateTime at;
   final MergeReport? merge;
@@ -194,8 +197,10 @@ class SyncCoordinator {
         // only thing that opens the gate.
         final SyncCapability capability = await ensureCapability(provider);
         if (!capability.safeBidirectionalSync) {
+          // Diagnostic only: the page shows the localised capability verdict.
           throw SyncException(
-            '${capability.summary}：${capability.detail ?? '请重新测试连接'}',
+            'capability ${capability.status.name}: '
+            '${capability.detail ?? 'no detail'}',
           );
         }
       } else if (!skipConnectionTest) {
@@ -271,11 +276,13 @@ class SyncCoordinator {
                 now: clock.now(),
                 hash: localHash,
                 revision: remote.revision,
-                message: '本地与远程数据一致，无需上传',
+                outcome: SyncOutcome.unchanged,
+                message: 'local and remote match',
               );
               return SyncReport(
                 ok: true,
-                message: '本地与远程数据一致，无需上传',
+                outcome: SyncOutcome.unchanged,
+                message: 'local and remote match',
                 at: clock.now(),
                 skipped: true,
                 attempts: attempts,
@@ -305,11 +312,13 @@ class SyncCoordinator {
               now: clock.now(),
               hash: mergedHash,
               revision: remote.revision,
-              message: '远程已包含全部本地数据，未上传',
+              outcome: SyncOutcome.remoteHasData,
+              message: 'remote already contains all local data',
             );
             return SyncReport(
               ok: true,
-              message: '远程已包含全部本地数据，未上传',
+              outcome: SyncOutcome.remoteHasData,
+              message: 'remote already contains all local data',
               at: clock.now(),
               merge: merge,
               skipped: true,
@@ -338,15 +347,16 @@ class SyncCoordinator {
             now: clock.now(),
             hash: mergedHash,
             revision: result.revision ?? remote?.revision,
-            message: '同步完成',
+            outcome: SyncOutcome.synced,
+            merge: merge,
           );
 
-          final String message = merge == null
-              ? '已上传本地数据（${_formatCount(merged)}）'
-              : '同步完成：${merge.summary}';
           return SyncReport(
             ok: true,
-            message: message,
+            outcome: SyncOutcome.synced,
+            message: merge == null
+                ? 'uploaded ${_formatCount(merged)}'
+                : 'merged and uploaded',
             at: clock.now(),
             merge: merge,
             uploaded: uploaded,
@@ -367,7 +377,7 @@ class SyncCoordinator {
               throw SyncPartialException(
                 '本机已合并远程数据，但上传未能完成（多次并发冲突）。'
                 '本机数据已保留，稍后重试即可：${e.message}',
-                mergeSummary: merge?.summary ?? '',
+                mergeSummary: merge == null ? '' : 'merged locally',
                 localChanged: true,
               );
             }
@@ -378,7 +388,7 @@ class SyncCoordinator {
           if (merge?.hasChanges ?? false) {
             throw SyncPartialException(
               '本机已合并远程数据，但上传超时。本机数据已保留，稍后重试即可',
-              mergeSummary: merge?.summary ?? '',
+              mergeSummary: merge == null ? '' : 'merged locally',
               localChanged: true,
             );
           }
@@ -391,7 +401,7 @@ class SyncCoordinator {
               e is! SyncRemoteMissingException) {
             throw SyncPartialException(
               '本机已合并远程数据，但未完成上传：${e.message}',
-              mergeSummary: merge?.summary ?? '',
+              mergeSummary: merge == null ? '' : 'merged locally',
               localChanged: true,
             );
           }
@@ -421,7 +431,7 @@ class SyncCoordinator {
           e is! SyncRemoteMissingException) {
         await invalidateCapability(provider);
       }
-      await _recordFailure(clock.now(), message: '同步失败：${e.message}');
+      await _recordFailure(clock.now(), message: 'sync failed: ${e.message}');
       rethrow;
     } catch (e) {
       // The exception *type* only: the message may embed a URL with credentials.
@@ -494,13 +504,15 @@ class SyncCoordinator {
       now: clock.now(),
       hash: hash,
       revision: result.revision ?? revision,
-      message: '已用本机数据初始化远程文件',
+      outcome: SyncOutcome.initialised,
+      message: 'remote file initialised from this device',
     );
     return SyncReport(
       ok: true,
+      outcome: SyncOutcome.initialised,
       message: previouslySynced
-          ? '已按你的确认，用本机数据重新初始化了远程文件（${_formatCount(local)}）'
-          : '已用本机数据初始化远程文件（${_formatCount(local)}）',
+          ? 're-initialised remote file on request (${_formatCount(local)})'
+          : 'initialised remote file (${_formatCount(local)})',
       at: clock.now(),
       uploaded: true,
       attempts: attempts,
@@ -787,13 +799,30 @@ class SyncCoordinator {
     required DateTime now,
     required String hash,
     String? revision,
-    required String message,
+    required SyncOutcome outcome,
+    MergeReport? merge,
+    String message = '',
   }) => db.transaction(() async {
     await db.deleteMeta(SettingsRepository.pendingRebuildKey);
     if (await db.readMeta(SettingsRepository.syncConfigRevisionKey) ==
         _activeConfigRevision) {
       await settings.setLastSyncAt(now);
-      await settings.setLastSyncResult(message);
+      // Structured, not a sentence: the page localises it, so switching the app
+      // language never leaves a stale Chinese line in the history. Counts are
+      // kept so the stored result can still describe what happened.
+      await settings.setLastSyncResult(
+        jsonEncode(<String, Object?>{
+          'outcome': outcome.name,
+          if (merge != null) ...<String, Object?>{
+            'addedEvents': merge.addedEvents,
+            'newWords': merge.newWords,
+            'updatedWords': merge.updatedWords,
+            'deletedWords': merge.deletedWords,
+            'removedEntries': merge.removedEntries,
+            'conflicts': merge.conflicts,
+          },
+        }),
+      );
       await db.writeMeta(lastLocalHashKey, hash);
       if (revision != null) await db.writeMeta(lastRemoteRevisionKey, revision);
     }

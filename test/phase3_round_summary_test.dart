@@ -4,6 +4,7 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:materialword/l10n/l10n.dart';
 import 'package:materialword/app/providers.dart';
 import 'package:materialword/app/theme.dart';
 import 'package:materialword/core/database/app_database.dart';
@@ -209,7 +210,13 @@ void main() {
             databaseProvider.overrideWithValue(e.db),
             clockProvider.overrideWithValue(e.clock),
           ],
-          child: MaterialApp(theme: AppTheme.light(), home: const StudyPage()),
+          child: MaterialApp(
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            locale: const Locale('zh'),
+            theme: AppTheme.light(),
+            home: const StudyPage(),
+          ),
         ),
       );
       await settle();
@@ -221,9 +228,9 @@ void main() {
       await settle();
       await tester.tap(find.widgetWithText(ElevatedButton, '认识'));
       await settle();
-      expect(find.text('共 1 个独立单词，2 次实际作答'), findsOneWidget);
-      expect(find.text('本轮正确率：50.0%'), findsOneWidget);
-      final practice = find.text('复练本轮错词');
+      expect(find.text('1 个单词 · 2 次作答'), findsOneWidget);
+      expect(find.text('正确率：50.0%'), findsOneWidget);
+      final practice = find.text('复习本轮错词');
       await tester.ensureVisible(practice);
       await settle();
       await tester.tap(practice.hitTestable());
@@ -243,7 +250,7 @@ void main() {
         ),
         hasLength(1),
       );
-      expect(find.text('共 1 个独立单词，1 次实际作答'), findsOneWidget);
+      expect(find.text('1 个单词 · 1 次作答'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
       await tester.pump(const Duration(milliseconds: 1));

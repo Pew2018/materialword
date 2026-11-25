@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 import '../core/database/app_database.dart';
+import '../core/errors/app_error.dart';
 import '../core/models/enums.dart';
 import '../core/models/study_models.dart';
 import '../core/repositories/settings_repository.dart';
@@ -197,7 +198,7 @@ class PracticeSession extends ChangeNotifier {
   PracticePhase _phase = PracticePhase.loading;
   PracticeOutcome? _outcome;
   bool _disposed = false;
-  String? _error;
+  AppErrorCode? _error;
   String? _deviceId;
   String? _bookId;
   PracticeKind _kind = PracticeKind.spelling;
@@ -225,7 +226,9 @@ class PracticeSession extends ChangeNotifier {
   bool get isBusy => _phase == PracticePhase.submitting;
   bool get isRevealed => _revealed;
   bool get isFeedback => _phase == PracticePhase.feedback;
-  String? get error => _error;
+
+  /// Stable code; the page localises it. See `describeAppError`.
+  AppErrorCode? get error => _error;
   bool get isEmpty => _phase != PracticePhase.loading && _questions.isEmpty;
   bool get isFinished => _phase == PracticePhase.finished;
   bool get canUndo => _lastSubmission != null && !isBusy;
@@ -309,7 +312,7 @@ class PracticeSession extends ChangeNotifier {
           : PracticePhase.question;
       await _persist();
     } catch (e) {
-      _error = '练习加载失败：$e';
+      _error = AppErrorCode.practiceLoadFailed;
       _phase = PracticePhase.finished;
     } finally {
       notifyListeners();
@@ -514,7 +517,7 @@ class PracticeSession extends ChangeNotifier {
     _error = null;
     notifyListeners();
     try {
-      final String? stale = await _staleReason(question);
+      final AppErrorCode? stale = await _staleReason(question);
       if (stale != null) {
         _phase = PracticePhase.question;
         _error = stale;
@@ -564,7 +567,7 @@ class PracticeSession extends ChangeNotifier {
       }
       _lastSubmission = null;
       _outcome = null;
-      _error = '保存练习结果失败：$e';
+      _error = AppErrorCode.practiceSaveFailed;
       _phase = PracticePhase.question;
       return null;
     } finally {
@@ -579,11 +582,11 @@ class PracticeSession extends ChangeNotifier {
   /// book, or its spelling / meaning / example changed — locally or by a sync
   /// merge. A stale question is never graded: the drill would otherwise write a
   /// wrong answer event under an old identity.
-  Future<String?> _staleReason(PracticeQuestion question) async {
+  Future<AppErrorCode?> _staleReason(PracticeQuestion question) async {
     final ManagedWord? row = await _study.managedWord(question.word.id);
-    if (row == null) return '这个词已被删除，本组练习将重新开始';
+    if (row == null) return AppErrorCode.practiceWordDeleted;
     if (contentSignatureOf(row.word) != question.contentSignature) {
-      return '这个词的内容已更新，请重新开始本组练习';
+      return AppErrorCode.practiceContentUpdated;
     }
     if (_bookId != null) {
       final link =
@@ -594,7 +597,7 @@ class PracticeSession extends ChangeNotifier {
                     t.deletedAt.isNull(),
               ))
               .getSingleOrNull();
-      if (link == null) return '这个词已移出当前词书，本组练习将重新开始';
+      if (link == null) return AppErrorCode.practiceWordUnlinked;
     }
     return null;
   }
@@ -646,7 +649,7 @@ class PracticeSession extends ChangeNotifier {
       await _persist();
       return true;
     } catch (_) {
-      _error = '撤销失败，请重试';
+      _error = AppErrorCode.undoFailed;
       _phase = _questions.isEmpty
           ? PracticePhase.finished
           : PracticePhase.question;

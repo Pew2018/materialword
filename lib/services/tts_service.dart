@@ -11,7 +11,9 @@ class TtsVoice {
   final String locale;
   final String? label;
 
-  String get display => label ?? '$locale · $name';
+  /// Raw `locale · name`; the localised variant name is built by
+  /// `lib/l10n/voice_labels.dart`.
+  String get display => '$locale · $name';
   String get key => jsonEncode([name, locale]);
 }
 
@@ -108,13 +110,7 @@ class TtsService {
           continue;
         }
         if (voices.any((v) => v.name == name && v.locale == locale)) continue;
-        voices.add(
-          TtsVoice(
-            name: name,
-            locale: locale,
-            label: _prettyVoiceLabel(name, locale),
-          ),
-        );
+        voices.add(TtsVoice(name: name, locale: locale));
       }
       voices.sort((a, b) => a.key.compareTo(b.key));
       _voicesCache = voices;
@@ -124,19 +120,6 @@ class TtsService {
       _lastError = '读取语音列表失败，请刷新后重试';
       return const <TtsVoice>[];
     }
-  }
-
-  String _prettyVoiceLabel(String name, String locale) {
-    final String variant = switch (locale.toLowerCase()) {
-      'en-us' => '美式',
-      'en-gb' => '英式',
-      'en-au' => '澳洲',
-      'en-ca' => '加拿大',
-      'en-ie' => '爱尔兰',
-      'en-in' => '印度',
-      _ => locale,
-    };
-    return '$variant · $name';
   }
 
   /// Speaks [text]. Returns false (and keeps [lastError]) when TTS is missing.

@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:materialword/l10n/l10n.dart';
 import 'package:materialword/app/app.dart';
 import 'package:materialword/app/navigation.dart';
 import 'package:materialword/app/providers.dart';
@@ -15,6 +16,15 @@ import 'package:materialword/services/dictionary_service.dart';
 
 import 'helpers/test_dictionary.dart';
 import 'helpers/test_env.dart';
+
+const Map<String, String> kNavIds = <String, String>{
+  '今日': 'today',
+  '词书': 'wordLists',
+  '词典': 'dictionary',
+  '统计': 'statistics',
+  '设置': 'settings',
+  '词汇': 'allWords',
+};
 
 /// UI01 – UI09: navigation geometry, state preservation, the slider write
 /// discipline, theme switching, responsive layout and the fixed answer bar.
@@ -59,7 +69,9 @@ void main() {
       final List<Size> before = <Size>[];
       final List<Offset> positions = <Offset>[];
       for (final String label in labels) {
-        final Finder item = find.byKey(ValueKey<String>('nav-$label'));
+        final Finder item = find.byKey(
+          ValueKey<String>('nav-${kNavIds[label]!}'),
+        );
         expect(item, findsOneWidget);
         before.add(tester.getSize(item));
         positions.add(tester.getTopLeft(item));
@@ -71,11 +83,13 @@ void main() {
       }
       expect(positions.map((Offset o) => o.dy).toSet().length, 1);
 
-      await tester.tap(find.byKey(const ValueKey<String>('nav-统计')));
+      await tester.tap(find.byKey(const ValueKey<String>('nav-statistics')));
       await settle(tester);
 
       for (int i = 0; i < labels.length; i++) {
-        final Finder item = find.byKey(ValueKey<String>('nav-${labels[i]}'));
+        final Finder item = find.byKey(
+          ValueKey<String>('nav-${kNavIds[labels[i]]!}'),
+        );
         expect(tester.getSize(item), before[i], reason: '尺寸不能因选中而变化');
         expect(tester.getTopLeft(item), positions[i], reason: '位置不能跳动');
       }
@@ -95,7 +109,9 @@ void main() {
       );
 
       for (final String label in <String>['今日', '词书', '词典', '统计', '设置']) {
-        final Finder item = find.byKey(ValueKey<String>('nav-$label'));
+        final Finder item = find.byKey(
+          ValueKey<String>('nav-${kNavIds[label]!}'),
+        );
         final Finder ink = find.descendant(
           of: item,
           matching: find.byType(InkWell),
@@ -113,16 +129,16 @@ void main() {
   group('UI03 切换一级页面保留状态', () {
     testWidgets('搜索文本在切换标签后保留', (WidgetTester tester) async {
       final TestEnv env = await pumpApp(tester);
-      await tester.tap(find.byKey(const ValueKey<String>('nav-词典')));
+      await tester.tap(find.byKey(const ValueKey<String>('nav-dictionary')));
       await settle(tester);
 
       await tester.enterText(find.byType(TextField).first, 'abandon');
       await settle(tester);
       expect(find.text('abandon'), findsOneWidget);
 
-      await tester.tap(find.byKey(const ValueKey<String>('nav-统计')));
+      await tester.tap(find.byKey(const ValueKey<String>('nav-statistics')));
       await settle(tester);
-      await tester.tap(find.byKey(const ValueKey<String>('nav-词典')));
+      await tester.tap(find.byKey(const ValueKey<String>('nav-dictionary')));
       await settle(tester);
 
       expect(
@@ -137,7 +153,7 @@ void main() {
   group('UI04 每日目标只有一种输入方式', () {
     testWidgets('每次点击只写一次库，数值立即生效', (WidgetTester tester) async {
       final TestEnv env = await pumpApp(tester);
-      await tester.tap(find.byKey(const ValueKey<String>('nav-设置')));
+      await tester.tap(find.byKey(const ValueKey<String>('nav-settings')));
       await settle(tester);
 
       final int before = (await env.settings.load()).dailyNewTarget;
@@ -178,17 +194,21 @@ void main() {
   group('UI06 强调色即时生效并持久化', () {
     testWidgets('选择预设色后主题立即改变且写入设置', (WidgetTester tester) async {
       final TestEnv env = await pumpApp(tester);
-      await tester.tap(find.byKey(const ValueKey<String>('nav-设置')));
+      await tester.tap(find.byKey(const ValueKey<String>('nav-settings')));
       await settle(tester);
 
-      await tester.tap(find.byTooltip('蓝绿'));
+      // 23 presets make the appearance section taller than the old twelve:
+      // scroll the swatch into view before tapping, like a user would.
+      await tester.ensureVisible(find.byTooltip('青绿'));
+      await settle(tester);
+      await tester.tap(find.byTooltip('青绿'));
       await settle(tester);
 
       final MaterialApp app = tester.widget<MaterialApp>(
         find.byType(MaterialApp),
       );
-      expect(app.theme!.colorScheme.primary, const Color(0xFF00796B));
-      expect((await env.settings.load()).accentColor, '#00796B');
+      expect(app.theme!.colorScheme.primary, const Color(0xFF009688));
+      expect((await env.settings.load()).accentColor, '#009688');
 
       // Dark theme stays usable with the same accent.
       expect(app.darkTheme, isNotNull);
@@ -199,36 +219,36 @@ void main() {
 
     testWidgets('自定义 HEX 与恢复默认', (WidgetTester tester) async {
       final TestEnv env = await pumpApp(tester);
-      await tester.tap(find.byKey(const ValueKey<String>('nav-设置')));
+      await tester.tap(find.byKey(const ValueKey<String>('nav-settings')));
       await settle(tester);
 
-      await env.settings.save(accentColor: '#00796B');
+      await env.settings.save(accentColor: '#009688');
       await settle(tester);
-      await tester.ensureVisible(find.text('自定义 HEX'));
+      await tester.ensureVisible(find.text('自定义颜色'));
       await settle(tester);
-      await tester.tap(find.text('自定义 HEX').hitTestable());
+      await tester.tap(find.text('自定义颜色').hitTestable());
       await settle(tester);
       await tester.enterText(find.byType(TextField).last, '#6A1B9A');
       await tester.tap(find.text('应用'));
       await settle(tester);
       expect((await env.settings.load()).accentColor, '#6A1B9A');
       expect(tester.takeException(), isNull);
-      await tester.ensureVisible(find.text('恢复默认'));
+      await tester.ensureVisible(find.text('恢复默认颜色'));
       await settle(tester);
-      await tester.tap(find.text('恢复默认').hitTestable());
+      await tester.tap(find.text('恢复默认颜色').hitTestable());
       await settle(tester);
       expect((await env.settings.load()).accentColor, '#1565C0');
       await env.dispose();
     });
   });
 
-  group('UI07 不同尺寸窗口无溢出（含词汇管理）', () {
+  group('UI07 不同尺寸窗口无溢出（含全部单词）', () {
     for (final Size size in <Size>[
       const Size(360, 740),
       const Size(760, 900),
       const Size(1200, 900),
     ]) {
-      testWidgets('宽度 ${size.width.toInt()} 的词汇管理页面不溢出', (
+      testWidgets('宽度 ${size.width.toInt()} 的全部单词页面不溢出', (
         WidgetTester tester,
       ) async {
         final TestEnv env = await TestEnv.create();
@@ -245,6 +265,9 @@ void main() {
               clockProvider.overrideWithValue(env.clock),
             ],
             child: MaterialApp(
+              localizationsDelegates: AppLocalizations.localizationsDelegates,
+              supportedLocales: AppLocalizations.supportedLocales,
+              locale: const Locale('zh'),
               theme: AppTheme.light(),
               home: const WordManagementPage(),
             ),
@@ -261,7 +284,7 @@ void main() {
   group('UI08 移动端不显示桌面快捷键', () {
     testWidgets('手机宽度隐藏快捷键提示', (WidgetTester tester) async {
       final TestEnv env = await pumpApp(tester, size: const Size(400, 820));
-      await tester.tap(find.byKey(const ValueKey<String>('nav-今日')));
+      await tester.tap(find.byKey(const ValueKey<String>('nav-today')));
       await settle(tester);
       expect(find.textContaining('⌘'), findsNothing);
 
@@ -284,6 +307,9 @@ void main() {
             clockProvider.overrideWithValue(env.clock),
           ],
           child: MaterialApp(
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            locale: const Locale('zh'),
             theme: AppTheme.light(platform: TargetPlatform.macOS),
             home: const QuickAddPage(),
           ),
@@ -326,7 +352,13 @@ void main() {
             databaseProvider.overrideWithValue(env.db),
             clockProvider.overrideWithValue(env.clock),
           ],
-          child: MaterialApp(theme: AppTheme.light(), home: const StudyPage()),
+          child: MaterialApp(
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            locale: const Locale('zh'),
+            theme: AppTheme.light(),
+            home: const StudyPage(),
+          ),
         ),
       );
       await settle(tester);

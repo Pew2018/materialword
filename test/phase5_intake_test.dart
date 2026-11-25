@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:materialword/l10n/l10n.dart';
+
+import 'package:materialword/core/errors/app_error.dart';
 import 'package:materialword/app/providers.dart';
 import 'package:materialword/app/theme.dart';
 import 'package:materialword/core/database/app_database.dart';
@@ -161,7 +164,7 @@ void main() {
     expect(restored.word.createdAt, word.createdAt);
     expect(restored.word.note, word.note);
     expect(restored.word.translation, '我重新填的释义');
-    expect(restored.linkAdded, isTrue, reason: '先前被移出的词书关联要恢复');
+    expect(restored.linkAdded, isTrue, reason: '先前被移除的词书关联要恢复');
     expect(await env.books.wordCount(book.id), 1);
     expect(await env.words.countWords(), 1, reason: '不能产生重复词条');
     expect(await env.words.eventsForWord(word.id), hasLength(1));
@@ -437,9 +440,9 @@ void main() {
       ),
       throwsA(
         isA<WordIntakeException>().having(
-          (WordIntakeException e) => e.message,
-          'message',
-          contains('词书已被删除'),
+          (WordIntakeException e) => e.code,
+          'code',
+          AppErrorCode.wordListDeleted,
         ),
       ),
     );
@@ -497,6 +500,9 @@ void main() {
           ),
         ],
         child: MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          locale: const Locale('zh'),
           theme: AppTheme.light(),
           home: QuickAddPage(initialBookId: book.id),
         ),

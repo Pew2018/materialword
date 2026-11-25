@@ -10,6 +10,9 @@ import '../../core/database/app_database.dart';
 import '../../core/models/enums.dart';
 import '../../core/repositories/wordbook_repository.dart';
 import '../../services/screen_awake.dart';
+import '../../l10n/enum_labels.dart';
+import '../../l10n/l10n.dart';
+import '../../l10n/voice_labels.dart';
 import '../../services/tts_service.dart';
 import '../../shared/widgets/classic_select.dart';
 import '../../shared/widgets/common.dart';
@@ -19,8 +22,8 @@ import 'diagnostics_page.dart';
 
 /// Settings: daily targets, study mode, appearance, pronunciation, data.
 ///
-/// Information architecture: five top-level sections (学习 / 外观 / 发音 / 数据 /
-/// 关于). Anything long or diagnostic lives on its own page, so this screen stays
+/// Information architecture: five top-level sections (Study / Appearance /
+/// Pronunciation / Data / About). Anything long or diagnostic lives on its own page, so this screen stays
 /// a scannable list instead of an endless scroll.
 class SettingsPage extends ConsumerStatefulWidget {
   const SettingsPage({super.key});
@@ -82,15 +85,16 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         settings.currentWordBookId != null &&
         !bookList.any((b) => b.book.id == settings.currentWordBookId);
 
+    final AppLocalizations l10n = context.l10n;
     return ContentColumn(
       child: ListView(
         padding: const EdgeInsets.only(bottom: 32),
         children: <Widget>[
-          SectionHeader(title: '每日目标'),
+          SectionHeader(title: l10n.sectionDailyGoals),
           SettingsGroup(
             children: <Widget>[
               _StepperSetting(
-                label: '每日新词',
+                label: l10n.dailyNewWords,
                 value: settings.dailyNewTarget,
                 min: 5,
                 max: 200,
@@ -98,7 +102,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 onCommit: (int value) => _save(newTarget: value),
               ),
               _StepperSetting(
-                label: '每日复习上限',
+                label: l10n.dailyReviewLimit,
                 value: settings.dailyReviewLimit,
                 min: 10,
                 max: 500,
@@ -108,22 +112,22 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
                 child: Text(
-                  '目标按设备计算；词书只决定学习范围。超出复习上限的到期词会显示为「积压」，不会丢失。',
+                  l10n.dailyGoalsNote,
                   style: theme.textTheme.bodySmall,
                 ),
               ),
             ],
           ),
-          SectionHeader(title: '学习'),
+          SectionHeader(title: l10n.sectionStudy),
           SettingsGroup(
             children: <Widget>[
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
                 child: ClassicSelect<String>(
-                  label: '当前学习词书',
+                  label: l10n.studyWordList,
                   value: bookMissing ? '' : (settings.currentWordBookId ?? ''),
                   options: <ClassicOption<String>>[
-                    const ClassicOption<String>(value: '', label: '全部词书'),
+                    ClassicOption<String>(value: '', label: l10n.allWordLists),
                     for (final WordBookSummary summary in bookList)
                       ClassicOption<String>(
                         value: summary.book.id,
@@ -138,14 +142,14 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                 child: ClassicSelect<String>(
-                  label: '学习模式',
+                  label: l10n.studyMode,
                   value: settings.studyMode,
                   options: <ClassicOption<String>>[
                     for (final StudyMode mode in StudyMode.values)
                       if (mode != StudyMode.special)
                         ClassicOption<String>(
                           value: mode.code,
-                          label: mode.label,
+                          label: mode.label(l10n),
                         ),
                   ],
                   onChanged: (String value) =>
@@ -156,7 +160,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               const _KeepScreenOnTile(),
             ],
           ),
-          SectionHeader(title: '外观'),
+          SectionHeader(title: l10n.settingsAppearance),
           SettingsGroup(
             children: <Widget>[
               for (final ThemePreference preference in ThemePreference.values)
@@ -167,15 +171,19 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   groupValue: settings.themeMode,
                   onChanged: (String? value) =>
                       _save(theme: ThemePreference.fromCode(value)),
-                  title: Text(preference.label),
+                  title: Text(preference.label(l10n)),
                 ),
               _AccentColorSection(
                 current: parseAccent(settings.accentColor),
                 onPick: (String hex) => _save(accentColor: hex),
               ),
+              // Language is a device preference, like the accent colour, so it
+              // sits in Appearance right under the colour picker and never
+              // travels through sync.
+              const _LanguageSetting(),
             ],
           ),
-          SectionHeader(title: '发音'),
+          SectionHeader(title: l10n.sectionPronunciation),
           _TtsSection(
             settings: settings,
             onSave: (String? voice, String? locale, int? rate, bool? auto) =>
@@ -186,13 +194,13 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   ttsAutoSpeak: auto,
                 ),
           ),
-          SectionHeader(title: '数据'),
+          SectionHeader(title: l10n.sectionData),
           SettingsGroup(
             children: <Widget>[
               SettingsTile(
                 leading: const Icon(Icons.sync),
-                title: '数据同步',
-                subtitle: '在多台设备间同步学习进度',
+                title: l10n.syncTitle,
+                subtitle: l10n.syncSubtitle,
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => Navigator.of(context).push<void>(
                   MaterialPageRoute<void>(
@@ -202,8 +210,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               ),
               SettingsTile(
                 leading: const Icon(Icons.backup_outlined),
-                title: '备份与恢复',
-                subtitle: '备份、恢复或迁移学习数据',
+                title: l10n.backupRestore,
+                subtitle: l10n.backupRestoreSubtitle,
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => Navigator.of(context).push<void>(
                   MaterialPageRoute<void>(
@@ -213,8 +221,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               ),
               SettingsTile(
                 leading: const Icon(Icons.troubleshoot_outlined),
-                title: '诊断信息',
-                subtitle: '版本信息、运行日志与问题反馈',
+                title: l10n.diagnostics,
+                subtitle: l10n.diagnosticsSubtitle,
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => Navigator.of(context).push<void>(
                   MaterialPageRoute<void>(
@@ -224,7 +232,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               ),
             ],
           ),
-          SectionHeader(title: '关于'),
+          SectionHeader(title: l10n.sectionAbout),
           SettingsGroup(
             children: <Widget>[
               Padding(
@@ -237,15 +245,13 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                       style: theme.textTheme.bodyMedium,
                     ),
                     AppSpacing.h4,
-                    Text(
-                      '离线优先的英语单词学习工具。学习记录保存在本机，'
-                      '开启同步后会在多台设备间保持一致。',
-                      style: theme.textTheme.bodySmall,
-                    ),
+                    Text(l10n.aboutBlurb, style: theme.textTheme.bodySmall),
                     AppSpacing.h8,
                     Text(
-                      '内置离线词典：$dictionaryEntryCount 条词条'
-                      '（ECDICT，$dictionaryLicense 许可）。',
+                      l10n.aboutDictionary(
+                        dictionaryEntryCount,
+                        dictionaryLicense,
+                      ),
                       style: theme.textTheme.bodySmall,
                     ),
                   ],
@@ -253,14 +259,14 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               ),
               SettingsTile(
                 leading: const Icon(Icons.description_outlined),
-                title: '开源许可证',
-                subtitle: 'Flutter、Drift、ECDICT 及其他依赖',
+                title: l10n.openSourceLicenses,
+                subtitle: l10n.licensesSubtitle,
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => showLicensePage(
                   context: context,
                   applicationName: 'MaterialWord',
                   applicationVersion: appVersion,
-                  applicationLegalese: 'ECDICT 词典数据以 MIT 许可分发。',
+                  applicationLegalese: l10n.legalNotice,
                 ),
               ),
             ],
@@ -316,14 +322,14 @@ class _StepperSetting extends StatelessWidget {
         children: <Widget>[
           Expanded(child: Text(label, style: theme.textTheme.bodyLarge)),
           IconButton(
-            tooltip: '减少',
+            tooltip: context.l10n.decrease,
             icon: const Icon(Icons.remove),
             onPressed: value > min
                 ? () => onCommit((value - step).clamp(min, max))
                 : null,
           ),
           Tooltip(
-            message: '输入具体数值',
+            message: context.l10n.enterExactValue,
             child: InkWell(
               onTap: () => _edit(context),
               child: Container(
@@ -343,7 +349,7 @@ class _StepperSetting extends StatelessWidget {
             ),
           ),
           IconButton(
-            tooltip: '增加',
+            tooltip: context.l10n.increase,
             icon: const Icon(Icons.add),
             onPressed: value < max
                 ? () => onCommit((value + step).clamp(min, max))
@@ -368,9 +374,9 @@ Future<int?> _askNumber(
   final String? raw = await promptForText(
     context,
     title: title,
-    label: '数值（$min–$max）',
+    label: context.l10n.valueRange(min, max),
     initialValue: '$initial',
-    confirmLabel: '确定',
+    confirmLabel: context.l10n.ok,
     inputFormatters: <TextInputFormatter>[
       FilteringTextInputFormatter.digitsOnly,
     ],
@@ -379,14 +385,21 @@ Future<int?> _askNumber(
   final int? parsed = int.tryParse(raw.trim());
   if (parsed == null) {
     if (context.mounted) {
-      showMessage(context, '请输入 $min–$max 之间的数字', error: true);
+      showMessage(
+        context,
+        context.l10n.enterNumberInRange(min, max),
+        error: true,
+      );
     }
     return null;
   }
   return parsed.clamp(min, max);
 }
 
-/// 14 classic Material palettes + a custom HEX entry + restore-default.
+/// The accent presets, a custom HEX entry and restore-default.
+///
+/// The layout is unchanged on purpose: plain round swatches in a [Wrap] that
+/// reflows on a narrow window. Only the palette data changed (23 presets).
 class _AccentColorSection extends StatelessWidget {
   const _AccentColorSection({required this.current, required this.onPick});
 
@@ -403,7 +416,12 @@ class _AccentColorSection extends StatelessWidget {
         children: <Widget>[
           Row(
             children: <Widget>[
-              Expanded(child: Text('强调色', style: theme.textTheme.bodyLarge)),
+              Expanded(
+                child: Text(
+                  context.l10n.accentColor,
+                  style: theme.textTheme.bodyLarge,
+                ),
+              ),
               Text(hexOf(current), style: theme.textTheme.bodySmall),
             ],
           ),
@@ -415,7 +433,7 @@ class _AccentColorSection extends StatelessWidget {
               for (final AccentPalette palette in accentPalettes)
                 _Swatch(
                   color: palette.color,
-                  label: palette.label,
+                  label: palette.label(context.l10n),
                   selected: hexOf(palette.color) == hexOf(current),
                   onTap: () => onPick(palette.hex),
                 ),
@@ -427,7 +445,7 @@ class _AccentColorSection extends StatelessWidget {
               TextButton.icon(
                 onPressed: () => _pickCustom(context),
                 icon: const Icon(Icons.colorize, size: AppDimens.iconSizeSmall),
-                label: const Text('自定义 HEX'),
+                label: Text(context.l10n.accentCustom),
               ),
               TextButton.icon(
                 onPressed: () => onPick(hexOf(AppColors.defaultAccent)),
@@ -435,15 +453,13 @@ class _AccentColorSection extends StatelessWidget {
                   Icons.restart_alt,
                   size: AppDimens.iconSizeSmall,
                 ),
-                label: const Text('恢复默认'),
+                label: Text(context.l10n.accentRestoreDefault),
               ),
             ],
           ),
-          Text(
-            '强调色即时生效，影响顶栏、底栏、按钮、开关、滑块与焦点框；'
-            '「认识/模糊/不认识」的颜色与主题无关。',
-            style: theme.textTheme.bodySmall,
-          ),
+          Text(context.l10n.accentColorHint, style: theme.textTheme.bodySmall),
+          AppSpacing.h4,
+          Text(context.l10n.accentAnswerNote, style: theme.textTheme.bodySmall),
         ],
       ),
     );
@@ -452,10 +468,10 @@ class _AccentColorSection extends StatelessWidget {
   Future<void> _pickCustom(BuildContext context) async {
     final String? value = await promptForText(
       context,
-      title: '自定义强调色',
-      label: 'HEX 颜色',
+      title: context.l10n.customAccentTitle,
+      label: context.l10n.accentHex,
       initialValue: hexOf(current),
-      confirmLabel: '应用',
+      confirmLabel: context.l10n.apply,
       inputFormatters: [
         FilteringTextInputFormatter.allow(RegExp(r'[#0-9a-fA-F]')),
         LengthLimitingTextInputFormatter(7),
@@ -465,7 +481,7 @@ class _AccentColorSection extends StatelessWidget {
     final String raw = value.trim().replaceAll('#', '');
     if (!RegExp(r'^[0-9a-fA-F]{6}$').hasMatch(raw)) {
       if (context.mounted) {
-        showMessage(context, '请输入 6 位 HEX 颜色，例如 #1565C0', error: true);
+        showMessage(context, context.l10n.invalidHexColor, error: true);
       }
       return;
     }
@@ -492,7 +508,7 @@ class _Swatch extends StatelessWidget {
     return Semantics(
       button: true,
       selected: selected,
-      label: '强调色 $label',
+      label: context.l10n.accentSwatchSemantics(label),
       child: Tooltip(
         message: label,
         child: InkWell(
@@ -549,20 +565,18 @@ class _TtsSectionState extends ConsumerState<_TtsSection> {
           future: _voices,
           builder: (BuildContext context, AsyncSnapshot<List<TtsVoice>> snap) {
             if (snap.connectionState != ConnectionState.done) {
-              return const SettingsTile(
-                leading: Icon(Icons.record_voice_over_outlined),
-                title: '英语语音',
-                subtitle: '正在读取系统语音…',
+              return SettingsTile(
+                leading: const Icon(Icons.record_voice_over_outlined),
+                title: context.l10n.englishVoice,
+                subtitle: context.l10n.loadingVoices,
               );
             }
             final List<TtsVoice> voices = snap.data ?? const <TtsVoice>[];
             if (voices.isEmpty) {
               return SettingsTile(
                 leading: const Icon(Icons.volume_off_outlined),
-                title: '英语语音',
-                subtitle:
-                    '系统未提供英语语音：学习页面会显示「语音不可用」，不影响背词。'
-                    '请先在系统设置中安装英语语音。',
+                title: context.l10n.englishVoice,
+                subtitle: context.l10n.noEnglishVoice,
               );
             }
             final String selected =
@@ -581,14 +595,17 @@ class _TtsSectionState extends ConsumerState<_TtsSection> {
             return Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
               child: ClassicSelect<String>(
-                label: '英语语音',
+                label: context.l10n.englishVoice,
                 value: selected,
                 options: <ClassicOption<String>>[
-                  const ClassicOption<String>(value: '', label: '系统默认'),
+                  ClassicOption<String>(
+                    value: '',
+                    label: context.l10n.systemDefault,
+                  ),
                   for (final TtsVoice voice in voices)
                     ClassicOption<String>(
                       value: voice.key,
-                      label: voice.display,
+                      label: ttsVoiceLabel(context.l10n, voice),
                     ),
                 ],
                 onChanged: (String key) {
@@ -608,8 +625,8 @@ class _TtsSectionState extends ConsumerState<_TtsSection> {
         SettingsSwitchTile(
           value: widget.settings.ttsAutoSpeak,
           icon: Icons.volume_up_outlined,
-          title: '进入单词时自动发音',
-          subtitle: '语音是否可离线使用取决于系统安装的语音包',
+          title: context.l10n.autoPronounce,
+          subtitle: context.l10n.autoPronounceHint,
           onChanged: (bool value) => widget.onSave(null, null, null, value),
         ),
         Padding(
@@ -622,7 +639,7 @@ class _TtsSectionState extends ConsumerState<_TtsSection> {
               children: [
                 OutlinedButton.icon(
                   icon: const Icon(Icons.refresh),
-                  label: const Text('刷新语音列表'),
+                  label: Text(context.l10n.refreshVoices),
                   onPressed: () {
                     final voices = ref
                         .read(ttsServiceProvider)
@@ -643,15 +660,17 @@ class _TtsSectionState extends ConsumerState<_TtsSection> {
                       locale: widget.settings.ttsLocale,
                       rate: widget.settings.ttsRate,
                     );
-                    if (!context.mounted) return;
+                    // A working preview is audible: no snackbar needed. Only a
+                    // failure has to be reported.
+                    if (!context.mounted || ok) return;
                     showMessage(
                       context,
-                      ok ? '测试朗读完成' : (tts.lastError ?? '系统语音不可用'),
-                      error: !ok,
+                      context.l10n.voiceUnavailable,
+                      error: true,
                     );
                   },
                   icon: const Icon(Icons.play_arrow),
-                  label: const Text('测试发音'),
+                  label: Text(context.l10n.previewVoice),
                 ),
               ],
             ),
@@ -692,7 +711,7 @@ class _TtsRateSettingState extends State<_TtsRateSetting> {
             children: <Widget>[
               Expanded(
                 child: Text(
-                  '发音速度',
+                  context.l10n.speakingRate,
                   style: Theme.of(context).textTheme.bodyLarge,
                 ),
               ),
@@ -733,10 +752,10 @@ class _KeepScreenOnTile extends ConsumerWidget {
     return SettingsSwitchTile(
       value: value.value ?? false,
       icon: Icons.lightbulb_outline,
-      title: '学习时保持屏幕常亮',
+      title: context.l10n.keepScreenAwake,
       subtitle: supported
-          ? '只在实际的学习或练习页面生效；离开页面或切到后台后自动释放'
-          : '当前平台不支持此功能，学习功能不受影响',
+          ? context.l10n.keepScreenAwakeHint
+          : context.l10n.keepScreenAwakeUnsupported,
       onChanged: supported
           ? (bool enabled) async {
               final AppDatabase db = ref.read(databaseProvider);
@@ -784,8 +803,8 @@ class _RandomOrderSettingState extends ConsumerState<_RandomOrderSetting> {
     return SettingsSwitchTile(
       value: _value ?? false,
       icon: Icons.shuffle,
-      title: '随机学习顺序',
-      subtitle: '只改变呈现顺序，不会遗漏或重复；专项练习与冲刺不受影响',
+      title: context.l10n.randomOrder,
+      subtitle: context.l10n.randomOrderHint,
       onChanged: _value == null
           ? null
           : (bool value) async {
@@ -795,5 +814,63 @@ class _RandomOrderSettingState extends ConsumerState<_RandomOrderSetting> {
               if (mounted) setState(() => _value = value);
             },
     );
+  }
+}
+
+/// Language picker row.
+///
+/// Lives inside the Appearance group, directly after the accent colours, and
+/// opens a classic radio dialog. The list is short enough that a material-3
+/// sheet or a separate page would be extra chrome, not extra clarity.
+class _LanguageSetting extends ConsumerWidget {
+  const _LanguageSetting();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final AppLocalizations l10n = context.l10n;
+    final AppLanguage language = ref.watch(languageProvider);
+    return SettingsTile(
+      leading: const Icon(Icons.language),
+      title: l10n.appLanguage,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Text(
+            language.label(l10n),
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+          AppSpacing.w4,
+          const Icon(Icons.chevron_right),
+        ],
+      ),
+      onTap: () => _pick(context, ref),
+    );
+  }
+
+  Future<void> _pick(BuildContext context, WidgetRef ref) async {
+    final AppLocalizations l10n = context.l10n;
+    final AppLanguage current = ref.read(languageProvider);
+    final AppLanguage? picked = await showDialog<AppLanguage>(
+      context: context,
+      builder: (BuildContext context) => SimpleDialog(
+        title: Text(l10n.appLanguage),
+        children: <Widget>[
+          for (final AppLanguage value in AppLanguage.values)
+            RadioListTile<AppLanguage>(
+              dense: true,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+              value: value,
+              groupValue: current,
+              onChanged: (AppLanguage? choice) =>
+                  Navigator.of(context).pop(choice),
+              title: Text(value.label(l10n)),
+            ),
+        ],
+      ),
+    );
+    if (picked == null) return;
+    // Applies immediately: only MaterialApp.locale changes, so the current
+    // route, the study session and every scroll position survive the switch.
+    await ref.read(languageProvider.notifier).select(picked);
   }
 }
