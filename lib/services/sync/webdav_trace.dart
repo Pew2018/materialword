@@ -24,7 +24,7 @@ enum WebDavStage {
   basicWriteProbe('basic_write_probe'),
   conditionalCreateProbe('conditional_create_probe'),
   conditionalStaleUpdateProbe('conditional_stale_update_probe'),
-  conditionalExistingCreateProbe('conditional_existing_create_probe'),
+  conditionalExistingCreateProbe('duplicate_create_probe'),
   conditionalValidUpdateProbe('conditional_valid_update_probe'),
   probeCleanup('probe_cleanup'),
   datasetDownload('dataset_download'),
@@ -60,6 +60,7 @@ class WebDavTraceEntry {
     this.getetagPropstat,
     this.conditionOutcome,
     this.etagChanged,
+    this.probeContent,
     this.etagKind,
     this.responseContentType,
     this.result = 'ok',
@@ -91,6 +92,7 @@ class WebDavTraceEntry {
   final String? getetagPropstat;
   final String? conditionOutcome;
   final bool? etagChanged;
+  final String? probeContent;
   final String? etagKind;
   final String? responseContentType;
   final String result;
@@ -127,6 +129,7 @@ class WebDavTraceEntry {
     if (conditionOutcome != null) {
       out.write('condition_outcome=$conditionOutcome ');
     }
+    if (probeContent != null) out.write('probe_content=$probeContent ');
     if (etagChanged != null) out.write('etag_changed=$etagChanged ');
     if (etagKind != null) out.write('etag=$etagKind ');
     if (responseContentType != null) {

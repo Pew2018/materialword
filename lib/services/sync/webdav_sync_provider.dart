@@ -291,6 +291,7 @@ class WebDavSyncProvider implements SyncProvider {
           etagSource: switch (method) {
             'PUT' => 'put_header',
             'GET' => 'get_header',
+            'HEAD' => 'head_header',
             _ => null,
           },
           responseContentType: response?.headers['content-type'],
@@ -1106,6 +1107,7 @@ class WebDavSyncProvider implements SyncProvider {
       String method,
       String status, {
       bool? etagChanged,
+      String? probeContent,
     }) {
       trace.add(
         WebDavTraceEntry(
@@ -1119,6 +1121,7 @@ class WebDavSyncProvider implements SyncProvider {
           durationMs: 0,
           conditionOutcome: status,
           etagChanged: etagChanged,
+          probeContent: probeContent,
         ),
       );
     }
@@ -1139,8 +1142,10 @@ class WebDavSyncProvider implements SyncProvider {
       if (header != null) return header;
 
       final Uri? target = read.request?.url;
+      if (target == null) return null;
       final String? candidate =
           (metadata.uri == target ? metadata.etag : null) ??
+          await _headEtag(uri, target, stage) ??
           (write.request?.url == target
               ? strongEtag(write.headers['etag'])
               : null);
@@ -1204,10 +1209,13 @@ class WebDavSyncProvider implements SyncProvider {
       final http.Response afterDuplicate = await get(
         WebDavStage.conditionalExistingCreateProbe,
       );
-      final bool duplicateUnchanged =
-          matches(afterDuplicate, initial) &&
+      final bool sameTarget =
           afterDuplicate.request?.url == ownedTarget &&
           duplicate.request?.url == ownedTarget;
+      final bool duplicateUnchanged =
+          sameTarget && matches(afterDuplicate, initial);
+      final bool duplicateOverwroteProbe =
+          sameTarget && matches(afterDuplicate, changed);
       result.supportsIfNoneMatch =
           duplicate.statusCode == 412 && duplicateUnchanged;
       outcome(
@@ -1215,9 +1223,14 @@ class WebDavSyncProvider implements SyncProvider {
         'PUT',
         result.supportsIfNoneMatch
             ? 'passed'
-            : _isSuccess(duplicate.statusCode) || !duplicateUnchanged
+            : duplicateOverwroteProbe
             ? 'ignored'
             : 'rejected',
+        probeContent: duplicateUnchanged
+            ? 'unchanged'
+            : duplicateOverwroteProbe
+            ? 'overwritten'
+            : 'unverified',
       );
       String beforeUpdate = initial;
       String afterUpdate = changed;
@@ -1227,10 +1240,6 @@ class WebDavSyncProvider implements SyncProvider {
           ..issue = '服务器未通过已有文件防覆盖验证'
           ..issueMethod = 'PUT'
           ..issueStatus = duplicate.statusCode;
-        final bool duplicateOverwroteProbe =
-            afterDuplicate.request?.url == ownedTarget &&
-            duplicate.request?.url == ownedTarget &&
-            matches(afterDuplicate, changed);
         if (duplicateOverwroteProbe) {
           // The overwrite itself demonstrated basic I/O. Independently test
           // If-Match against the version now present on our own probe.
@@ -1367,7 +1376,13 @@ class WebDavSyncProvider implements SyncProvider {
           ..issueMethod = 'PUT'
           ..issueStatus = update.statusCode;
       } else if (strongEtag(after.headers['etag']) == null &&
-          nextMetadata.etag != nextTag) {
+          nextMetadata.etag != nextTag &&
+          await _headEtag(
+                uri,
+                ownedTarget!,
+                WebDavStage.conditionalValidUpdateProbe,
+              ) !=
+              nextTag) {
         result.supportsStrongEtag = false;
         result.issue ??= '只能在写入响应取得强 ETag，无法安全读取远程版本';
       } else if (!result.supportsStrongEtag) {
@@ -1411,6 +1426,22 @@ class WebDavSyncProvider implements SyncProvider {
       }
     }
     return result;
+  }
+
+  /// A HEAD validator is only a candidate. Callers must bind it to the
+  /// downloaded representation with a verified conditional GET.
+  Future<String?> _headEtag(Uri uri, Uri target, WebDavStage stage) async {
+    final http.Response response = await _send(
+      'HEAD',
+      uri,
+      headers: await _headers(
+        extra: const <String, String>{'Accept': 'application/json'},
+      ),
+      stage: stage,
+    );
+    return response.statusCode == 200 && response.request?.url == target
+        ? strongEtag(response.headers['etag'])
+        : null;
   }
 
   static bool _consistentWithTag(http.Response response, String tag) {
@@ -1677,7 +1708,10 @@ class WebDavSyncProvider implements SyncProvider {
         p.fileUri,
         stage: WebDavStage.datasetDownload,
       );
-      etag = probe.uri == response.request?.url ? probe.etag : null;
+      final Uri target = response.request!.url;
+      etag =
+          (probe.uri == target ? probe.etag : null) ??
+          await _headEtag(p.fileUri, target, WebDavStage.datasetDownload);
       if (etag != null) {
         // Pair the bytes with this validator. A PROPFIND after an unconditional
         // GET may describe a newer document we have never read.
@@ -1700,7 +1734,7 @@ class WebDavSyncProvider implements SyncProvider {
             method: 'GET',
           );
         }
-        if (paired.request?.url != probe.uri ||
+        if (paired.request?.url != target ||
             !_consistentWithTag(paired, etag)) {
           throw const SyncConflictException('无法确认远程内容对应的版本');
         }

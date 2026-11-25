@@ -156,6 +156,45 @@ void main() {
     });
   }
 
+  test('HEAD validator is bound to the downloaded document', () async {
+    final server = _Dav()
+      ..getHeader = ((_) => 'unquoted')
+      ..headHeader = ((tag) => tag);
+    final result = await server.provider.testConnection();
+    expect(result.capability!.safeBidirectionalSync, isTrue);
+    expect(result.capability!.supportsConditionalRead, isTrue);
+
+    server.dataset = '{"version":1}';
+    expect((await server.provider.fetchRemote()).revision, isNotNull);
+
+    server.raceOnDatasetConditionalGet = true;
+    await expectLater(
+      server.provider.fetchRemote(),
+      throwsA(isA<SyncConflictException>()),
+    );
+  });
+
+  for (final overwrite in <bool>[true, false]) {
+    test(
+      'Duplicate 204 is rejected whether it overwrites: $overwrite',
+      () async {
+        final server = _Dav()
+          ..getHeader = ((_) => 'unquoted')
+          ..headHeader = ((tag) => tag)
+          ..ignoredPutCondition = 'If-None-Match'
+          ..duplicateNoOp = !overwrite;
+        final result = await server.provider.testConnection();
+        expect(result.capability!.safeBidirectionalSync, isFalse);
+        expect(result.capability!.supportsIfNoneMatch, isFalse);
+        final trace = server.provider.trace.entries
+            .where((entry) => entry.probeContent != null)
+            .single;
+        expect(trace.probeContent, overwrite ? 'overwritten' : 'unchanged');
+        expect(trace.conditionOutcome, overwrite ? 'ignored' : 'rejected');
+      },
+    );
+  }
+
   test('XML ETag cannot be trusted if conditional GET is ignored', () async {
     final server = _Dav()
       ..getHeader = ((_) => null)
@@ -208,8 +247,10 @@ class _Dav {
   bool raceOnDatasetConditionalGet = false;
   bool redirectProbe = false;
   bool ignoreConditionalGet = false;
+  bool duplicateNoOp = false;
   String? ignoredPutCondition;
   String? Function(String) getHeader = (tag) => tag;
+  String? Function(String) headHeader = (_) => null;
   String Function(Uri, String) xml = (_, _) => '';
 
   late final WebDavSyncProvider provider = WebDavSyncProvider(
@@ -274,9 +315,15 @@ class _Dav {
             match != tag) {
           return http.Response('', 412);
         }
+        if (none == '*' && current != null && duplicateNoOp) {
+          return http.Response('', 204);
+        }
         body = request.body;
         revision++;
         return http.Response('', current == null ? 201 : 204);
+      case 'HEAD':
+        if (current == null) return http.Response('', 404);
+        return http.Response('', 200, headers: {'etag': ?headHeader(tag)});
       case 'GET':
         if (current == null) return http.Response('', 404);
         if (realFile && match != null && raceOnDatasetConditionalGet) {
