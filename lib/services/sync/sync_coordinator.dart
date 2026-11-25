@@ -296,7 +296,10 @@ class SyncCoordinator {
         provider.clearCapturedCredentials();
         provider.close();
       }
-      if (provider is GitHubSyncProvider) provider.clearCapturedCredentials();
+      if (provider is GitHubSyncProvider) {
+        provider.clearCapturedCredentials();
+        provider.close();
+      }
       _running = false;
       _activeTarget = null;
       _activeConfigRevision = null;

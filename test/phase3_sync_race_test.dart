@@ -106,6 +106,12 @@ void main() {
       repo: 'data',
       credentials: store,
       client: MockClient((request) async {
+        if (request.url.path.endsWith('/data')) {
+          return http.Response('{"private":true}', 200);
+        }
+        if (request.url.path.endsWith('/branches/main')) {
+          return http.Response('{"name":"main","commit":{"sha":"head"}}', 200);
+        }
         headers.add(request.headers['Authorization']);
         return http.Response('', 404);
       }),

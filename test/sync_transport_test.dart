@@ -72,6 +72,16 @@ void main() {
             200,
           );
         }
+        if (request.method == 'GET' &&
+            path == '/repos/owner/repo/branches/main') {
+          return http.Response(
+            jsonEncode({
+              'name': 'main',
+              'commit': {'sha': 'branch-sha'},
+            }),
+            200,
+          );
+        }
         if (request.method == 'GET' && path.contains('/contents/')) {
           if (remoteJson.isEmpty) {
             return http.Response('{"message":"Not Found"}', 404);
@@ -121,7 +131,7 @@ void main() {
       expect(result.supportsConditionalWrites, isTrue);
     });
 
-    test('公开仓库会给出隐私提醒', () async {
+    test('公开仓库拒绝同步', () async {
       final provider = GitHubSyncProvider(
         owner: 'owner',
         repo: 'repo',
@@ -129,8 +139,13 @@ void main() {
         client: buildClient(publicRepo: true),
       );
       final result = await provider.testConnection();
-      expect(result.ok, isTrue);
-      expect(result.details.join(' '), contains('公开'));
+      expect(result.ok, isFalse);
+      expect(result.message, contains('公开'));
+      await expectLater(
+        provider.upload(dataset()),
+        throwsA(isA<SyncException>()),
+      );
+      expect(putCount, 0);
     });
 
     test('下载返回内容与 SHA 作为版本', () async {

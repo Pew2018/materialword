@@ -89,7 +89,9 @@ class _StudyPageState extends ConsumerState<StudyPage> {
       ref.read(autoSyncServiceProvider).requestSessionEnd();
     }
     final StudyCard? card = _session.current;
-    final String? id = card?.word.id;
+    final String? id = card == null
+        ? null
+        : '${card.word.id}:${card.word.hashCode}';
     if (id == _lastCardId) return;
     _lastCardId = id;
     // Keep the header at the same place for every card: no jumpy layout.
@@ -288,6 +290,14 @@ class _StudyPageState extends ConsumerState<StudyPage> {
               autofocus: true,
               child: Column(
                 children: <Widget>[
+                  if (_session.notice != null)
+                    Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Text(
+                        _session.notice!,
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
                   Expanded(child: _buildContent(context, desktop)),
                   if (_session.current != null && !_session.isFinished)
                     _AnswerBar(

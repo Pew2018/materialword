@@ -334,7 +334,10 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
         _error = '连接测试失败：$e';
       });
     } finally {
-      if (provider is GitHubSyncProvider) provider.clearCapturedCredentials();
+      if (provider is GitHubSyncProvider) {
+        provider.clearCapturedCredentials();
+        provider.close();
+      }
       if (provider is WebDavSyncProvider) {
         provider.clearCapturedCredentials();
         provider.close();

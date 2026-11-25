@@ -37,7 +37,9 @@ JSON 包含 `kind=materialword-backup`、`schemaVersion=3`、datasetId、作者 
 
 使用 Fine-grained PAT 和 Contents API 的 SHA 条件 PUT；不会创建数据仓库。拒绝将数据写入 Pew2018/materialword 源码仓库。90 MB 是应用保护上限，不要求删除历史。1–90 MB 的 encoding:none 响应通过同一仓库的 immutable blob SHA + raw 媒体类型读取，避免两次 branch 查询间的竞态。
 
-[官方 Contents API](https://docs.github.com/en/rest/repos/contents#get-repository-content) 说明 1 MB 以上读取须 raw/object，100 MB 以上不支持。私有仓库/分支验证和真实 PAT 权限矩阵仍需继续完善；Mock 测试不是服务验收。
+[官方 Contents API](https://docs.github.com/en/rest/repos/contents#get-repository-content) 说明 1 MB 以上读取须 raw/object，100 MB 以上不支持。每次读取及每次上传前检查私有仓库、账号显式只读权限和目标分支（支持含 `/` 的分支），自动同步不能绕过。缺失分支不会被当成首次创建文件；文件读取 403 不会通过连接测试。连接测试只验证读取，不创建临时提交；账号 `permissions.push` 不能证明 Token 具备 Contents 写权限，实际条件上传成功才确认写入。422 作为校验失败处理，只有首次创建失败后确实发现已有 SHA 才按创建竞态重试；409 按并发冲突重试。请求不自动跟随重定向，响应正文和底层异常不进入用户错误日志。仓库在检查与上传之间被外部修改可见性的窗口无法通过 Contents API 原子消除，用户应保持数据仓库私有。
+
+[GitHub 仓库接口](https://docs.github.com/en/rest/repos/repos#get-a-repository) 的 Metadata 读取权限与 [Contents 写入权限](https://docs.github.com/en/rest/repos/contents#create-or-update-file-contents) 分开。真实 PAT 权限矩阵仍待服务验收；Mock 测试不是服务验收。
 
 ## 未完成的安全矩阵
 

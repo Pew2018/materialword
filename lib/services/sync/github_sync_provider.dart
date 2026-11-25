@@ -12,7 +12,9 @@ import 'sync_provider.dart';
 ///
 /// Concurrency: the file's blob `sha` is used as the revision. An upload always
 /// carries the `sha` it was based on, so GitHub rejects a stale write with
-/// 409/422 instead of letting one device silently overwrite another.
+/// 409 instead of letting one device silently overwrite another. A 422 is a
+/// validation failure; an existing file discovered after a create race is
+/// separately identified by reading its current SHA.
 ///
 /// Security: complete syncs capture one in-memory credential snapshot and clear
 /// it afterwards. Standalone calls read secure storage; secrets never enter
@@ -56,6 +58,7 @@ class GitHubSyncProvider implements SyncProvider {
 
   final CredentialStore _credentials;
   final http.Client? _client;
+  http.Client? _ownedClient;
   final String? _tokenOverride;
   String? _capturedToken;
   bool _hasCapturedToken = false;
@@ -115,7 +118,70 @@ class GitHubSyncProvider implements SyncProvider {
       !(owner.toLowerCase() == 'pew2018' &&
           repo.toLowerCase() == 'materialword');
 
-  http.Client get _http => _client ?? http.Client();
+  http.Client get _http => _client ?? (_ownedClient ??= http.Client());
+
+  void close() {
+    _ownedClient?.close();
+    _ownedClient = null;
+  }
+
+  Future<http.Response> _get(Uri uri, String token) =>
+      _send(http.Request('GET', uri)..headers.addAll(_headers(token)));
+
+  Future<http.Response> _send(http.Request request) => _guard(() {
+    request.followRedirects = false;
+    return (() async {
+      return http.Response.fromStream(await _http.send(request));
+    })().timeout(const Duration(seconds: 60));
+  });
+
+  /// No write probe: creating/deleting a GitHub file leaves permanent commits.
+  /// Metadata push permission describes repository access, not the PAT's scope.
+  Future<void> _validateTarget(String token) async {
+    final repository = await _get(_repoUri, token);
+    if (repository.statusCode != 200) _raise(repository, '检查私有仓库');
+    final Object? info;
+    try {
+      info = jsonDecode(repository.body);
+    } on FormatException {
+      throw const SyncDataException('GitHub 仓库信息无效');
+    }
+    if (info is! Map<String, dynamic> || info['private'] is! bool) {
+      throw const SyncDataException('GitHub 未提供可靠的仓库可见性信息');
+    }
+    if (info['private'] != true) {
+      throw const SyncException('拒绝同步到公开仓库：请使用独立的私有数据仓库');
+    }
+    final permissions = info['permissions'];
+    if (permissions is Map && permissions['push'] == false) {
+      throw const SyncException('GitHub 仓库账号只有只读权限，请检查仓库授权');
+    }
+    final branchResponse = await _get(
+      Uri.parse(
+        'https://api.github.com/repos/$owner/$repo/branches/'
+        '${Uri.encodeComponent(branch)}',
+      ),
+      token,
+    );
+    if (branchResponse.statusCode == 404) {
+      throw const SyncException('GitHub 分支不存在或无权读取，请先创建并授权目标分支');
+    }
+    if (branchResponse.statusCode != 200) {
+      _raise(branchResponse, '检查目标分支');
+    }
+    try {
+      final Object? branchInfo = jsonDecode(branchResponse.body);
+      if (branchInfo is! Map<String, dynamic> ||
+          branchInfo['name'] != branch ||
+          branchInfo['commit'] is! Map ||
+          branchInfo['commit']['sha'] is! String ||
+          (branchInfo['commit']['sha'] as String).isEmpty) {
+        throw const SyncDataException('GitHub 分支信息无效，请检查分支配置');
+      }
+    } on FormatException {
+      throw const SyncDataException('GitHub 分支信息无效');
+    }
+  }
 
   /// Maps transport failures onto [SyncException] so the coordinator and the
   /// UI can distinguish "network problem, retry later" from "your token is
@@ -125,11 +191,11 @@ class GitHubSyncProvider implements SyncProvider {
       return await call();
     } on TimeoutException {
       throw const SyncException('网络超时：请检查网络后重试', retryable: true);
-    } on http.ClientException catch (e) {
-      throw SyncException('网络请求失败：${e.message}', retryable: true);
+    } on http.ClientException {
+      throw const SyncException('网络请求失败：请检查网络后重试', retryable: true);
     } catch (e) {
       if (e is SyncException) rethrow;
-      throw SyncException('网络请求失败：$e', retryable: true);
+      throw const SyncException('网络请求失败：请检查网络后重试', retryable: true);
     }
   }
 
@@ -177,15 +243,6 @@ class GitHubSyncProvider implements SyncProvider {
   /// Turns a GitHub error into a message a user can act on.
   Never _raise(http.Response response, String action) {
     final int status = response.statusCode;
-    String body = '';
-    try {
-      final Object? decoded = jsonDecode(response.body);
-      if (decoded is Map<String, dynamic>) {
-        body = (decoded['message'] as String?) ?? '';
-      }
-    } on FormatException {
-      body = '';
-    }
     if (status == 401) {
       throw const SyncException('GitHub Token 无效或已过期，请重新生成并填写');
     }
@@ -208,7 +265,12 @@ class GitHubSyncProvider implements SyncProvider {
     if (status == 404) {
       throw const SyncException('GitHub 仓库或数据文件不存在，请检查 owner/repo/分支/路径');
     }
-    if (status == 409 || status == 422) {
+    if (status == 422) {
+      throw const SyncException(
+        'GitHub 写入校验失败（HTTP 422）：请检查路径、分支、Contents 写权限及仓库规则',
+      );
+    }
+    if (status == 409) {
       throw SyncConflictException('GitHub 拒绝了本次写入（并发冲突）：远程文件已变更，将重新拉取并合并');
     }
     if (status >= 500) {
@@ -217,9 +279,7 @@ class GitHubSyncProvider implements SyncProvider {
         retryable: true,
       );
     }
-    throw SyncException(
-      'GitHub $action 失败（HTTP $status）${body.isEmpty ? '' : '：$body'}',
-    );
+    throw SyncException('GitHub $action 失败（HTTP $status），请检查仓库配置与访问权限');
   }
 
   @override
@@ -235,44 +295,21 @@ class GitHubSyncProvider implements SyncProvider {
       return const SyncTestResult(ok: false, message: '尚未保存 GitHub Token');
     }
     try {
-      final http.Response repoResponse = await _guard(
-        () => _http
-            .get(_repoUri, headers: _headers(token))
-            .timeout(const Duration(seconds: 20)),
-      );
-      if (repoResponse.statusCode != 200) {
-        _raise(repoResponse, '连接测试');
-      }
-      final Map<String, dynamic> info =
-          jsonDecode(repoResponse.body) as Map<String, dynamic>;
-      final bool isPrivate = info['private'] == true;
-      final Map<String, dynamic>? permissions =
-          info['permissions'] as Map<String, dynamic>?;
-      final bool canPush = permissions?['push'] == true;
-
-      final List<String> details = <String>[
-        isPrivate ? '仓库为私有' : '仓库是公开的：学习数据可能被他人看到',
-        canPush ? 'Token 具备写入权限' : 'Token 可能只有只读权限',
+      await _validateTarget(token);
+      final details = <String>[
+        '仓库为私有，目标分支可读取',
+        '连接测试仅验证读取；Token 的 Contents 写权限需在实际条件上传时确认',
       ];
-      if (!isPrivate) {
-        details.add('建议使用独立的私有数据仓库（例如 materialword-data）');
-      }
-
-      // Does the file already exist? Not an error either way.
-      final http.Response fileResponse = await _guard(
-        () => _http
-            .get(
-              _contentsUri.replace(
-                queryParameters: <String, String>{'ref': branch},
-              ),
-              headers: _headers(token),
-            )
-            .timeout(const Duration(seconds: 20)),
+      final fileResponse = await _get(
+        _contentsUri.replace(queryParameters: {'ref': branch}),
+        token,
       );
       if (fileResponse.statusCode == 200) {
         details.add('远程数据文件已存在');
       } else if (fileResponse.statusCode == 404) {
         details.add('远程数据文件尚未创建，首次同步会写入');
+      } else {
+        _raise(fileResponse, '检查数据文件');
       }
 
       return SyncTestResult(
@@ -284,8 +321,8 @@ class GitHubSyncProvider implements SyncProvider {
       return SyncTestResult(ok: false, message: e.message);
     } on TimeoutException {
       return const SyncTestResult(ok: false, message: 'GitHub 请求超时，请检查网络');
-    } catch (e) {
-      return SyncTestResult(ok: false, message: '连接失败：$e');
+    } catch (_) {
+      return const SyncTestResult(ok: false, message: 'GitHub 返回无效响应，请重试');
     }
   }
 
@@ -296,15 +333,10 @@ class GitHubSyncProvider implements SyncProvider {
     }
     final String? token = await _token();
     if (token == null) throw const SyncException('尚未保存 GitHub Token');
-    final http.Response response = await _guard(
-      () => _http
-          .get(
-            _contentsUri.replace(
-              queryParameters: <String, String>{'ref': branch},
-            ),
-            headers: _headers(token),
-          )
-          .timeout(const Duration(seconds: 30)),
+    await _validateTarget(token);
+    final response = await _get(
+      _contentsUri.replace(queryParameters: {'ref': branch}),
+      token,
     );
     if (response.statusCode == 404) return null;
     if (response.statusCode != 200) _raise(response, '读取数据');
@@ -332,11 +364,7 @@ class GitHubSyncProvider implements SyncProvider {
           ..._headers(token),
           'Accept': 'application/vnd.github.raw+json',
         });
-      final raw = await _guard(
-        () async =>
-            http.Response.fromStream(await _http.send(request))
-                .timeout(const Duration(seconds: 60)),
-      );
+      final raw = await _send(request);
       if (raw.statusCode != 200) _raise(raw, '读取大文件');
       bytes = raw.bodyBytes;
     } else {
@@ -376,6 +404,7 @@ class GitHubSyncProvider implements SyncProvider {
     }
     final String? token = await _token();
     if (token == null) throw const SyncException('尚未保存 GitHub Token');
+    await _validateTarget(token);
 
     final List<int> bytes = utf8.encode(jsonEncode(dataset));
     if (bytes.length > maxPayloadBytes) {
@@ -392,17 +421,13 @@ class GitHubSyncProvider implements SyncProvider {
       if (ifRevision != null && ifRevision.isNotEmpty) 'sha': ifRevision,
     };
 
-    final http.Response response = await _guard(
-      () => _http
-          .put(
-            _contentsUri,
-            headers: <String, String>{
-              ..._headers(token),
-              'Content-Type': 'application/json',
-            },
-            body: jsonEncode(body),
-          )
-          .timeout(const Duration(seconds: 45)),
+    final response = await _send(
+      http.Request('PUT', _contentsUri)
+        ..headers.addAll({
+          ..._headers(token),
+          'Content-Type': 'application/json',
+        })
+        ..body = jsonEncode(body),
     );
 
     if (response.statusCode == 200 || response.statusCode == 201) {
@@ -423,11 +448,28 @@ class GitHubSyncProvider implements SyncProvider {
     if (response.statusCode == 409) {
       throw const SyncConflictException('远程文件已被其他设备修改');
     }
-    if (response.statusCode == 422) {
-      // GitHub answers 422 both for "sha missing" (file exists) and for
-      // validation problems; treat it as a conflict so the coordinator
-      // re-downloads and merges instead of overwriting.
-      throw const SyncConflictException('远程文件已存在或内容冲突，将重新拉取并合并');
+    if (response.statusCode == 422 &&
+        (ifRevision == null || ifRevision.isEmpty)) {
+      // A racing first writer can turn create into a validation failure
+      // (missing sha). Retry only when a file with an actual SHA now exists.
+      final existing = await _get(
+        _contentsUri.replace(queryParameters: {'ref': branch}),
+        token,
+      );
+      if (existing.statusCode == 200) {
+        try {
+          final Object? node = jsonDecode(existing.body);
+          if (node is Map &&
+              node['sha'] is String &&
+              (node['sha'] as String).isNotEmpty) {
+            throw const SyncConflictException('远程文件已由另一设备创建，将重新拉取并合并');
+          }
+        } on FormatException {
+          // Report the original validation failure below.
+        }
+      } else if (existing.statusCode != 404) {
+        _raise(existing, '检查首次写入冲突');
+      }
     }
     _raise(response, '写入数据');
   }

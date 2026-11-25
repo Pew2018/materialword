@@ -207,6 +207,12 @@ void main() {
         CredentialKeys.githubToken: 'test-only-token',
       }),
       client: MockClient((request) async {
+        if (request.url.path == '/repos/owner/data') {
+          return http.Response('{"private":true}', 200);
+        }
+        if (request.url.path == '/repos/owner/data/branches/main') {
+          return http.Response('{"name":"main","commit":{"sha":"head"}}', 200);
+        }
         if (request.url.path.contains('/contents/')) {
           return http.Response(
             jsonEncode({
