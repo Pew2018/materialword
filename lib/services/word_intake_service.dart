@@ -277,7 +277,12 @@ class WordIntakeService {
 
     final _Composed composed = _composeExisting(found, request, now, reviving);
     final Word updated = composed.word;
-    final bool changed = reviving || composed.changedFields.isNotEmpty;
+    // Whether to write is decided by the real before/after comparison inside
+    // [_composeExisting], not by "did a text resolver fire". A metadata-only
+    // re-add (import supplies examTags / bncRank / frqRank while every text
+    // field already matches) used to compose a new row and then skip the
+    // UPDATE, so the metadata was silently dropped.
+    final bool changed = composed.changed;
     if (changed) {
       // recordEdit stamps exactly the fields that differ, with this device's id
       // and this instant, so the change wins a field-level conflict on another
@@ -370,79 +375,64 @@ class WordIntakeService {
     final WordContent user = request.user;
     final WordContent content = request.content;
     final WordContent dict = request.dictionary;
-    final List<String> changed = <String>[];
     bool contentApplied = false;
 
     /// Explicit value wins (including `''`); otherwise keep a non-empty current
     /// value; otherwise take file content, then dictionary data.
     String resolve(
-      String field,
       String current,
       String? explicit,
       String? imported,
       String? dictionary, {
       bool normalize = true,
     }) {
-      String next = current;
       if (explicit != null) {
-        next = normalize ? normalizeDictionaryText(explicit) : explicit;
-      } else if (current.trim().isEmpty) {
-        if (imported != null && imported.trim().isNotEmpty) {
-          next = normalize ? normalizeDictionaryText(imported) : imported;
-          contentApplied = true;
-        } else if (dictionary != null && dictionary.trim().isNotEmpty) {
-          next = normalize ? normalizeDictionaryText(dictionary) : dictionary;
-        }
+        return normalize ? normalizeDictionaryText(explicit) : explicit;
       }
-      if (next != current) changed.add(field);
-      return next;
+      if (current.trim().isNotEmpty) return current;
+      if (imported != null && imported.trim().isNotEmpty) {
+        contentApplied = true;
+        return normalize ? normalizeDictionaryText(imported) : imported;
+      }
+      if (dictionary != null && dictionary.trim().isNotEmpty) {
+        return normalize ? normalizeDictionaryText(dictionary) : dictionary;
+      }
+      return current;
     }
 
     final Word updated = found.copyWith(
       phonetic: resolve(
-        'phonetic',
         found.phonetic,
         user.phonetic,
         content.phonetic,
         dict.phonetic,
       ),
       partOfSpeech: resolve(
-        'partOfSpeech',
         found.partOfSpeech,
         user.partOfSpeech,
         content.partOfSpeech,
         dict.partOfSpeech,
       ),
       translation: resolve(
-        'translation',
         found.translation,
         user.translation,
         content.translation,
         dict.translation,
       ),
       definition: resolve(
-        'definition',
         found.definition,
         user.definition,
         content.definition,
         dict.definition,
       ),
       example: resolve(
-        'example',
         found.example,
         user.example,
         content.example,
         dict.example,
       ),
-      phrase: resolve(
-        'phrase',
-        found.phrase,
-        user.phrase,
-        content.phrase,
-        dict.phrase,
-      ),
+      phrase: resolve(found.phrase, user.phrase, content.phrase, dict.phrase),
       note: resolve(
-        'note',
         found.note,
         user.note,
         content.note,
@@ -459,8 +449,19 @@ class WordIntakeService {
       revision: found.revision + 1,
       updatedAt: now.millisecondsSinceEpoch,
     );
-    if (reviving) changed.insert(0, 'deletedAt');
-    return _Composed(updated, changed);
+
+    // One semantic diff for the whole row: every synced field plus the local
+    // `customized` flag. `changedFields` is only a description for the UI; the
+    // write decision is `changed`. The two JSON maps are built once — a 20 000
+    // word import must not rebuild them per field.
+    final Map<String, Object?> before = found.toJson();
+    final Map<String, Object?> after = updated.toJson();
+    final List<String> changed = <String>[
+      for (final String field in ContentSyncRepository.wordFields)
+        if (before[field] != after[field]) field,
+      if (found.customized != updated.customized) 'customized',
+    ];
+    return _Composed(changed.isEmpty ? found : updated, changed);
   }
 
   static String _newId() => const Uuid().v4();
@@ -471,6 +472,10 @@ class WordIntakeService {
 class _Composed {
   const _Composed(this.word, this.changedFields);
 
+  /// The row to persist. Identical to the row found on disk when nothing
+  /// changed, so a caller can never report a revision that was never written.
   final Word word;
   final List<String> changedFields;
+
+  bool get changed => changedFields.isNotEmpty;
 }
