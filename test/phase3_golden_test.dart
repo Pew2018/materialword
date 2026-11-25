@@ -13,13 +13,27 @@ void main() {
   });
   for (final brightness in Brightness.values) {
     testWidgets('Classic theme golden ${brightness.name}', (tester) async {
+      // Pin every input the rasteriser can see: surface size, pixel ratio,
+      // target platform (ThemeData derives typography, visual density and
+      // scroll physics from it) and text scale. The reference image is still
+      // compared pixel-for-pixel; see test/support/platform_golden_comparator.dart
+      // for why the reference is resolved per host rasteriser.
       tester.view.physicalSize = const Size(420, 640);
       tester.view.devicePixelRatio = 1;
+      tester.platformDispatcher.textScaleFactorTestValue = 1;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
       await tester.pumpWidget(
         MaterialApp(
-          theme: AppTheme.of(brightness, const Color(0xFF00796B)),
+          theme: AppTheme.of(
+            brightness,
+            const Color(0xFF00796B),
+            // Explicit: the golden must not depend on the host's
+            // `defaultTargetPlatform`, which differs between macOS and the
+            // Ubuntu CI runner and selects a different text typography.
+            platform: TargetPlatform.android,
+          ),
           home: RepaintBoundary(
             key: const ValueKey('golden'),
             child: Scaffold(

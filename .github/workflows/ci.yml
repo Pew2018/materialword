@@ -49,7 +49,21 @@ jobs:
         run: flutter analyze
 
       - name: Test
+        id: test
         run: flutter test --reporter expanded
+
+      # Golden references are per host rasteriser (macOS uses CoreText, Linux
+      # uses FreeType). When a comparison fails, the master/test/diff images are
+      # the evidence needed to decide "real regression" vs "new platform
+      # baseline", so always keep them.
+      - name: Upload golden diffs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: golden-failures
+          path: test/failures/
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Cross-timezone event replay
         run: tool/verify_timezone_replay.sh
@@ -87,7 +101,40 @@ jobs:
       - run: dart run build_runner build
 
       - name: Build release APK (arm64 only)
-        run: flutter build apk --release --target-platform android-arm64
+        # Gradle retries individual artifact downloads (see android/gradle.properties),
+        # but a run can still fail if every attempt hits a 429/5xx window. Retry
+        # the whole build with backoff — no version downgrade, no mirror, no
+        # disabled TLS verification.
+        run: |
+          for attempt in 1 2 3; do
+            if flutter build apk --release --target-platform android-arm64; then
+              exit 0
+            fi
+            if [ "$attempt" = 3 ]; then
+              echo "APK build failed after $attempt attempts" >&2
+              exit 1
+            fi
+            echo "::warning::APK build attempt $attempt failed, retrying in $((attempt * 60))s"
+            sleep $((attempt * 60))
+          done
+
+      - name: Verify APK (ABI, application id, signature)
+        run: |
+          APK=build/app/outputs/flutter-apk/app-release.apk
+          test -f "$APK" || { echo "APK missing" >&2; exit 1; }
+          unzip -l "$APK" > apk-contents.txt
+          grep -q 'lib/arm64-v8a/libflutter.so' apk-contents.txt \
+            || { echo "APK has no arm64 engine" >&2; exit 1; }
+          if grep -q 'lib/armeabi-v7a/' apk-contents.txt; then
+            echo "APK unexpectedly contains 32-bit libraries" >&2
+            exit 1
+          fi
+          BUILD_TOOLS="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
+          "$BUILD_TOOLS/aapt" dump badging "$APK" | head -3
+          "$BUILD_TOOLS/aapt" dump badging "$APK" \
+            | grep -q "package: name='com.pew2018.materialword'" \
+            || { echo "unexpected application id" >&2; exit 1; }
+          "$BUILD_TOOLS/apksigner" verify --print-certs "$APK"
 
       - name: Collect artifact
         run: |
