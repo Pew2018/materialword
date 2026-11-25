@@ -29,6 +29,7 @@ class SettingsRepository {
   static const String lastSyncAtKey = 'last_sync_at';
   static const String lastSyncResultKey = 'last_sync_result';
   static const String syncConfigKey = 'sync_config';
+  static const String syncConfigRevisionKey = 'sync_config_revision';
   static const String pendingRebuildKey = 'pending_rebuild_words';
 
   Future<StudySettingsRow> load() async {
@@ -186,11 +187,40 @@ class SettingsRepository {
     return Map<String, Object?>.from(decoded);
   }
 
-  Future<void> setSyncConfig(Map<String, Object?>? config) async {
-    if (config == null) {
-      await db.deleteMeta(syncConfigKey);
-      return;
+  Future<void> setSyncConfig(Map<String, Object?>? config) =>
+      db.transaction(() async {
+        final revision =
+            int.tryParse(await db.readMeta(syncConfigRevisionKey) ?? '') ?? 0;
+        await db.writeMeta(syncConfigRevisionKey, '${revision + 1}');
+        if (config == null) {
+          await db.deleteMeta(syncConfigKey);
+          return;
+        }
+        await db.writeMeta(syncConfigKey, jsonEncode(config));
+      });
+
+  Future<bool> updateSyncAutoOption(
+    String key,
+    bool value, {
+    required Map<String, Object?> expected,
+  }) => db.transaction(() async {
+    const flags = {
+      'autoOnStart',
+      'autoOnResume',
+      'autoOnChange',
+      'autoAfterSession',
+    };
+    if (!flags.contains(key)) throw ArgumentError.value(key);
+    final current = await syncConfig();
+    if (current == null) return false;
+    String connection(Map<String, Object?> config) {
+      final keys = config.keys.where((k) => !flags.contains(k)).toList()
+        ..sort();
+      return jsonEncode({for (final k in keys) k: config[k]});
     }
-    await db.writeMeta(syncConfigKey, jsonEncode(config));
-  }
+
+    if (connection(current) != connection(expected)) return false;
+    await setSyncConfig({...current, key: value});
+    return true;
+  });
 }

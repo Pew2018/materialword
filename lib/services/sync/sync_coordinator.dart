@@ -96,8 +96,8 @@ class SyncCoordinator {
 
   bool _running = false;
   String? _activeTarget;
-  DateTime? _lastAutoAttempt;
-  bool _lastAutoFailed = false;
+  String? _activeConfigRevision;
+  bool _preparingAuto = false;
 
   bool get isRunning => _running;
 
@@ -136,9 +136,13 @@ class SyncCoordinator {
     }
     _running = true;
     _activeTarget = targetKey(provider);
-    final DateTime startedAt = clock.now();
     final List<String> notes = <String>[];
     try {
+      _activeConfigRevision = await db.readMeta(
+        SettingsRepository.syncConfigRevisionKey,
+      );
+      if (provider is GitHubSyncProvider) await provider.captureCredentials();
+      if (provider is WebDavSyncProvider) await provider.captureCredentials();
       onProgress?.call(SyncStage.validating, '检查配置');
       if (!skipConnectionTest || provider is WebDavSyncProvider) {
         final SyncTestResult test = await provider.testConnection();
@@ -281,42 +285,122 @@ class SyncCoordinator {
         }
       }
       throw const SyncException('同步未能完成：多次出现并发冲突，请稍后再试');
-    } on SyncException {
-      await _recordFailure(clock.now());
+    } on SyncException catch (e) {
+      await _recordFailure(clock.now(), message: '同步失败：${e.message}');
       rethrow;
     } catch (e) {
       await _recordFailure(clock.now());
       throw SyncException('同步失败：$e');
     } finally {
-      if (provider is WebDavSyncProvider) provider.close();
+      if (provider is WebDavSyncProvider) {
+        provider.clearCapturedCredentials();
+        provider.close();
+      }
+      if (provider is GitHubSyncProvider) provider.clearCapturedCredentials();
       _running = false;
-      _lastAutoAttempt = startedAt;
+      _activeTarget = null;
+      _activeConfigRevision = null;
     }
   }
 
-  /// Convenience wrapper for start-up / resume sync: honours the debounce and
-  /// never throws (the app must stay usable offline).
-  Future<SyncReport?> autoSync() async {
-    final Map<String, Object?>? config = await settings.syncConfig();
-    final SyncProvider? provider = providerFromConfig(config);
-    if (provider == null || !provider.supportsConditionalWrites || _running) {
+  static const Map<String, String> autoFlags = {
+    'start': 'autoOnStart',
+    'resume': 'autoOnResume',
+    'change': 'autoOnChange',
+    'session-end': 'autoAfterSession',
+  };
+
+  Future<Map<String, int>> _autoState(SyncProvider provider) async {
+    final raw = await db.readMeta('sync_auto:${targetKey(provider)}');
+    if (raw == null) return {};
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map || decoded.values.any((value) => value is! int)) {
+        return {};
+      }
+      return decoded.map((key, value) => MapEntry(key as String, value as int));
+    } on FormatException {
+      return {};
+    }
+  }
+
+  Future<Duration?> autoRetryDelay({String trigger = 'change'}) async {
+    final config = await settings.syncConfig();
+    if (config?[autoFlags[trigger]] != true) return null;
+    final provider = providerFromConfig(config);
+    if (provider == null ||
+        !provider.supportsConditionalWrites ||
+        !await hasSyncedTarget(provider)) {
       return null;
     }
-    if (!await hasSyncedTarget(provider)) return null;
-    final DateTime now = clock.now();
-    final DateTime? last = _lastAutoAttempt;
-    final Duration interval = _lastAutoFailed
-        ? autoSyncFailureBackoff
-        : autoSyncMinInterval;
-    if (last != null && now.difference(last) < interval) return null;
+    final state = await _autoState(provider),
+        now = clock.now().millisecondsSinceEpoch;
+    if (now < (state['attempt'] ?? 0)) return Duration.zero;
+    final remaining = (state['next'] ?? 0) - now;
+    return remaining > 0 ? Duration(milliseconds: remaining) : Duration.zero;
+  }
+
+  /// Foreground-only automatic sync; caller debounces actual edits.
+  /// Per-target attempt/backoff survives process restarts. Manual sync bypasses it.
+  Future<SyncReport?> autoSync({String trigger = 'start'}) async {
+    if (_running || _preparingAuto) return null;
+    _preparingAuto = true;
     try {
-      final SyncReport report = await sync(provider, skipConnectionTest: true);
-      _lastAutoFailed = false;
-      return report;
-    } on SyncException catch (e) {
-      _lastAutoFailed = true;
-      await settings.setLastSyncResult('自动同步失败：${e.message}');
-      return SyncReport(ok: false, message: e.message, at: clock.now());
+      final config = await settings.syncConfig();
+      if (config?[autoFlags[trigger]] != true) return null;
+      final provider = providerFromConfig(config);
+      if (provider == null ||
+          !provider.supportsConditionalWrites ||
+          !await hasSyncedTarget(provider)) {
+        return null;
+      }
+      final revision = await db.readMeta(
+        SettingsRepository.syncConfigRevisionKey,
+      );
+      final state = await _autoState(provider), now = clock.now();
+      final millis = now.millisecondsSinceEpoch;
+      if (millis >= (state['attempt'] ?? 0) && millis < (state['next'] ?? 0)) {
+        return null;
+      }
+      if ((trigger == 'change' || trigger == 'session-end') &&
+          !await hasLocalChanges(target: provider)) {
+        return null;
+      }
+      if (_running) return null;
+      await db.writeMeta(
+        'sync_auto:${targetKey(provider)}',
+        jsonEncode({
+          'attempt': millis,
+          'next': millis + autoSyncMinInterval.inMilliseconds,
+          'failures': state['failures'] ?? 0,
+        }),
+      );
+      try {
+        return await sync(provider, skipConnectionTest: true);
+      } on SyncException catch (e) {
+        final failures = ((state['failures'] ?? 0) + 1).clamp(1, 10);
+        final minutes = (5 * (1 << (failures - 1))).clamp(5, 60);
+        await db.writeMeta(
+          'sync_auto:${targetKey(provider)}',
+          jsonEncode({
+            'attempt': millis,
+            'next': clock
+                .now()
+                .add(Duration(minutes: minutes))
+                .millisecondsSinceEpoch,
+            'failures': failures,
+          }),
+        );
+        await db.transaction(() async {
+          if (await db.readMeta(SettingsRepository.syncConfigRevisionKey) ==
+              revision) {
+            await settings.setLastSyncResult('自动同步失败：${e.message}');
+          }
+        });
+        return SyncReport(ok: false, message: e.message, at: clock.now());
+      }
+    } finally {
+      _preparingAuto = false;
     }
   }
 
@@ -335,16 +419,25 @@ class SyncCoordinator {
     required String hash,
     String? revision,
     required String message,
-  }) async {
-    await settings.setLastSyncAt(now);
-    await settings.setLastSyncResult(message);
-    await db.writeMeta(lastLocalHashKey, hash);
-    if (revision != null) {
-      await db.writeMeta(lastRemoteRevisionKey, revision);
+  }) => db.transaction(() async {
+    if (await db.readMeta(SettingsRepository.syncConfigRevisionKey) ==
+        _activeConfigRevision) {
+      await settings.setLastSyncAt(now);
+      await settings.setLastSyncResult(message);
+      await db.writeMeta(lastLocalHashKey, hash);
+      if (revision != null) await db.writeMeta(lastRemoteRevisionKey, revision);
     }
     await db.deleteMeta(SettingsRepository.pendingRebuildKey);
     final target = _activeTarget;
     if (target != null) {
+      await db.writeMeta(
+        'sync_auto:$target',
+        jsonEncode({
+          'attempt': now.millisecondsSinceEpoch,
+          'next': now.add(autoSyncMinInterval).millisecondsSinceEpoch,
+          'failures': 0,
+        }),
+      );
       await db.writeMeta(
         'sync_target:$target',
         jsonEncode({
@@ -354,7 +447,7 @@ class SyncCoordinator {
         }),
       );
     }
-  }
+  });
 
   static String targetKey(SyncProvider provider) {
     final String identity = switch (provider) {
@@ -364,12 +457,14 @@ class SyncCoordinator {
         p.repo.toLowerCase(),
         p.branch,
         p.path,
+        p.identityEpoch,
       ]),
       WebDavSyncProvider p => jsonEncode([
         'webdav',
         p.baseUrl.trim().replaceAll(RegExp(r'/+$'), ''),
         p.remoteDir,
         p.fileName,
+        p.identityEpoch,
       ]),
       LocalFileSyncProvider p => jsonEncode(['local-file', p.filePath]),
       _ => provider.id,
@@ -380,9 +475,13 @@ class SyncCoordinator {
   Future<bool> hasSyncedTarget(SyncProvider provider) async =>
       await db.readMeta('sync_target:${targetKey(provider)}') != null;
 
-  Future<void> _recordFailure(DateTime now) async {
-    await settings.setLastSyncResult('同步失败');
-  }
+  Future<void> _recordFailure(DateTime now, {String message = '同步失败'}) =>
+      db.transaction(() async {
+        if (await db.readMeta(SettingsRepository.syncConfigRevisionKey) ==
+            _activeConfigRevision) {
+          await settings.setLastSyncResult(message);
+        }
+      });
 
   /// Writes a recovery marker before a long rebuild. The merge itself runs in a
   /// single transaction (so it rolls back cleanly), this is a belt-and-braces
@@ -423,8 +522,8 @@ class SyncCoordinator {
 
   /// Local changes that have not been pushed yet (best-effort indicator for the
   /// sync page). Compares the current content hash with the last synced hash.
-  Future<bool> hasLocalChanges() async {
-    final provider = providerFromConfig(await settings.syncConfig());
+  Future<bool> hasLocalChanges({SyncProvider? target}) async {
+    final provider = target ?? providerFromConfig(await settings.syncConfig());
     final raw = provider == null
         ? null
         : await db.readMeta('sync_target:${targetKey(provider)}');

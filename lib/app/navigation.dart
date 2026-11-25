@@ -104,6 +104,7 @@ class _AppShellState extends ConsumerState<AppShell>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    ref.read(autoSyncServiceProvider).start();
     _scheduleDayBoundary();
     _scheduleDueRefresh();
     _databaseChanges = ref.read(databaseProvider).tableUpdates().listen((
@@ -145,6 +146,9 @@ class _AppShellState extends ConsumerState<AppShell>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    ref
+        .read(autoSyncServiceProvider)
+        .setForeground(state == AppLifecycleState.resumed);
     if (state != AppLifecycleState.resumed) {
       ref.read(ttsServiceProvider).stop();
     }
@@ -215,7 +219,9 @@ class _AppShellState extends ConsumerState<AppShell>
     // data providers when it actually changed something.
     unawaited(() async {
       try {
-        final report = await ref.read(syncCoordinatorProvider).autoSync();
+        final report = await ref
+            .read(syncCoordinatorProvider)
+            .autoSync(trigger: start ? 'start' : 'resume');
         if (report != null && report.ok && report.merge != null) {
           _refreshDailyData();
         }

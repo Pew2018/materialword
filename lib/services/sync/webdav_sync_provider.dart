@@ -25,6 +25,7 @@ class WebDavSyncProvider implements SyncProvider {
     required this.baseUrl,
     this.remoteDir = 'materialword',
     this.fileName = 'materialword-data.json',
+    this.identityEpoch = '',
     CredentialStore? credentials,
     http.Client? client,
     String? usernameOverride,
@@ -44,6 +45,7 @@ class WebDavSyncProvider implements SyncProvider {
          baseUrl: (config['url'] as String?) ?? '',
          remoteDir: (config['dir'] as String?) ?? '',
          fileName: (config['file'] as String?) ?? 'materialword-data.json',
+         identityEpoch: (config['credentialEpoch'] as String?) ?? '',
          credentials: credentials,
          client: client,
          usernameOverride: usernameOverride,
@@ -56,11 +58,22 @@ class WebDavSyncProvider implements SyncProvider {
   final String baseUrl;
   final String remoteDir;
   final String fileName;
+  final String identityEpoch;
 
   final CredentialStore _credentials;
   final http.Client? _client;
   final String? _usernameOverride;
   final String? _passwordOverride;
+  ({String? username, String? password})? _capturedAuth;
+
+  Future<void> captureCredentials() => CredentialStore.exclusive(() async {
+    _capturedAuth = null;
+    _capturedAuth = await _auth();
+  });
+
+  void clearCapturedCredentials() {
+    _capturedAuth = null;
+  }
 
   static const int maxRedirects = 3;
 
@@ -125,6 +138,7 @@ class WebDavSyncProvider implements SyncProvider {
       _directoryUri.replace(path: '${_directoryUri.path}$fileName');
 
   Future<({String? username, String? password})> _auth() async {
+    if (_capturedAuth != null) return _capturedAuth!;
     try {
       final String? username =
           _usernameOverride ??

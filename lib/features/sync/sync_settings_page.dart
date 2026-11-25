@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../app/providers.dart';
 import '../../app/theme.dart';
@@ -48,6 +49,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       ];
 
   String _provider = 'none';
+  String _savedToken = '', _savedUser = '';
   final Map<String, String> _fields = <String, String>{};
   final TextEditingController _githubToken = TextEditingController();
   final TextEditingController _webdavUser = TextEditingController();
@@ -94,10 +96,12 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
     bool hasPassword = false;
     String? credentialNotice;
     try {
-      token = await credentials.read(CredentialKeys.githubToken);
-      user = await credentials.read(CredentialKeys.webdavUsername);
-      hasPassword =
-          (await credentials.read(CredentialKeys.webdavPassword)) != null;
+      await CredentialStore.exclusive(() async {
+        token = await credentials.read(CredentialKeys.githubToken);
+        user = await credentials.read(CredentialKeys.webdavUsername);
+        hasPassword =
+            (await credentials.read(CredentialKeys.webdavPassword)) != null;
+      });
     } on CredentialStoreUnavailable catch (e) {
       // The stored secrets are unreadable, not absent: ask the user to type
       // them again instead of pretending nothing was saved.
@@ -116,7 +120,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       // written under a different signature / Keychain class, or the Keychain
       // denied access. Either way the fix is the same — type it again.
       if (credentialNotice == null) {
-        if (_provider == 'github' && (token == null || token.isEmpty)) {
+        if (_provider == 'github' && (token?.isEmpty ?? true)) {
           credentialNotice = '未读取到已保存的 GitHub Token，请重新输入后再同步。';
         } else if (_provider == 'webdav' && !hasPassword) {
           credentialNotice = '未读取到已保存的 WebDAV 密码，请重新输入后再同步。';
@@ -128,8 +132,11 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
         ..addAll(<String, String>{
           for (final MapEntry<String, Object?> entry
               in (config ?? const <String, Object?>{}).entries)
-            if (entry.value is String) entry.key: entry.value! as String,
+            if (entry.value is String || entry.value is bool)
+              entry.key: '${entry.value}',
         });
+      _savedToken = token ?? '';
+      _savedUser = user ?? '';
       _githubToken.text = token ?? '';
       _webdavUser.text = user ?? '';
       _webdavPassword.text = hasPassword ? '••••••••' : '';
@@ -142,6 +149,49 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
 
   String _field(String key, {String fallback = ''}) => _fields[key] ?? fallback;
 
+  bool get _draftCredentialsChanged =>
+      (_provider == 'github' &&
+          _githubToken.text.trim() != _savedToken.trim()) ||
+      (_provider == 'webdav' &&
+          (_webdavUser.text.trim() != _savedUser.trim() ||
+              (_webdavPassword.text.isNotEmpty &&
+                  _webdavPassword.text != '••••••••')));
+
+  Future<void> _setAutoOption(String key, bool value) async {
+    setState(() => _fields[key] = value.toString());
+    final settings = ref.read(settingsRepositoryProvider);
+    final config = await settings.syncConfig();
+    if (!mounted) return;
+    final draftChanged =
+        config == null ||
+        config['provider'] != _provider ||
+        config.entries.any(
+          (e) => e.value is String && _fields[e.key] != e.value,
+        ) ||
+        (_provider == 'github' &&
+            _githubToken.text.trim() != _savedToken.trim()) ||
+        (_provider == 'webdav' &&
+            (_webdavUser.text.trim() != _savedUser.trim() ||
+                (_webdavPassword.text.isNotEmpty &&
+                    _webdavPassword.text != '••••••••')));
+    if (draftChanged) {
+      showMessage(context, '连接草稿尚未保存，自动选项将在「立即同步」时一并保存和验证');
+      return;
+    }
+    try {
+      final saved = await settings.updateSyncAutoOption(
+        key,
+        value,
+        expected: config,
+      );
+      if (!saved && mounted) {
+        showMessage(context, '连接配置已改变，请重新打开同步页后设置', error: true);
+      }
+    } catch (_) {
+      if (mounted) showMessage(context, '自动同步选项保存失败，请重试', error: true);
+    }
+  }
+
   SyncProvider? _buildProvider({bool draft = false}) {
     switch (_provider) {
       case 'local-file':
@@ -152,6 +202,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
           repo: _field('repo'),
           branch: _field('branch', fallback: 'main'),
           path: _field('path', fallback: 'materialword-data.json'),
+          identityEpoch: _field('credentialEpoch'),
           credentials: ref.read(credentialStoreProvider),
           tokenOverride: draft && _githubToken.text.trim().isNotEmpty
               ? _githubToken.text.trim()
@@ -162,6 +213,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
           baseUrl: _field('url'),
           remoteDir: _field('dir', fallback: 'materialword'),
           fileName: _field('file', fallback: 'materialword-data.json'),
+          identityEpoch: _field('credentialEpoch'),
           credentials: ref.read(credentialStoreProvider),
           usernameOverride: draft && _webdavUser.text.trim().isNotEmpty
               ? _webdavUser.text.trim()
@@ -187,27 +239,29 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
     final CredentialStore credentials = ref.read(credentialStoreProvider);
     if (persistSecrets) {
       try {
-        if (_provider == 'github' && _githubToken.text.trim().isNotEmpty) {
-          await credentials.write(
-            CredentialKeys.githubToken,
-            _githubToken.text.trim(),
-          );
-        }
-        if (_provider == 'webdav') {
-          if (_webdavUser.text.trim().isNotEmpty) {
+        await CredentialStore.exclusive(() async {
+          if (_provider == 'github' && _githubToken.text.trim().isNotEmpty) {
             await credentials.write(
-              CredentialKeys.webdavUsername,
-              _webdavUser.text.trim(),
+              CredentialKeys.githubToken,
+              _githubToken.text.trim(),
             );
           }
-          if (_webdavPassword.text.isNotEmpty &&
-              _webdavPassword.text != '••••••••') {
-            await credentials.write(
-              CredentialKeys.webdavPassword,
-              _webdavPassword.text,
-            );
+          if (_provider == 'webdav') {
+            if (_webdavUser.text.trim().isNotEmpty) {
+              await credentials.write(
+                CredentialKeys.webdavUsername,
+                _webdavUser.text.trim(),
+              );
+            }
+            if (_webdavPassword.text.isNotEmpty &&
+                _webdavPassword.text != '••••••••') {
+              await credentials.write(
+                CredentialKeys.webdavPassword,
+                _webdavPassword.text,
+              );
+            }
           }
-        }
+        });
       } on CredentialStoreUnavailable catch (e) {
         if (mounted) {
           setState(() {
@@ -224,6 +278,9 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       'provider': _provider,
       'autoOnStart': _fields['autoOnStart'] == 'true',
       'autoOnResume': _fields['autoOnResume'] == 'true',
+      'autoOnChange': _fields['autoOnChange'] == 'true',
+      'autoAfterSession': _fields['autoAfterSession'] == 'true',
+      'credentialEpoch': _field('credentialEpoch'),
     };
     switch (_provider) {
       case 'local-file':
@@ -256,6 +313,8 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       _testResult = null;
     });
     try {
+      if (provider is GitHubSyncProvider) await provider.captureCredentials();
+      if (provider is WebDavSyncProvider) await provider.captureCredentials();
       final SyncTestResult result = await provider.testConnection();
       if (!mounted) return;
       setState(() {
@@ -274,10 +333,19 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
         _busy = false;
         _error = '连接测试失败：$e';
       });
+    } finally {
+      if (provider is GitHubSyncProvider) provider.clearCapturedCredentials();
+      if (provider is WebDavSyncProvider) {
+        provider.clearCapturedCredentials();
+        provider.close();
+      }
     }
   }
 
   Future<void> _syncNow() async {
+    if (_draftCredentialsChanged) {
+      _fields['credentialEpoch'] = const Uuid().v4();
+    }
     final SyncProvider? provider = _buildProvider();
     if (provider == null) return;
     final SyncCoordinator coordinator = ref.read(syncCoordinatorProvider);
@@ -336,9 +404,6 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
         _error = e.message;
         _status = null;
       });
-      await ref
-          .read(settingsRepositoryProvider)
-          .setLastSyncResult('同步失败：${e.message}');
       await _load();
     } catch (e) {
       if (!mounted) return;
@@ -375,9 +440,11 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
     );
     if (!ok) return;
     final CredentialStore credentials = ref.read(credentialStoreProvider);
-    await credentials.delete(CredentialKeys.githubToken);
-    await credentials.delete(CredentialKeys.webdavPassword);
-    await credentials.delete(CredentialKeys.webdavUsername);
+    await CredentialStore.exclusive(() async {
+      await credentials.delete(CredentialKeys.githubToken);
+      await credentials.delete(CredentialKeys.webdavPassword);
+      await credentials.delete(CredentialKeys.webdavUsername);
+    });
     await ref.read(settingsRepositoryProvider).setSyncConfig(null);
     if (!mounted) return;
     setState(() {
@@ -413,6 +480,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
 
     final bool autoStart = _fields['autoOnStart'] == 'true';
     final bool autoResume = _fields['autoOnResume'] == 'true';
+    final bool canAuto = _provider != 'local-file';
 
     return Scaffold(
       appBar: AppBar(title: const Text('数据同步')),
@@ -464,9 +532,9 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
                   dense: true,
                   contentPadding: const EdgeInsets.symmetric(horizontal: 16),
                   value: autoStart,
-                  onChanged: (bool value) => setState(
-                    () => _fields['autoOnStart'] = value ? 'true' : 'false',
-                  ),
+                  onChanged: !canAuto || _busy
+                      ? null
+                      : (value) => _setAutoOption('autoOnStart', value),
                   title: const Text('启动时同步'),
                   subtitle: Text(
                     '不阻塞启动：应用始终先显示本地数据',
@@ -477,15 +545,36 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
                   dense: true,
                   contentPadding: const EdgeInsets.symmetric(horizontal: 16),
                   value: autoResume,
-                  onChanged: (bool value) => setState(
-                    () => _fields['autoOnResume'] = value ? 'true' : 'false',
-                  ),
+                  onChanged: !canAuto || _busy
+                      ? null
+                      : (value) => _setAutoOption('autoOnResume', value),
                   title: const Text('恢复前台时同步'),
                   subtitle: Text(
-                    '最多每分钟一次，失败后 5 分钟内不再重试',
+                    '最多每分钟一次，失败退避 5–60 分钟，重启后仍保留',
                     style: theme.textTheme.bodySmall,
                   ),
                 ),
+                SwitchListTile(
+                  value: _fields['autoOnChange'] == 'true',
+                  onChanged: !canAuto || _busy
+                      ? null
+                      : (value) => _setAutoOption('autoOnChange', value),
+                  title: const Text('数据变化后自动同步'),
+                  subtitle: const Text('停止修改 20 秒后检查；持续背词不会每次请求网络'),
+                ),
+                SwitchListTile(
+                  value: _fields['autoAfterSession'] == 'true',
+                  onChanged: !canAuto || _busy
+                      ? null
+                      : (value) => _setAutoOption('autoAfterSession', value),
+                  title: const Text('本轮学习结束后同步'),
+                  subtitle: const Text('遵守同一冷却与退避规则，不阻塞学习'),
+                ),
+                if (!canAuto)
+                  const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text('本地文件仅用于手动合并；自动双向同步请选择支持条件写入的远程目标。'),
+                  ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
                   child: Wrap(

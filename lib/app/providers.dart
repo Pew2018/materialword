@@ -20,6 +20,7 @@ import '../services/sync/credential_store.dart';
 import '../services/sync/github_sync_provider.dart';
 import '../services/sync/local_file_sync_provider.dart';
 import '../services/sync/sync_coordinator.dart';
+import '../services/sync/auto_sync_service.dart';
 import '../services/sync/sync_provider.dart';
 import '../services/sync/webdav_sync_provider.dart';
 import '../services/tts_service.dart';
@@ -152,6 +153,15 @@ final FutureProvider<StudyStatistics> statisticsProvider =
 final Provider<TtsService> ttsServiceProvider = Provider<TtsService>(
   (Ref ref) => TtsService(),
 );
+
+final autoSyncServiceProvider = Provider<AutoSyncService>((ref) {
+  final service = AutoSyncService(
+    db: ref.watch(databaseProvider),
+    coordinator: ref.watch(syncCoordinatorProvider),
+  );
+  ref.onDispose(service.dispose);
+  return service;
+});
 
 final Provider<CredentialStore> credentialStoreProvider =
     Provider<CredentialStore>((Ref ref) => SecureCredentialStore());

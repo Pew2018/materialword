@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
@@ -28,6 +30,36 @@ class CredentialStoreUnavailable implements Exception {
 /// SQLite database, to backup JSON or to logs. [SecureCredentialStore] uses the
 /// platform keychain/keystore; [InMemoryCredentialStore] exists for tests only.
 abstract class CredentialStore {
+  static bool _exclusiveBusy = false;
+  static final _exclusiveQueue = <Future<void> Function()>[];
+
+  /// Serialize multi-key credential reads/writes without persisting secrets.
+  static Future<T> exclusive<T>(Future<T> Function() operation) {
+    final result = Completer<T>();
+    _exclusiveQueue.add(
+      Zone.current.bindCallback(() async {
+        try {
+          final value = await operation();
+          _exclusiveBusy = false;
+          _drainExclusive();
+          result.complete(value);
+        } catch (error, stack) {
+          _exclusiveBusy = false;
+          _drainExclusive();
+          result.completeError(error, stack);
+        }
+      }),
+    );
+    _drainExclusive();
+    return result.future;
+  }
+
+  static void _drainExclusive() {
+    if (_exclusiveBusy || _exclusiveQueue.isEmpty) return;
+    _exclusiveBusy = true;
+    unawaited(_exclusiveQueue.removeAt(0)());
+  }
+
   Future<String?> read(String key);
 
   Future<void> write(String key, String value);

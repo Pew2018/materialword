@@ -394,6 +394,7 @@ class BackupService {
       if (stamps is! Map) invalid('fieldVersions');
       for (final entry in stamps.entries) {
         if (!ContentSyncRepository.fields(kind).contains(entry.key) ||
+            !row.containsKey(entry.key) ||
             entry.value is! Map) {
           invalid('fieldVersions');
         }

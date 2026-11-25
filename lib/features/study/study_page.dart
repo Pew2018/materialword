@@ -74,6 +74,10 @@ class _StudyPageState extends ConsumerState<StudyPage> {
   }
 
   void _onSessionChanged() {
+    if (_session.isFinished &&
+        _session.newAnswered + _session.reviewAnswered > 0) {
+      ref.read(autoSyncServiceProvider).requestSessionEnd();
+    }
     final StudyCard? card = _session.current;
     final String? id = card?.word.id;
     if (id == _lastCardId) return;

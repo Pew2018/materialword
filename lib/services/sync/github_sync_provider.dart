@@ -14,14 +14,16 @@ import 'sync_provider.dart';
 /// carries the `sha` it was based on, so GitHub rejects a stale write with
 /// 409/422 instead of letting one device silently overwrite another.
 ///
-/// Security: the fine-grained PAT is read from the platform credential store on
-/// every call and is never written to SQLite, the backup JSON or the log.
+/// Security: complete syncs capture one in-memory credential snapshot and clear
+/// it afterwards. Standalone calls read secure storage; secrets never enter
+/// SQLite, the backup JSON or logs.
 class GitHubSyncProvider implements SyncProvider {
   GitHubSyncProvider({
     required this.owner,
     required this.repo,
     this.branch = 'main',
     this.path = 'materialword-data.json',
+    this.identityEpoch = '',
     CredentialStore? credentials,
     http.Client? client,
     String? tokenOverride,
@@ -38,6 +40,7 @@ class GitHubSyncProvider implements SyncProvider {
          repo: (config['repo'] as String?) ?? '',
          branch: (config['branch'] as String?) ?? 'main',
          path: (config['path'] as String?) ?? 'materialword-data.json',
+         identityEpoch: (config['credentialEpoch'] as String?) ?? '',
          credentials: credentials,
          client: client,
        );
@@ -49,10 +52,24 @@ class GitHubSyncProvider implements SyncProvider {
   final String repo;
   final String branch;
   final String path;
+  final String identityEpoch;
 
   final CredentialStore _credentials;
   final http.Client? _client;
   final String? _tokenOverride;
+  String? _capturedToken;
+  bool _hasCapturedToken = false;
+
+  Future<void> captureCredentials() => CredentialStore.exclusive(() async {
+    clearCapturedCredentials();
+    _capturedToken = await _token();
+    _hasCapturedToken = true;
+  });
+
+  void clearCapturedCredentials() {
+    _capturedToken = null;
+    _hasCapturedToken = false;
+  }
 
   /// Contents API is documented for files up to 100 MB, but anything above a
   /// few MB is a bad idea for a JSON document that is rewritten every sync.
@@ -117,6 +134,7 @@ class GitHubSyncProvider implements SyncProvider {
   }
 
   Future<String?> _token() async {
+    if (_hasCapturedToken) return _capturedToken;
     if (_tokenOverride != null && _tokenOverride.isNotEmpty) {
       return _tokenOverride;
     }
