@@ -10,8 +10,13 @@ import 'sync_coordinator.dart';
 ///
 /// Besides the debounced "this device changed" trigger, a low-frequency
 /// foreground poll asks the remote whether *it* changed. The poll is a metadata
-/// request ([SyncProvider.remoteRevision]), not a download, and it inherits the
+/// request ([SyncProvider.probeRemote]), not a download, and it inherits the
 /// same cooldown/backoff state, so there is no request storm.
+///
+/// The poll is enabled by any of the user's automatic-sync switches
+/// ([SyncCoordinator.foregroundProbeEnabled]); it has no separate setting,
+/// because "check whether the other device wrote something" is not a decision a
+/// user should have to make.
 class AutoSyncService {
   AutoSyncService({required this.db, required this.coordinator});
   final AppDatabase db;

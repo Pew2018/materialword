@@ -13,6 +13,8 @@ import 'package:materialword/services/backup_service.dart';
 import 'package:materialword/services/backup_manager.dart';
 import 'package:materialword/services/import_service.dart';
 import 'package:materialword/services/study_session.dart';
+import 'package:materialword/services/sync/conflict_resolution_service.dart';
+import 'package:materialword/services/sync/conflict_store.dart';
 import 'package:materialword/services/sync/credential_store.dart';
 import 'package:materialword/services/sync/sync_coordinator.dart';
 import 'package:materialword/services/word_intake_service.dart';
@@ -83,6 +85,17 @@ class TestEnv {
     credentials: InMemoryCredentialStore(),
     clock: clock,
   );
+
+  late final SyncConflictStore conflicts = SyncConflictStore(db);
+
+  late final SyncConflictResolutionService conflictResolution =
+      SyncConflictResolutionService(
+        db: db,
+        words: words,
+        wordBooks: books,
+        intake: intake,
+        conflicts: conflicts,
+      );
 
   ImportService importService({
     bool withDictionary = false,

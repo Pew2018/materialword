@@ -130,18 +130,50 @@ SELECT b.id, b.name, b.description, b.source_type, b.source_url,
     required DateTime now,
   }) => _edit(id, now: now, description: description);
 
+  /// Edits where an online book came from. Used when a discarded conflict value
+  /// on `sourceType` / `sourceUrl` is restored; still a normal edit.
+  Future<void> updateSource(
+    String id, {
+    String? sourceType,
+    String? sourceUrl,
+    required DateTime now,
+  }) => _edit(id, now: now, sourceType: sourceType, sourceUrl: sourceUrl);
+
+  /// Revives a soft-deleted book. Unlike [_edit] this is allowed to touch a
+  /// tombstoned row, because the user explicitly asked for it.
+  Future<void> restore(String id, {required DateTime now}) =>
+      db.transaction(() async {
+        final WordBook? book = await byId(id);
+        if (book == null || book.deletedAt == null) return;
+        final updated = book.copyWith(
+          deletedAt: const Value<int?>(null),
+          updatedAt: now.millisecondsSinceEpoch,
+          revision: book.revision + 1,
+        );
+        await ContentSyncRepository(db)
+            .recordEdit('book', id, book.toJson(), updated.toJson(), now: now);
+        await db.update(db.wordBooks).replace(updated);
+      });
+
   Future<void> _edit(
     String id, {
     required DateTime now,
     String? name,
     String? description,
+    String? sourceType,
+    String? sourceUrl,
   }) => db.transaction(() async {
     final book = await byId(id);
     if (book == null || book.deletedAt != null) return;
-    if (name != null && name.isEmpty) throw StateError('词书名称不能为空');
+    final trimmedName = name?.trim();
+    if (trimmedName != null && trimmedName.isEmpty) {
+      throw StateError('词书名称不能为空');
+    }
     final updated = book.copyWith(
-      name: name,
+      name: trimmedName,
       description: description,
+      sourceType: sourceType,
+      sourceUrl: sourceUrl,
       updatedAt: now.millisecondsSinceEpoch,
       revision: book.revision + 1,
     );

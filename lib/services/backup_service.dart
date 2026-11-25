@@ -851,6 +851,7 @@ class BackupService {
     void Function(String phase, Duration elapsed)? onPhase,
     bool legacyWordMerge = false,
     bool applySharedSettings = true,
+    bool forceSharedSettings = false,
     List<FieldConflict>? conflictSink,
   }) async {
     final Stopwatch clock = Stopwatch()..start();
@@ -984,11 +985,15 @@ class BackupService {
         if (incoming.deletedAt == null) newBooks++;
         continue;
       }
-      final merged = await content.merge(
+      // `mergeWithStamps` (not `merge`) so the per-field details reach the
+      // conflict log: a book rename/description/deletion conflict must be
+      // restorable by the user, exactly like a word field.
+      final merged = await content.mergeWithStamps(
         'book',
         id,
         _bookToJson(local),
         presentFields(node, _bookToJson(incoming)),
+        await content.versions('book', id),
       );
       if (merged.changed) {
         final updated = _bookFromJson(Map<String, dynamic>.from(merged.row))!
@@ -996,7 +1001,8 @@ class BackupService {
         await db.update(db.wordBooks).replace(updated);
         updatedBooks++;
       }
-      if (merged.conflict) conflicts++;
+      conflicts += merged.conflicts.length;
+      conflictDetails.addAll(merged.conflicts);
     }
 
     phase('books');
@@ -1181,7 +1187,14 @@ class BackupService {
 
     phase('events');
     // Shared settings use a Lamport counter plus a stable source-device tie break.
+    //
+    // [forceSharedSettings] is the point-in-time-restore case: the user asked for
+    // "the device as it was at this instant", so the snapshot's values win even
+    // though its counter is lower than the current one. Leaving the version rule
+    // in charge there would produce a mixture — words and events from the past,
+    // daily targets from the present — which is not a restore at all.
     final Object? sharedSettings = valid['settings'];
+    bool settingsApplied = false;
     if (applySharedSettings && sharedSettings is Map<String, dynamic>) {
       final rawVersion = sharedSettings['version'];
       final Map<String, Object?>? incomingVersion = rawVersion is Map
@@ -1194,7 +1207,8 @@ class BackupService {
         throw const BackupException('共享设置版本无效');
       }
       final localVersion = await settings.sharedVersion();
-      if ((incomingVersion != null &&
+      if (forceSharedSettings ||
+          (incomingVersion != null &&
               SettingsRepository.compareVersions(
                     incomingVersion,
                     localVersion,
@@ -1223,10 +1237,16 @@ class BackupService {
                       (sharedSettings['sprintPlan'] as Map)['bookId'],
                 })
               : null,
+          // A legacy snapshot may predate the version field. Forcing values
+          // without a version must not *lower* the counter (that would make the
+          // next merge lose every setting); keep it monotonic instead.
           importedVersion:
               incomingVersion ??
-              <String, Object?>{'counter': 0, 'deviceId': ''},
+              (forceSharedSettings
+                  ? null
+                  : <String, Object?>{'counter': 0, 'deviceId': ''}),
         );
+        settingsApplied = true;
       }
     }
 
@@ -1254,7 +1274,7 @@ class BackupService {
       rebuiltStates: touchedWords.length,
       skippedEntries: skipped,
       conflicts: conflicts,
-      settingsKept: true,
+      settingsKept: !settingsApplied,
       conflictDetails: conflictDetails,
     );
   }

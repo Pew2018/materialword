@@ -94,16 +94,19 @@ class LocalFileSyncProvider implements SyncProvider {
   /// Content hash of the file: detecting a change requires reading it, which is
   /// cheap for a local file and never touches the network.
   @override
-  Future<String?> remoteRevision() async {
+  Future<RemoteProbe> probeRemote() async {
     _validatePath();
     final File file = File(filePath);
-    if (!file.existsSync()) return null;
+    if (!file.existsSync()) return const RemoteProbe.missing();
     try {
-      return revisionOf(await file.readAsBytes());
+      return RemoteProbe.revision(revisionOf(await file.readAsBytes()));
     } on FileSystemException {
-      return null;
+      return const RemoteProbe.unsupported();
     }
   }
+
+  @override
+  Future<String?> remoteRevision() async => (await probeRemote()).revision;
 
   @override
   Future<SyncPayload?> download() async {

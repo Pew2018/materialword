@@ -100,6 +100,40 @@ class SyncDataException extends SyncException {
   final int? remoteVersion;
 }
 
+enum RemoteProbeKind {
+  /// The remote exists and its revision token was read.
+  revision,
+
+  /// The remote document is definitively **not there**.
+  missing,
+
+  /// This provider cannot answer without transferring the dataset, or it is not
+  /// configured yet. Unknown is *not* the same as "missing".
+  unsupported,
+}
+
+/// Result of a cheap "has the remote changed?" probe.
+///
+/// [SyncProvider.remoteRevision] returned `null` both for "no such file" and for
+/// "I cannot tell", which made the foreground check treat a deleted remote as
+/// "nothing changed" and stay silent forever. This type keeps the two apart.
+class RemoteProbe {
+  const RemoteProbe.revision(String this.revision)
+    : kind = RemoteProbeKind.revision;
+
+  const RemoteProbe.missing() : kind = RemoteProbeKind.missing, revision = null;
+
+  const RemoteProbe.unsupported()
+    : kind = RemoteProbeKind.unsupported,
+      revision = null;
+
+  final RemoteProbeKind kind;
+  final String? revision;
+
+  bool get isMissing => kind == RemoteProbeKind.missing;
+  bool get isUnsupported => kind == RemoteProbeKind.unsupported;
+}
+
 abstract class SyncProvider {
   String get id;
 
@@ -122,11 +156,16 @@ abstract class SyncProvider {
 
   /// Cheap "has the remote changed?" probe used by the foreground check.
   ///
-  /// Returns the same opaque revision [download] would return, or null when the
-  /// provider cannot answer without a full download. Implementations must not
-  /// transfer the dataset: a polling loop that re-downloads 40 MB every few
-  /// minutes is not acceptable.
-  Future<String?> remoteRevision() async => null;
+  /// Implementations must not transfer the dataset: a polling loop that
+  /// re-downloads 40 MB every few minutes is not acceptable. Providers that
+  /// cannot answer must return [RemoteProbe.unsupported], and providers that
+  /// learn the document is gone must return [RemoteProbe.missing] so the caller
+  /// can stop instead of silently assuming "no change".
+  Future<RemoteProbe> probeRemote() async => const RemoteProbe.unsupported();
+
+  /// Revision-only form of [probeRemote], kept for callers that do not care
+  /// about the missing/unsupported distinction.
+  Future<String?> remoteRevision() async => (await probeRemote()).revision;
 
   /// Returns the remote dataset, or null when the remote has no data yet.
   Future<SyncPayload?> download();
@@ -167,6 +206,9 @@ class UnimplementedSyncProvider implements SyncProvider {
   bool get supportsConditionalWrites => false;
 
   Never _fail() => throw SyncException('$label 未配置：请先在「数据同步」页面填写连接信息。');
+
+  @override
+  Future<RemoteProbe> probeRemote() async => const RemoteProbe.unsupported();
 
   @override
   Future<String?> remoteRevision() async => null;

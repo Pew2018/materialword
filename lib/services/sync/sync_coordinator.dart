@@ -417,10 +417,12 @@ class SyncCoordinator {
     }
   }
 
-  /// True when the remote revision differs from the one this device last saw.
+  /// True when the remote is not what this device last synced against.
   ///
-  /// Uses [SyncProvider.remoteRevision] so the foreground check costs a metadata
-  /// request, not a full download.
+  /// [SyncProvider.probeRemote] keeps "the document is gone" apart from "this
+  /// provider cannot tell": a target that synced successfully and now reports a
+  /// missing remote **has changed**, and pretending otherwise would leave a
+  /// device silently stuck on a remote that was deleted by someone else.
   Future<bool> remoteChanged({SyncProvider? provider}) async {
     final SyncProvider? target =
         provider ?? providerFromConfig(await settings.syncConfig());
@@ -429,22 +431,48 @@ class SyncCoordinator {
     if (raw == null) return true;
     String? lastRevision;
     try {
-      lastRevision = (jsonDecode(raw) as Map)['revision'] as String?;
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is! Map) return true;
+      lastRevision = decoded['revision'] as String?;
     } on FormatException {
       return true;
+    } on TypeError {
+      return true;
     }
-    final String? current = await target.remoteRevision();
-    if (current == null) return false;
-    return current != lastRevision;
+    final RemoteProbe probe = await target.probeRemote();
+    return switch (probe.kind) {
+      RemoteProbeKind.unsupported => false,
+      // Report a change so the guarded sync path raises remoteMissing instead of
+      // silently returning "nothing to do".
+      RemoteProbeKind.missing => true,
+      RemoteProbeKind.revision => probe.revision != lastRevision,
+    };
   }
 
+  /// Automatic-sync switches the settings page can write.
   static const Map<String, String> autoFlags = {
     'start': 'autoOnStart',
     'resume': 'autoOnResume',
     'change': 'autoOnChange',
     'session-end': 'autoAfterSession',
-    'foreground': 'autoOnForeground',
   };
+
+  /// The low-frequency foreground remote check is an internal reliability
+  /// mechanism, not a user preference: it only runs when the user has asked for
+  /// *some* automatic sync and the target supports conditional writes. It never
+  /// had a settings row of its own, so enabling it can no longer depend on a
+  /// config key that nothing writes.
+  static bool foregroundProbeEnabled(Map<String, Object?>? config) {
+    if (config == null) return false;
+    return autoFlags.values.any((String flag) => config[flag] == true);
+  }
+
+  static bool _triggerEnabled(Map<String, Object?>? config, String trigger) {
+    if (config == null) return false;
+    if (trigger == 'foreground') return foregroundProbeEnabled(config);
+    final String? flag = autoFlags[trigger];
+    return flag != null && config[flag] == true;
+  }
 
   Future<Map<String, int>> _autoState(SyncProvider provider) async {
     final raw = await db.readMeta('sync_auto:${targetKey(provider)}');
@@ -462,7 +490,7 @@ class SyncCoordinator {
 
   Future<Duration?> autoRetryDelay({String trigger = 'change'}) async {
     final config = await settings.syncConfig();
-    if (config?[autoFlags[trigger]] != true) return null;
+    if (!_triggerEnabled(config, trigger)) return null;
     final provider = providerFromConfig(config);
     if (provider == null ||
         !provider.supportsConditionalWrites ||
@@ -488,7 +516,7 @@ class SyncCoordinator {
     try {
       if (await settings.syncPaused()) return null;
       final config = await settings.syncConfig();
-      if (config?[autoFlags[trigger]] != true) return null;
+      if (!_triggerEnabled(config, trigger)) return null;
       final provider = providerFromConfig(config);
       if (provider == null ||
           !provider.supportsConditionalWrites ||
@@ -767,6 +795,14 @@ class ScriptedSyncProvider implements SyncProvider {
   String? lastIfRevision;
   bool _conflicted = false;
 
+  /// Drops the remote document, as if someone deleted the file in the repo or
+  /// on the WebDAV server. The revision goes with it — a file that is not there
+  /// has no version — so a later unconditional upload can recreate it.
+  void deleteRemoteDocument() {
+    _remote = null;
+    _revision = null;
+  }
+
   @override
   String get id => 'scripted';
 
@@ -794,6 +830,11 @@ class ScriptedSyncProvider implements SyncProvider {
     if (data == null) return null;
     return SyncPayload(dataset: data, revision: _revision);
   }
+
+  @override
+  Future<RemoteProbe> probeRemote() async => _remote == null
+      ? const RemoteProbe.missing()
+      : RemoteProbe.revision(_revision ?? '');
 
   @override
   Future<String?> remoteRevision() async => _remote == null ? null : _revision;

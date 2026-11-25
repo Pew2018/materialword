@@ -331,27 +331,35 @@ class GitHubSyncProvider implements SyncProvider {
   /// same request still returns the `sha` plus `encoding: none`. Either way this
   /// is a few hundred bytes instead of the whole dataset.
   @override
-  Future<String?> remoteRevision() async {
-    if (!isConfigured) return null;
+  Future<RemoteProbe> probeRemote() async {
+    // Not configured / no token: we cannot tell, which is not "missing".
+    if (!isConfigured) return const RemoteProbe.unsupported();
     final String? token = await _token();
-    if (token == null) return null;
+    if (token == null) return const RemoteProbe.unsupported();
     final response = await _get(
       _contentsUri.replace(queryParameters: {'ref': branch}),
       token,
     );
-    if (response.statusCode == 404) return null;
+    if (response.statusCode == 404) {
+      // The path (or the whole branch) is gone. A previous successful sync
+      // treats that as a remote deletion, not as "unchanged".
+      return const RemoteProbe.missing();
+    }
     if (response.statusCode != 200) _raise(response, '检查远程版本');
     try {
       final Object? node = jsonDecode(response.body);
       if (node is Map<String, dynamic>) {
         final Object? sha = node['sha'];
-        return sha is String && sha.isNotEmpty ? sha : null;
+        if (sha is String && sha.isNotEmpty) return RemoteProbe.revision(sha);
       }
-      return null;
+      return const RemoteProbe.unsupported();
     } on FormatException {
       throw const SyncDataException('GitHub 返回的版本信息无效');
     }
   }
+
+  @override
+  Future<String?> remoteRevision() async => (await probeRemote()).revision;
 
   @override
   Future<SyncPayload?> download() async {

@@ -6,6 +6,7 @@ import '../../app/providers.dart';
 import '../../app/theme.dart';
 import '../../core/time_utils.dart';
 import '../../services/backup_files.dart';
+import '../../services/sync/conflict_resolution_service.dart';
 import '../../services/sync/conflict_store.dart';
 import '../../services/sync/credential_store.dart';
 import '../../services/sync/github_sync_provider.dart';
@@ -528,7 +529,9 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
   }
 
   /// Restoring the discarded value is a **new normal edit**, so the existing
-  /// field-version rules decide who wins on the next sync.
+  /// field-version rules decide who wins on the next sync. The field-by-field
+  /// decision lives in [SyncConflictResolutionService]; this method only
+  /// confirms, calls it and reports.
   Future<void> _restoreConflict(StoredSyncConflict conflict) async {
     final bool ok = await confirmDialog(
       context,
@@ -536,70 +539,31 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       message:
           '「${conflict.label.isEmpty ? conflict.entityId : conflict.label}」的 '
           '${_fieldLabel(conflict.field)} 将改回：\n'
-          '${_displayValue(conflict.discardedValue)}\n\n'
+          '${_displayValue(conflict.field, conflict.discardedValue)}\n\n'
           '这会记录为一次新的本机编辑，并按字段版本同步到其他设备。',
       confirmLabel: '恢复',
     );
     if (!ok || !mounted) return;
     try {
-      final now = ref.read(clockProvider).now();
-      if (conflict.kind == 'word') {
-        if (conflict.field == 'deletedAt') {
-          if (conflict.discardedValue == null) {
-            await ref
-                .read(wordRepositoryProvider)
-                .softDelete(conflict.entityId, now: now);
-          } else {
-            await ref
-                .read(wordIntakeProvider)
-                .reviveById(conflict.entityId, now: now);
-          }
-        } else {
-          final String? text = conflict.discardedValue?.toString();
-          await ref
-              .read(wordRepositoryProvider)
-              .updateContent(
-                conflict.entityId,
-                phonetic: conflict.field == 'phonetic' ? text : null,
-                partOfSpeech: conflict.field == 'partOfSpeech' ? text : null,
-                translation: conflict.field == 'translation' ? text : null,
-                definition: conflict.field == 'definition' ? text : null,
-                example: conflict.field == 'example' ? text : null,
-                phrase: conflict.field == 'phrase' ? text : null,
-                note: conflict.field == 'note' ? text : null,
-                text: conflict.field == 'word' ? text : null,
-                now: now,
-              );
-        }
-      } else if (conflict.field == 'name') {
-        await ref
-            .read(wordBookRepositoryProvider)
-            .rename(
-              conflict.entityId,
-              conflict.discardedValue?.toString() ?? '',
-              now: now,
-            );
-      } else if (conflict.field == 'description') {
-        await ref
-            .read(wordBookRepositoryProvider)
-            .updateDescription(
-              conflict.entityId,
-              conflict.discardedValue?.toString() ?? '',
-              now: now,
-            );
-      } else {
-        setState(() => _error = '该字段不支持在此恢复：${conflict.field}');
-        return;
-      }
-      await ref.read(syncConflictStoreProvider).dismiss(conflict.id);
+      final outcome = await ref
+          .read(syncConflictResolutionProvider)
+          .restoreDiscardedValue(conflict, now: ref.read(clockProvider).now());
       ref.invalidate(todayProgressProvider);
       ref.invalidate(bookSummariesProvider);
       if (!mounted) return;
-      setState(() => _status = '已恢复为另一份内容（将作为一次新的编辑同步）');
+      setState(() {
+        _status =
+            '已恢复「${_fieldLabel(outcome.field)}」'
+            '（将作为一次新的编辑同步）';
+        _error = null;
+      });
       await _load();
+    } on ConflictRestoreException catch (e) {
+      if (!mounted) return;
+      setState(() => _error = '恢复失败：${e.message}（冲突记录已保留）');
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = '恢复失败：$e');
+      setState(() => _error = '恢复失败：$e（冲突记录已保留）');
     }
   }
 
@@ -617,13 +581,20 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
     'example' => '例句',
     'phrase' => '短语',
     'note' => '笔记',
+    'source' => '来源',
+    'examTags' => '考试标签',
+    'bncRank' => 'BNC 词频',
+    'frqRank' => 'COCA 词频',
     'deletedAt' => '删除状态',
     'name' => '词书名称',
     'description' => '词书描述',
+    'sourceType' => '词书来源类型',
+    'sourceUrl' => '词书来源链接',
     _ => field,
   };
 
-  String _displayValue(Object? value) {
+  String _displayValue(String field, Object? value) {
+    if (field == 'deletedAt') return value == null ? '未删除' : '已删除';
     if (value == null) return '（空）';
     if (value is String) return value.isEmpty ? '（空）' : value;
     return '$value';
@@ -696,6 +667,13 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
     final bool autoStart = _fields['autoOnStart'] == 'true';
     final bool autoResume = _fields['autoOnResume'] == 'true';
     final bool canAuto = _provider != 'local-file';
+
+    /// The remote file disappeared after a successful sync. Re-creating it is a
+    /// deliberate user decision, so the affordance must appear for an automatic
+    /// run's result too — not only for a manual one that set [_error].
+    final bool remoteMissing =
+        (_error ?? '').contains('远程数据文件已被删除') ||
+        (_lastResult ?? '').contains('远程数据文件已被删除');
 
     return Scaffold(
       appBar: AppBar(title: const Text('数据同步')),
@@ -909,8 +887,8 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
                         ' · ${_fieldLabel(conflict.field)}',
                       ),
                       subtitle: Text(
-                        '保留：${_displayValue(conflict.adoptedValue)}\n'
-                        '被覆盖：${_displayValue(conflict.discardedValue)}',
+                        '保留：${_displayValue(conflict.field, conflict.adoptedValue)}\n'
+                        '被覆盖：${_displayValue(conflict.field, conflict.discardedValue)}',
                         maxLines: 3,
                         overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.bodySmall,
@@ -918,13 +896,23 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
                       trailing: Wrap(
                         spacing: 4,
                         children: <Widget>[
-                          IconButton(
-                            tooltip: '恢复被覆盖的内容',
-                            icon: const Icon(Icons.undo),
-                            onPressed: _busy
-                                ? null
-                                : () => _restoreConflict(conflict),
-                          ),
+                          // A field this build cannot write back must not offer a
+                          // button that would only pretend to restore.
+                          if (SyncConflictResolutionService.canRestore(
+                            conflict,
+                          ))
+                            IconButton(
+                              tooltip: '恢复被覆盖的内容',
+                              icon: const Icon(Icons.undo),
+                              onPressed: _busy
+                                  ? null
+                                  : () => _restoreConflict(conflict),
+                            )
+                          else
+                            const Tooltip(
+                              message: '该字段仅用于诊断，不支持恢复',
+                              child: Icon(Icons.info_outline),
+                            ),
                           IconButton(
                             tooltip: '忽略这条记录',
                             icon: const Icon(Icons.close),
@@ -975,7 +963,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
                     child: Text(_status!, style: theme.textTheme.bodySmall),
                   ),
-                if (_error != null && _error!.contains('远程数据文件已被删除'))
+                if (remoteMissing)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                     child: OutlinedButton(

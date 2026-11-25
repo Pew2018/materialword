@@ -292,6 +292,41 @@ class WordRepository {
     return updated;
   });
 
+  /// Edits the dictionary-derived metadata (source / exam tags / ranks).
+  ///
+  /// `null` means "leave alone", like [updateContent]. Used by the conflict
+  /// recovery path: restoring a discarded `examTags` value must be an ordinary
+  /// edit with its own field version, not a silent column rewrite.
+  Future<Word> updateMetadata(
+    String id, {
+    String? source,
+    String? examTags,
+    int? bncRank,
+    int? frqRank,
+    required DateTime now,
+  }) => db.transaction(() async {
+    final Word? existing = await byId(id);
+    if (existing == null) throw StateError('word not found: $id');
+    if (existing.deletedAt != null) throw StateError('词条已删除，请通过重新添加恢复');
+    final Word updated = existing.copyWith(
+      source: source,
+      examTags: examTags,
+      bncRank: bncRank,
+      frqRank: frqRank,
+      revision: existing.revision + 1,
+      updatedAt: now.millisecondsSinceEpoch,
+    );
+    if (!ContentSyncRepository.wordFields.any(
+      (field) => existing.toJson()[field] != updated.toJson()[field],
+    )) {
+      return existing;
+    }
+    await ContentSyncRepository(db)
+        .recordEdit('word', id, existing.toJson(), updated.toJson(), now: now);
+    await db.update(db.words).replace(updated);
+    return updated;
+  });
+
   /// Fills in phonetic / translation / definition from the offline dictionary.
   /// Never overwrites content the user typed (T20).
   Future<Word> applyDictionaryInfo({

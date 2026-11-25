@@ -26,6 +26,7 @@ import '../services/sync/github_sync_provider.dart';
 import '../services/sync/local_file_sync_provider.dart';
 import '../services/sync/sync_coordinator.dart';
 import '../services/sync/auto_sync_service.dart';
+import '../services/sync/conflict_resolution_service.dart';
 import '../services/sync/conflict_store.dart';
 import '../services/sync/sync_provider.dart';
 import '../services/sync/webdav_sync_provider.dart';
@@ -98,6 +99,19 @@ final backupManagerProvider = Provider<BackupManager>(
 final Provider<SyncConflictStore> syncConflictStoreProvider =
     Provider<SyncConflictStore>(
       (Ref ref) => SyncConflictStore(ref.watch(databaseProvider)),
+    );
+
+/// Turns a recorded conflict back into a normal local edit. Lives outside the
+/// widget so every recoverable field is handled in one place.
+final Provider<SyncConflictResolutionService> syncConflictResolutionProvider =
+    Provider<SyncConflictResolutionService>(
+      (Ref ref) => SyncConflictResolutionService(
+        db: ref.watch(databaseProvider),
+        words: ref.watch(wordRepositoryProvider),
+        wordBooks: ref.watch(wordBookRepositoryProvider),
+        intake: ref.watch(wordIntakeProvider),
+        conflicts: ref.watch(syncConflictStoreProvider),
+      ),
     );
 
 /// Dictionary loading is lazy: the bundled SQLite file is only copied/opened the
