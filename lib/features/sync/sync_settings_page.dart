@@ -1232,19 +1232,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
         ? AppColors.textSecondaryDark
         : AppColors.textSecondaryLight;
     final SyncCapability? capability = _testResult?.capability ?? _capability;
-    final List<String> details = capability == null
-        ? _testResult?.details ?? const <String>[]
-        : <String>[
-            if (capability.reachable) context.l10n.webDavServerResponded,
-            if (capability.directoryAccessible)
-              capability.directoryListingSupported
-                  ? context.l10n.webDavFolderBrowsable
-                  : context.l10n.webDavFolderAccessible,
-            if (capability.canCreate &&
-                capability.canRead &&
-                capability.canUpdate)
-              context.l10n.webDavProbeReadWrite,
-          ];
+    final List<String> details = _testResult?.details ?? const <String>[];
 
     if (capability == null) {
       if (_testResult != null) {
@@ -1305,6 +1293,15 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       color: visual.$2,
       text: syncCapabilitySummary(context.l10n, capability),
       hint: null,
+      facts: <String>[
+        if (capability.reachable) context.l10n.webDavServerResponded,
+        if (capability.directoryAccessible)
+          capability.directoryListingSupported
+              ? context.l10n.webDavFolderBrowsable
+              : context.l10n.webDavFolderAccessible,
+        if (capability.canCreate && capability.canRead && capability.canUpdate)
+          context.l10n.webDavProbeReadWrite,
+      ],
       details: details,
     );
   }
@@ -1334,6 +1331,11 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
             Padding(
               padding: const EdgeInsets.only(top: 4),
               child: Text(visual.hint!, style: theme.textTheme.bodySmall),
+            ),
+          for (final String fact in visual.facts)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(fact, style: theme.textTheme.bodySmall),
             ),
           if (visual.details.isNotEmpty)
             ExpansionTile(
@@ -1547,6 +1549,7 @@ class _StatusVisual {
     required this.text,
     required this.details,
     this.hint,
+    this.facts = const <String>[],
   });
 
   final IconData icon;
@@ -1554,6 +1557,7 @@ class _StatusVisual {
   final String text;
   final String? hint;
   final List<String> details;
+  final List<String> facts;
 }
 
 /// One visual shell for every connection field on this page.

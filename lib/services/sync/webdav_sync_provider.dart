@@ -572,6 +572,18 @@ class WebDavSyncProvider implements SyncProvider {
     return entries;
   }
 
+  static String _multistatusBody(http.Response response) {
+    final String contentType = response.headers['content-type'] ?? '';
+    if (RegExp(
+      r';\s*charset\s*=',
+      caseSensitive: false,
+    ).hasMatch(contentType)) {
+      return response.body;
+    }
+    // WebDAV XML is commonly UTF-8 with no HTTP charset parameter.
+    return utf8.decode(response.bodyBytes);
+  }
+
   ({String? tag, String kind, String match, String propstat}) _fileEtag(
     String body,
     Uri requested,
@@ -685,13 +697,29 @@ class WebDavSyncProvider implements SyncProvider {
     final Uri requested = response.request?.url ?? uri;
     WebDavDirectoryEntry? self;
     String? fileTag;
+    String body = '';
     if (response.statusCode == 207 || response.statusCode == 200) {
-      self = _parseMultistatus(
-        response.body,
-        requested,
-      ).where((WebDavDirectoryEntry e) => e.uri == requested).firstOrNull;
-      if (resolvedProfile == WebDavPropfindProfile.fileMetadata) {
-        final evidence = _fileEtag(response.body, requested);
+      final bool fileMetadata =
+          resolvedProfile == WebDavPropfindProfile.fileMetadata;
+      try {
+        body = _multistatusBody(response);
+        self = _parseMultistatus(
+          body,
+          requested,
+        ).where((WebDavDirectoryEntry e) => e.uri == requested).firstOrNull;
+      } on FormatException {
+        if (!fileMetadata) {
+          throw const SyncDataException('WebDAV 返回了无法解码的 XML');
+        }
+        body = '';
+      } on SyncDataException {
+        if (!fileMetadata) rethrow;
+        body = '';
+      }
+      if (fileMetadata) {
+        final evidence = body.isEmpty
+            ? (tag: null, kind: 'absent', match: 'missing', propstat: 'missing')
+            : _fileEtag(body, requested);
         fileTag = evidence.tag;
         trace.add(
           WebDavTraceEntry(
@@ -716,7 +744,7 @@ class WebDavSyncProvider implements SyncProvider {
       uri: requested,
       etag: fileTag,
       length: self?.size,
-      body: response.body,
+      body: body,
     );
   }
 
@@ -1518,7 +1546,7 @@ class WebDavSyncProvider implements SyncProvider {
     final String selfPath = p.relativePathOf(target) ?? '';
     final List<WebDavDirectoryEntry> entries = <WebDavDirectoryEntry>[];
     for (final WebDavDirectoryEntry entry in _parseMultistatus(
-      response.body,
+      _multistatusBody(response),
       response.request?.url ?? target,
     )) {
       if (entry.uri.origin != p.base.origin) continue;

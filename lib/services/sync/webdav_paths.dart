@@ -206,8 +206,8 @@ class WebDavPaths {
     }
     try {
       // Validates even escapes which Uri.resolve might otherwise preserve.
-      Uri.decodeComponent(raw);
       final Uri href = requested.resolve(raw);
+      Uri.decodeComponent(href.path);
       return !href.hasQuery &&
           !href.hasFragment &&
           href.userInfo.isEmpty &&

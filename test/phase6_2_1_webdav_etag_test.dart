@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -39,24 +41,43 @@ void main() {
     });
   }
 
-  for (final href in <String Function(Uri)>[
-    (uri) => uri.path,
-    (uri) => uri.toString(),
-    (uri) => uri.pathSegments.last,
+  for (final (kind, href) in <(String, String Function(Uri))>[
+    ('encoded absolute path', (uri) => uri.path),
+    ('absolute URI', (uri) => uri.toString()),
+    ('relative path', (uri) => uri.pathSegments.last),
+    ('Unicode path', (uri) => Uri.decodeComponent(uri.path)),
   ]) {
-    test('XML matches the probe after unrelated responses', () async {
-      final server = _Dav()
-        ..getHeader = ((_) => null)
-        ..xml = (uri, tag) =>
-            _response('/dav/another.json', '"unrelated"') +
-            _response(href(uri), tag);
-      final result = await server.provider.testConnection();
-      expect(result.capability!.safeBidirectionalSync, isTrue);
-      expect(result.capability!.supportsConditionalRead, isTrue);
-      expect(server.details, contains('self_match=matched'));
-      expect(server.details, contains('getetag_propstat=200'));
-    });
+    test(
+      'XML matches the probe from a $kind after unrelated responses',
+      () async {
+        final server = _Dav()
+          ..getHeader = ((_) => null)
+          ..xml = (uri, tag) =>
+              _response('/dav/another.json', '"unrelated"') +
+              _response(href(uri), tag);
+        final result = await server.provider.testConnection();
+        expect(result.capability!.safeBidirectionalSync, isTrue);
+        expect(result.capability!.supportsConditionalRead, isTrue);
+        expect(server.details, contains('self_match=matched'));
+        expect(server.details, contains('getetag_propstat=200'));
+      },
+    );
   }
+
+  test('Metadata resolves relative href at the redirected file URI', () async {
+    final server = _Dav()
+      ..getHeader = ((_) => null)
+      ..redirectProbe = true
+      ..xml = (uri, tag) => _response(uri.pathSegments.last, tag);
+    final result = await server.provider.testConnection();
+    expect(result.capability!.safeBidirectionalSync, isTrue);
+    expect(result.capability!.supportsConditionalRead, isTrue);
+    expect(server.details, contains('self_match=matched'));
+    expect(
+      server.requests.any((r) => r.url.path.startsWith('/canonical/')),
+      isTrue,
+    );
+  });
 
   for (final (name, output, match)
       in <(String, String Function(Uri, String), String)>[
@@ -185,6 +206,7 @@ class _Dav {
   int revision = 0;
   int datasetRevision = 1;
   bool raceOnDatasetConditionalGet = false;
+  bool redirectProbe = false;
   bool ignoreConditionalGet = false;
   String? ignoredPutCondition;
   String? Function(String) getHeader = (tag) => tag;
@@ -206,6 +228,13 @@ class _Dav {
     requests.add(request);
     final Uri uri = request.url;
     final bool probe = uri.path.contains('materialword-probe-');
+    if (probe && redirectProbe && !uri.path.startsWith('/canonical/')) {
+      return http.Response(
+        '',
+        307,
+        headers: {'location': '/canonical/${uri.pathSegments.last}'},
+      );
+    }
     final bool realFile = uri.path.endsWith('materialword-data.json');
     final String? current = probe ? body : dataset;
     final String tag =
@@ -222,13 +251,16 @@ class _Dav {
             headers: {'location': '/dav/?secret-query=1'},
           );
         }
-        return http.Response(
-          '<multistatus xmlns="DAV:">'
-          '${probe || realFile ? xml(uri, tag) : '<response><href>${uri.path}</href>'
-                    '<propstat><prop><resourcetype><collection/></resourcetype></prop>'
-                    '<status>HTTP/1.1 200 OK</status></propstat></response>'}'
-          '</multistatus>',
+        return http.Response.bytes(
+          utf8.encode(
+            '<multistatus xmlns="DAV:">'
+            '${probe || realFile ? xml(uri, tag) : '<response><href>${uri.path}</href>'
+                      '<propstat><prop><resourcetype><collection/></resourcetype></prop>'
+                      '<status>HTTP/1.1 200 OK</status></propstat></response>'}'
+            '</multistatus>',
+          ),
           207,
+          headers: {'content-type': 'application/xml'},
         );
       case 'PUT':
         if (!probe) return http.Response('', 500);

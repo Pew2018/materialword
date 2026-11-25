@@ -173,7 +173,7 @@ void main() {
         ),
       );
 
-      expect(find.text('此服务器暂不支持安全的多设备同步'), findsOneWidget);
+      expect(find.text('基础读写可用，未能验证安全同步'), findsOneWidget);
       expect(
         tester
             .widget<Icon>(find.byIcon(Icons.warning_amber_outlined).first)
@@ -235,7 +235,7 @@ void main() {
         jsonEncode(<String, Object?>{'hash': 'x', 'revision': '"r1"'}),
       );
 
-      expect(find.text('自动同步尚未启用：请先「测试连接」完成安全写入验证。'), findsOneWidget);
+      expect(find.text('自动同步已暂停。请先通过「测试连接」验证安全写入。'), findsOneWidget);
       final Finder tile = find.widgetWithText(SwitchListTile, '启动时同步');
       await reveal(tester, tile);
       expect(
@@ -275,6 +275,9 @@ void main() {
       await tapTest(tester);
 
       expect(find.text('连接成功，可以同步'), findsOneWidget);
+      expect(find.text('服务器已响应。'), findsOneWidget);
+      expect(find.text('文件夹可访问，也可浏览。'), findsOneWidget);
+      expect(find.text('临时测试文件已成功写入并读回。'), findsOneWidget);
       expect(find.text('技术详情'), findsOneWidget);
       expect(
         find.text('· 基础读写验证通过：创建、读回、更新、删除'),
