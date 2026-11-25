@@ -327,11 +327,14 @@ class WebDavSyncProvider implements SyncProvider {
           return response;
         }
         final Uri next = current.resolve(location);
-        if (next.origin != current.origin) {
+        if (next.origin != current.origin || next.userInfo.isNotEmpty) {
           record(response, 'cross_origin_redirect');
           throw const SyncException('WebDAV 服务器重定向到其他主机，已拒绝携带认证信息继续请求');
         }
         record(response, 'redirect');
+        watch
+          ..reset()
+          ..start();
         redirects++;
         current = next;
         continue;
@@ -493,7 +496,13 @@ class WebDavSyncProvider implements SyncProvider {
       final String? hrefText = _childText(response, 'href');
       if (hrefText == null) continue;
       final Uri? href = model?.resolveHref(hrefText, requested);
-      if (href == null || href.origin != requested.origin) continue;
+      if (href == null ||
+          href.origin != requested.origin ||
+          href.userInfo.isNotEmpty ||
+          href.hasQuery ||
+          href.hasFragment) {
+        continue;
+      }
       bool collection = false;
       int? size;
       String? displayName;
@@ -1202,7 +1211,10 @@ class WebDavSyncProvider implements SyncProvider {
           capability.status == SyncCapabilityStatus.safeConditionalWrite) {
         details.add('数据文件可读取，强 ETag 可用');
       }
-      if (capability.canCreate && capability.canUpdate) {
+      if (capability.canRead &&
+          capability.canCreate &&
+          capability.canUpdate &&
+          capability.canDelete) {
         details.add('基础读写验证通过：创建、读回、更新、删除');
       }
       if (capability.safeBidirectionalSync) {
@@ -1292,14 +1304,14 @@ class WebDavSyncProvider implements SyncProvider {
     final List<WebDavDirectoryEntry> entries = <WebDavDirectoryEntry>[];
     for (final WebDavDirectoryEntry entry in _parseMultistatus(
       response.body,
-      target,
+      response.request?.url ?? target,
     )) {
       if (entry.uri.origin != p.base.origin) continue;
       if (p.relativePathOf(entry.uri) == null) continue;
-      if (entry.path == selfPath &&
-          entry.uri.path.length <= target.path.length) {
-        continue;
-      }
+      final String prefix = selfPath.isEmpty ? '' : '$selfPath/';
+      if (!entry.path.startsWith(prefix)) continue;
+      final String child = entry.path.substring(prefix.length);
+      if (child.isEmpty || child.contains('/')) continue;
       final String segment =
           entry.path.split('/').where((String s) => s.isNotEmpty).lastOrNull ??
           '';
