@@ -89,6 +89,8 @@ class WebDavServer {
   /// server's own mount point and always exists.
   final collections = <String>{'/dav/'};
 
+  final List<String> requestTargets = <String>[];
+
   final requests =
       <({String method, String path, String? match, String? none})>[];
 
@@ -305,6 +307,7 @@ class WebDavServer {
   }
 
   Future<void> _handle(HttpRequest request) async {
+    requestTargets.add(request.uri.toString());
     final String path = request.uri.path;
     final String? match = request.headers.value('if-match');
     final String? none = request.headers.value('if-none-match');

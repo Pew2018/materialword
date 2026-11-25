@@ -1272,6 +1272,10 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
         Icons.warning_amber_outlined,
         AppColors.hazy,
       ),
+      SyncCapabilityStatus.requestRejected => (
+        Icons.error_outline,
+        AppColors.unknown,
+      ),
       SyncCapabilityStatus.directoryUnavailable => (
         Icons.folder_off_outlined,
         AppColors.unknown,
@@ -1290,7 +1294,9 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       icon: visual.$1,
       color: visual.$2,
       text: syncCapabilitySummary(context.l10n, capability),
-      hint: capability.detail,
+      hint: capability.status == SyncCapabilityStatus.requestRejected
+          ? null
+          : capability.detail,
       details: details,
     );
   }

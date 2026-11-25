@@ -3113,6 +3113,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get syncCapabilityAuthFailed => '认证失败：账号或密码不正确';
 
   @override
+  String get syncCapabilityRequestRejected => '服务器无法处理当前 WebDAV 请求';
+
+  @override
   String get syncCapabilityNoFolder => '已连接，但无法访问此文件夹';
 
   @override

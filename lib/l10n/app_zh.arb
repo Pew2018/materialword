@@ -915,6 +915,7 @@
   "syncCapabilityUnknown": "尚未验证连接",
   "syncCapabilityConnectionFailed": "无法连接服务器",
   "syncCapabilityAuthFailed": "认证失败：账号或密码不正确",
+  "syncCapabilityRequestRejected": "服务器无法处理当前 WebDAV 请求",
   "syncCapabilityNoFolder": "已连接，但无法访问此文件夹",
   "syncCapabilityReadOnly": "已连接，但只能读取，无法写入",
   "syncCapabilityUnsafe": "此服务器暂不支持安全同步",

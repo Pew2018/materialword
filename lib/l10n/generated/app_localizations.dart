@@ -5588,6 +5588,12 @@ abstract class AppLocalizations {
   /// **'Sign-in failed. Check the account and password.'**
   String get syncCapabilityAuthFailed;
 
+  /// No description provided for @syncCapabilityRequestRejected.
+  ///
+  /// In en, this message translates to:
+  /// **'The server could not process the WebDAV request'**
+  String get syncCapabilityRequestRejected;
+
   /// No description provided for @syncCapabilityNoFolder.
   ///
   /// In en, this message translates to:

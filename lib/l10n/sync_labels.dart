@@ -40,6 +40,7 @@ String syncCapabilityLabel(
   SyncCapabilityStatus.unknown => l10n.syncCapabilityUnknown,
   SyncCapabilityStatus.connectionFailed => l10n.syncCapabilityConnectionFailed,
   SyncCapabilityStatus.authenticationFailed => l10n.syncCapabilityAuthFailed,
+  SyncCapabilityStatus.requestRejected => l10n.syncCapabilityRequestRejected,
   SyncCapabilityStatus.directoryUnavailable => l10n.syncCapabilityNoFolder,
   SyncCapabilityStatus.readOnly => l10n.syncCapabilityReadOnly,
   SyncCapabilityStatus.basicReadWrite => l10n.syncCapabilityUnsafe,

@@ -1,7 +1,26 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:materialword/services/sync/webdav_paths.dart';
+import 'package:materialword/services/sync/webdav_sync_provider.dart';
+
+import 'helpers/webdav_server.dart';
 
 void main() {
+  test('DAV-R03 sends the exact collection request target over HTTPS', () async {
+    final server = await WebDavServer.start();
+    addTearDown(server.close);
+    final provider = WebDavSyncProvider(
+      baseUrl: server.baseUrl,
+      usernameOverride: 'test',
+      passwordOverride: 'local-only',
+      client: server.client,
+      traceDiagnostics: false,
+    );
+
+    await provider.listDirectories();
+
+    expect(server.requestTargets, <String>['/dav/']);
+  });
+
   test(
     'DAV-R01 through R04 base URI preserves trailing slash without query',
     () {

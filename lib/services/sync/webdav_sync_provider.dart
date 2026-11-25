@@ -21,6 +21,7 @@ class WebDavDirectoryEntry {
     required this.uri,
     required this.isCollection,
     this.size,
+    this.etag,
   });
 
   /// Display name: `<d:displayname>` when the server sends one, otherwise the
@@ -32,6 +33,7 @@ class WebDavDirectoryEntry {
   final Uri uri;
   final bool isCollection;
   final int? size;
+  final String? etag;
 
   @override
   String toString() => '${isCollection ? 'dir' : 'file'}:$path';
@@ -122,6 +124,8 @@ class WebDavSyncProvider implements SyncProvider {
 
   void clearCapturedCredentials() {
     _capturedAuth = null;
+    _propfindModes.clear();
+    _collectionDepthOne = false;
   }
 
   static const int maxRedirects = 3;
@@ -270,9 +274,9 @@ class WebDavSyncProvider implements SyncProvider {
           depth: depth,
           propfindProfile: propfindProfile,
           compatibilityMode: compatibilityMode,
-          serverErrorCode: response == null
-              ? null
-              : _serverErrorCode(response.body),
+          serverErrorCode: response != null && response.statusCode >= 400
+              ? _serverErrorCode(response.body)
+              : null,
           status: response?.statusCode,
           durationMs: watch.elapsedMilliseconds,
           redirects: redirects,
@@ -387,34 +391,46 @@ class WebDavSyncProvider implements SyncProvider {
         '</d:prop></d:propfind>';
   }
 
+  final Map<WebDavPropfindProfile, String> _propfindModes =
+      <WebDavPropfindProfile, String>{};
+  bool _collectionDepthOne = false;
+
+  static bool _requestRejected(int status) =>
+      status == 400 || status == 405 || status == 415;
+
   Future<http.Response> _sendPropfind(
     Uri uri, {
     required String depth,
     required WebDavPropfindProfile profile,
     required WebDavStage stage,
   }) async {
-    for (final String mode in <String>[
+    final String? preferred = _propfindModes[profile];
+    final Set<String> modes = <String>{
+      if (preferred != null) preferred,
       'application/xml',
       'text/xml',
       'no_body',
-    ]) {
+    };
+    final authHeaders = await _headers();
+    for (final String mode in modes) {
       final http.Response response = await _send(
         'PROPFIND',
         uri,
-        headers: await _headers(
-          extra: <String, String>{
-            'Depth': depth,
-            if (mode != 'no_body') 'Content-Type': '$mode; charset=utf-8',
-          },
-        ),
+        headers: <String, String>{
+          ...authHeaders,
+          'Depth': depth,
+          if (mode != 'no_body') 'Content-Type': '$mode; charset=utf-8',
+        },
         body: mode == 'no_body' ? null : utf8.encode(_propfindBody(profile)),
         stage: stage,
         depth: depth,
         propfindProfile: profile.name,
         compatibilityMode: mode,
       );
-      if (!<int>{400, 405, 415}.contains(response.statusCode) ||
-          mode == 'no_body') {
+      if (response.statusCode == 200 || response.statusCode == 207) {
+        _propfindModes[profile] = mode;
+      }
+      if (!_requestRejected(response.statusCode) || mode == modes.last) {
         return response;
       }
     }
@@ -433,20 +449,19 @@ class WebDavSyncProvider implements SyncProvider {
     if (!body.trimLeft().startsWith('<')) return null;
     try {
       final XmlDocument xml = XmlDocument.parse(body);
-      for (final String name in <String>[
-        'exception',
-        'message',
-        'responsedescription',
-      ]) {
-        final String? value = xml.descendants
-            .whereType<XmlElement>()
-            .where((XmlElement e) => e.name.local == name)
-            .map((XmlElement e) => e.innerText.trim())
-            .where((String value) => value.isNotEmpty)
-            .firstOrNull;
-        if (value != null)
-          return value.length > 100 ? value.substring(0, 100) : value;
+      const Set<String> knownCodes = <String>{
+        'OperationNotAllowed',
+        'valid-sync-token',
+        'lock-token-submitted',
+        'no-conflicting-lock',
+      };
+      for (final XmlElement element in xml.descendants.whereType<XmlElement>()) {
+        final String code = element.name.local == 'exception'
+            ? element.innerText.trim()
+            : element.name.local;
+        if (knownCodes.contains(code)) return code;
       }
+      if (xml.rootElement.name.local == 'error') return 'dav_xml_error';
     } on XmlException {
       return null;
     }
@@ -478,10 +493,11 @@ class WebDavSyncProvider implements SyncProvider {
       final String? hrefText = _childText(response, 'href');
       if (hrefText == null) continue;
       final Uri? href = model?.resolveHref(hrefText, requested);
-      if (href == null || model?.relativePathOf(href) == null) continue;
+      if (href == null || href.origin != requested.origin) continue;
       bool collection = false;
       int? size;
       String? displayName;
+      String? etag;
       for (final XmlElement propstat in response.childElements.where(
         (XmlElement e) => e.name.local == 'propstat',
       )) {
@@ -499,6 +515,7 @@ class WebDavSyncProvider implements SyncProvider {
               )) {
             collection = true;
           }
+          etag ??= strongEtag(_childText(prop, 'getetag'));
           final String? length = _childText(prop, 'getcontentlength');
           if (length != null) size = int.tryParse(length);
           final String? name = _childText(prop, 'displayname');
@@ -513,6 +530,7 @@ class WebDavSyncProvider implements SyncProvider {
           uri: href,
           isCollection: collection,
           size: size,
+          etag: etag,
         ),
       );
     }
@@ -526,68 +544,41 @@ class WebDavSyncProvider implements SyncProvider {
     WebDavStage stage = WebDavStage.targetDirectoryProbe,
     WebDavPropfindProfile? profile,
   }) async {
-    final http.Response response = await _sendPropfind(
-      uri,
-      depth: depth,
-      profile:
-          profile ??
-          (stage == WebDavStage.baseCollectionProbe ||
-                  stage == WebDavStage.targetDirectoryProbe ||
-                  stage == WebDavStage.directoryCreation
-              ? WebDavPropfindProfile.collectionProbe
-              : stage == WebDavStage.directoryListing
-              ? WebDavPropfindProfile.directoryListing
-              : WebDavPropfindProfile.fileMetadata),
-      stage: stage,
-    );
-    String? etag;
-    int? length;
+    final WebDavPropfindProfile resolvedProfile =
+        profile ??
+        switch (stage) {
+          WebDavStage.baseCollectionProbe ||
+          WebDavStage.targetDirectoryProbe ||
+          WebDavStage.directoryCreation => WebDavPropfindProfile.collectionProbe,
+          WebDavStage.directoryListing => WebDavPropfindProfile.directoryListing,
+          _ => WebDavPropfindProfile.fileMetadata,
+        };
+    final bool collection =
+        resolvedProfile == WebDavPropfindProfile.collectionProbe;
+    final String firstDepth = collection && _collectionDepthOne ? '1' : depth;
+    Future<http.Response> send(String depth) =>
+        _sendPropfind(uri, depth: depth, profile: resolvedProfile, stage: stage);
+    http.Response response = await send(firstDepth);
+    if (collection &&
+        firstDepth == '0' &&
+        (response.statusCode == 400 || response.statusCode == 405)) {
+      response = await send('1');
+      _collectionDepthOne =
+          response.statusCode == 200 || response.statusCode == 207;
+    }
+    WebDavDirectoryEntry? self;
     if (response.statusCode == 207 || response.statusCode == 200) {
-      final List<WebDavDirectoryEntry> entries = _parseMultistatus(
-        response.body,
-        uri,
-      );
-      etag = strongEtag(_etagOfXml(response.body));
-      length = entries
-          .where(
-            (WebDavDirectoryEntry e) =>
-                e.uri.path == uri.path && e.uri.origin == uri.origin,
-          )
-          .firstOrNull
-          ?.size;
+      final Uri requested = response.request?.url ?? uri;
+      self = _parseMultistatus(response.body, requested)
+          .where((WebDavDirectoryEntry e) => e.uri == requested)
+          .firstOrNull;
     }
     return (
       status: response.statusCode,
-      etag: etag,
-      length: length,
+      etag: self?.etag,
+      length: self?.size,
       body: response.body,
     );
-  }
-
-  String? _etagOfXml(String xml) {
-    try {
-      final XmlDocument document = XmlDocument.parse(xml);
-      for (final XmlElement response
-          in document.descendants.whereType<XmlElement>().where(
-            (XmlElement e) => e.name.local == 'response',
-          )) {
-        for (final XmlElement propstat in response.childElements.where(
-          (XmlElement e) => e.name.local == 'propstat',
-        )) {
-          final String status = _childText(propstat, 'status') ?? '';
-          if (!RegExp(r'\s2\d\d(?:\s|$)').hasMatch(status)) continue;
-          for (final XmlElement tag
-              in propstat.descendants.whereType<XmlElement>().where(
-                (XmlElement e) => e.name.local == 'getetag',
-              )) {
-            if (tag.innerText.trim().isNotEmpty) return tag.innerText.trim();
-          }
-        }
-      }
-      return null;
-    } on XmlException {
-      throw const SyncDataException('WebDAV 返回了无效的 XML');
-    }
   }
 
   /// Reads the ETag of [uri] via PROPFIND (used when PUT does not echo one).
@@ -744,15 +735,14 @@ class WebDavSyncProvider implements SyncProvider {
       }
       if (base.status != 200 && base.status != 207) {
         return SyncCapability(
-          status: base.status == 400 || base.status == 405 || base.status == 415
+          status: _requestRejected(base.status)
               ? SyncCapabilityStatus.requestRejected
               : SyncCapabilityStatus.directoryUnavailable,
           reachable: true,
-          authenticated: base.status == 403 || base.status == 404,
           failureStage: 'base_collection_probe',
           failureMethod: 'PROPFIND',
           failureStatus: base.status,
-          detail: base.status == 400 || base.status == 405 || base.status == 415
+          detail: _requestRejected(base.status)
               ? '服务器无法处理当前 WebDAV 请求（HTTP ${base.status}）'
               : '服务器地址中的基础路径 ${p.basePath} 不存在或不可访问',
         );

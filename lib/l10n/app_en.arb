@@ -2151,6 +2151,7 @@
   "syncCapabilityUnknown": "Connection not verified",
   "syncCapabilityConnectionFailed": "Can't reach the server",
   "syncCapabilityAuthFailed": "Sign-in failed. Check the account and password.",
+  "syncCapabilityRequestRejected": "The server could not process the WebDAV request",
   "syncCapabilityNoFolder": "Connected, but this folder isn't accessible",
   "syncCapabilityReadOnly": "Connected, but read-only",
   "syncCapabilityUnsafe": "This server doesn't support safe syncing",

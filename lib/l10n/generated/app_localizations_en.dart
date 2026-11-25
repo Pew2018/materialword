@@ -3397,6 +3397,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'Sign-in failed. Check the account and password.';
 
   @override
+  String get syncCapabilityRequestRejected =>
+      'The server could not process the WebDAV request';
+
+  @override
   String get syncCapabilityNoFolder =>
       'Connected, but this folder isn\'t accessible';
 
