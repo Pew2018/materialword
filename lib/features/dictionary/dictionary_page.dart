@@ -222,192 +222,194 @@ class _DictionaryPageState extends ConsumerState<DictionaryPage> {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool desktop = isDesktopPlatform(context);
-    return ListView(
-      padding: const EdgeInsets.only(bottom: 24),
-      children: <Widget>[
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-          child: TextField(
-            controller: _query,
-            focusNode: widget.searchFocusNode,
-            autofocus: false,
-            textInputAction: TextInputAction.search,
-            decoration: InputDecoration(
-              hintText: desktop ? '查询离线词典（⌘F）' : '查询离线词典',
-              prefixIcon: const Icon(Icons.search),
-              suffixIcon: _term.isEmpty
-                  ? null
-                  : IconButton(
-                      tooltip: '清空',
-                      icon: const Icon(Icons.clear),
-                      onPressed: () {
-                        _query.clear();
-                        _onChanged('');
+    return ContentColumn(
+      child: ListView(
+        padding: const EdgeInsets.only(bottom: 24),
+        children: <Widget>[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: TextField(
+              controller: _query,
+              focusNode: widget.searchFocusNode,
+              autofocus: false,
+              textInputAction: TextInputAction.search,
+              decoration: InputDecoration(
+                hintText: desktop ? '查询离线词典（⌘F）' : '查询离线词典',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _term.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: '清空',
+                        icon: const Icon(Icons.clear),
+                        onPressed: () {
+                          _query.clear();
+                          _onChanged('');
+                        },
+                      ),
+              ),
+              onChanged: _onChanged,
+              onSubmitted: _run,
+            ),
+          ),
+          if (_searching)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16),
+              child: LinearProgressIndicator(minHeight: 2),
+            ),
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: ErrorBanner(message: _error!, onRetry: () => _run(_term)),
+            ),
+          if (_term.isEmpty) ...<Widget>[
+            if (_recent.isNotEmpty) ...<Widget>[
+              SectionHeader(
+                title: '最近搜索',
+                trailing: TextButton(
+                  onPressed: _clearRecent,
+                  child: const Text('清除历史'),
+                ),
+              ),
+              SettingsGroup(
+                children: <Widget>[
+                  for (final String term in _recent)
+                    SettingsTile(
+                      leading: const Icon(Icons.history),
+                      title: term,
+                      onTap: () {
+                        _query.text = term;
+                        _onChanged(term);
                       },
                     ),
-            ),
-            onChanged: _onChanged,
-            onSubmitted: _run,
-          ),
-        ),
-        if (_searching)
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16),
-            child: LinearProgressIndicator(minHeight: 2),
-          ),
-        if (_error != null)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-            child: ErrorBanner(message: _error!, onRetry: () => _run(_term)),
-          ),
-        if (_term.isEmpty) ...<Widget>[
-          if (_recent.isNotEmpty) ...<Widget>[
-            SectionHeader(
-              title: '最近搜索',
-              trailing: TextButton(
-                onPressed: _clearRecent,
-                child: const Text('清除历史'),
-              ),
-            ),
-            SettingsGroup(
-              children: <Widget>[
-                for (final String term in _recent)
-                  SettingsTile(
-                    leading: const Icon(Icons.history),
-                    title: term,
-                    onTap: () {
-                      _query.text = term;
-                      _onChanged(term);
-                    },
-                  ),
-              ],
-            ),
-          ],
-          const Padding(
-            padding: EdgeInsets.only(top: 24, left: 16, right: 16),
-            child: EmptyState(
-              icon: Icons.menu_book_outlined,
-              title: '离线词典',
-              message:
-                  '内置 ECDICT 精简词库（约 2.6 万词，覆盖中高考、四六级、考研、'
-                  '雅思托福 GRE）。输入单词开始查询，可直接加入当前词书。',
-            ),
-          ),
-        ] else ...<Widget>[
-          if (_forms.isNotEmpty) ...<Widget>[
-            SectionHeader(title: '原型词候选'),
-            SettingsGroup(
-              children: <Widget>[
-                for (final WordFormCandidate candidate in _forms)
-                  SettingsTile(
-                    leading: const Icon(Icons.subdirectory_arrow_right),
-                    title: candidate.lemma,
-                    subtitle: '可能是该词的${candidate.relation}形式；两个词条不会被合并',
-                    onTap: () {
-                      _query.text = candidate.lemma;
-                      _onChanged(candidate.lemma);
-                    },
-                  ),
-              ],
-            ),
-          ],
-          if (_mine.isNotEmpty) ...<Widget>[
-            SectionHeader(title: '我的词条（${_mine.length}）'),
-            SettingsGroup(
-              children: <Widget>[
-                for (final WordWithState row in _mine.take(6))
-                  SettingsTile(
-                    leading: const Icon(Icons.bookmark_border),
-                    title: row.word.word,
-                    subtitle: row.word.translation,
-                    trailing: TagChip(
-                      label: row.isLearned ? '已学' : '未学',
-                      dense: true,
-                    ),
-                    onTap: () => _add(
-                      DictionaryEntry(
-                        word: row.word.normalized,
-                        display: row.word.word,
-                        phonetic: row.word.phonetic,
-                        partOfSpeech: row.word.partOfSpeech,
-                        translation: row.word.translation,
-                        definition: row.word.definition,
-                        examTags: row.word.examTags,
-                        bncRank: row.word.bncRank,
-                        frqRank: row.word.frqRank,
-                        collins: 0,
-                        oxford: 0,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ],
-          SectionHeader(title: '词典结果（${_results.length}）'),
-          if (_results.isEmpty && !_searching)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    '离线词典没有匹配项。可以把它作为新词条手动添加，稍后补充释义。',
-                    style: theme.textTheme.bodySmall,
-                  ),
-                  AppSpacing.h8,
-                  OutlinedButton.icon(
-                    onPressed: () => _add(
-                      DictionaryEntry(
-                        word: _term.toLowerCase(),
-                        display: _term,
-                        phonetic: '',
-                        partOfSpeech: '',
-                        translation: '',
-                        definition: '',
-                        examTags: '',
-                        bncRank: 0,
-                        frqRank: 0,
-                        collins: 0,
-                        oxford: 0,
-                      ),
-                    ),
-                    icon: const Icon(Icons.add),
-                    label: Text('把「$_term」作为新词条加入'),
-                  ),
                 ],
               ),
-            )
-          else
-            SettingsGroup(
-              children: <Widget>[
-                for (final DictionaryEntry entry in _results)
-                  SettingsTile(
-                    title: entry.display,
-                    subtitle: [
-                      if (entry.phonetic.isNotEmpty) '/${entry.phonetic}/',
-                      if (entry.translation.isNotEmpty)
-                        entry.translation.replaceAll('\n', ' ')
-                      else
-                        entry.definition.replaceAll('\n', ' '),
-                    ].join('  '),
-                    trailing: IconButton(
-                      tooltip: '加入词书',
-                      icon: const Icon(Icons.add_circle_outline),
-                      onPressed: () => _add(entry),
-                    ),
-                  ),
-              ],
-            ),
-          if (_results.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: Text(
-                '点击右侧「+」把词条加入当前词书；已有词条会保留学习进度和笔记。',
-                style: theme.textTheme.bodySmall,
+            ],
+            const Padding(
+              padding: EdgeInsets.only(top: 24, left: 16, right: 16),
+              child: EmptyState(
+                icon: Icons.menu_book_outlined,
+                title: '离线词典',
+                message:
+                    '内置 ECDICT 精简词库（约 2.6 万词，覆盖中高考、四六级、考研、'
+                    '雅思托福 GRE）。输入单词开始查询，可直接加入当前词书。',
               ),
             ),
+          ] else ...<Widget>[
+            if (_forms.isNotEmpty) ...<Widget>[
+              SectionHeader(title: '原型词候选'),
+              SettingsGroup(
+                children: <Widget>[
+                  for (final WordFormCandidate candidate in _forms)
+                    SettingsTile(
+                      leading: const Icon(Icons.subdirectory_arrow_right),
+                      title: candidate.lemma,
+                      subtitle: '可能是该词的${candidate.relation}形式；两个词条不会被合并',
+                      onTap: () {
+                        _query.text = candidate.lemma;
+                        _onChanged(candidate.lemma);
+                      },
+                    ),
+                ],
+              ),
+            ],
+            if (_mine.isNotEmpty) ...<Widget>[
+              SectionHeader(title: '我的词条（${_mine.length}）'),
+              SettingsGroup(
+                children: <Widget>[
+                  for (final WordWithState row in _mine.take(6))
+                    SettingsTile(
+                      leading: const Icon(Icons.bookmark_border),
+                      title: row.word.word,
+                      subtitle: row.word.translation,
+                      trailing: TagChip(
+                        label: row.isLearned ? '已学' : '未学',
+                        dense: true,
+                      ),
+                      onTap: () => _add(
+                        DictionaryEntry(
+                          word: row.word.normalized,
+                          display: row.word.word,
+                          phonetic: row.word.phonetic,
+                          partOfSpeech: row.word.partOfSpeech,
+                          translation: row.word.translation,
+                          definition: row.word.definition,
+                          examTags: row.word.examTags,
+                          bncRank: row.word.bncRank,
+                          frqRank: row.word.frqRank,
+                          collins: 0,
+                          oxford: 0,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ],
+            SectionHeader(title: '词典结果（${_results.length}）'),
+            if (_results.isEmpty && !_searching)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      '离线词典没有匹配项。可以把它作为新词条手动添加，稍后补充释义。',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                    AppSpacing.h8,
+                    OutlinedButton.icon(
+                      onPressed: () => _add(
+                        DictionaryEntry(
+                          word: _term.toLowerCase(),
+                          display: _term,
+                          phonetic: '',
+                          partOfSpeech: '',
+                          translation: '',
+                          definition: '',
+                          examTags: '',
+                          bncRank: 0,
+                          frqRank: 0,
+                          collins: 0,
+                          oxford: 0,
+                        ),
+                      ),
+                      icon: const Icon(Icons.add),
+                      label: Text('把「$_term」作为新词条加入'),
+                    ),
+                  ],
+                ),
+              )
+            else
+              SettingsGroup(
+                children: <Widget>[
+                  for (final DictionaryEntry entry in _results)
+                    SettingsTile(
+                      title: entry.display,
+                      subtitle: [
+                        if (entry.phonetic.isNotEmpty) '/${entry.phonetic}/',
+                        if (entry.translation.isNotEmpty)
+                          entry.translation.replaceAll('\n', ' ')
+                        else
+                          entry.definition.replaceAll('\n', ' '),
+                      ].join('  '),
+                      trailing: IconButton(
+                        tooltip: '加入词书',
+                        icon: const Icon(Icons.add_circle_outline),
+                        onPressed: () => _add(entry),
+                      ),
+                    ),
+                ],
+              ),
+            if (_results.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                child: Text(
+                  '点击右侧「+」把词条加入当前词书；已有词条会保留学习进度和笔记。',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ),
+          ],
         ],
-      ],
+      ),
     );
   }
 }

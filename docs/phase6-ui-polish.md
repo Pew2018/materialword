@@ -19,7 +19,7 @@ metadata-only import、大数据 merge、三平台 CI）。
 474dp 内容区，数字与按钮被挤到换行。现在窄窗口直接用手机布局。
 
 内容列最大宽度 880dp（`ContentColumn`），Dashboard / Statistics / Settings /
-WordBooks / Backup / Sync 在宽窗口下不再把一行文字拉满 1600dp。
+WordBooks / Dictionary / Backup / Sync 在宽窗口下不再把一行文字拉满 1600dp。
 
 ## 2. 底部导航
 
@@ -73,6 +73,7 @@ TTS 语音）、Import 目标词书、QuickAdd 目标词书、Sprint 目标词�
 
 ## 7. 学习页操作区
 
+- 360dp 的 AppBar 不再溢出：标题过长时，跳过/撤销折叠进「更多操作」。
 - 去掉 `Material(elevation: 8)` 的浮层，改为单一 surface + 1dp 分隔线。
 - 「显示释义」40dp 高、2dp 圆角、48dp 触控区，桌面限宽 420dp 居中。
 - `（Space）` 从按钮标题移出，桌面端在按钮右侧显示 keycap；手机端隐藏。
@@ -114,5 +115,5 @@ Token、schema 版本等。示例：
   深色菜单、Dashboard 控件减法）。
 - Golden：`classic_light/dark` 的 macOS 与 Linux 参考图均已按新形状重建
   （Linux 参考图由 Ubuntu runner 生成，逐像素比较不变）。
-- 本地：`flutter analyze` 0 issue，`flutter test` 484 通过，时区回放脚本通过，
+- 本地：`flutter analyze` 0 issue，`flutter test` 485 通过，时区回放脚本通过，
   `git diff --check` 干净。
