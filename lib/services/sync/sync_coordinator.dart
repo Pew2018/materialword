@@ -405,6 +405,22 @@ class SyncCoordinator {
         'failed: ${e.message} (retryable: ${e.retryable})',
         error: true,
       );
+      // A non-retryable failure can mean the proved capability is no longer
+      // true: revoked credentials, a folder that became read-only, or a server
+      // that stopped returning strong ETags. Drop the cached verdict so the
+      // next run re-proves it instead of trusting a stale "safe" answer.
+      //
+      // Retryable failures (network, 5xx, conflicts) and problems with the
+      // remote *data* (empty/corrupt/missing) say nothing about capability, so
+      // they keep the cache — otherwise a single timeout would silently switch
+      // automatic sync off until the user tested again.
+      if (provider is WebDavSyncProvider &&
+          !e.retryable &&
+          e is! SyncEmptyRemoteException &&
+          e is! SyncDataException &&
+          e is! SyncRemoteMissingException) {
+        await invalidateCapability(provider);
+      }
       await _recordFailure(clock.now(), message: '同步失败：${e.message}');
       rethrow;
     } catch (e) {

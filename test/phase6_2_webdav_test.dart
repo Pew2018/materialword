@@ -730,6 +730,31 @@ void main() {
       expect(await sync.cachedCapability(p), isNull);
     });
 
+    test('CACHE08b 认证失效等不可重试失败会清除缓存', () async {
+      final WebDavServer server = await WebDavServer.start();
+      addTearDown(server.close);
+      addTearDown(
+        () => credentials.write(CredentialKeys.webdavPassword, 'local-only'),
+      );
+      final TestEnv env = await TestEnv.create();
+      addTearDown(env.dispose);
+      await env.seedBook(words: <String>['alpha']);
+      final SyncCoordinator sync = coordinator(env);
+      final WebDavSyncProvider p = provider(server);
+      await sync.sync(p);
+      expect(await sync.cachedCapability(p), isNotNull);
+
+      // The server now rejects the password (revoked app password).
+      await credentials.write(CredentialKeys.webdavPassword, 'revoked');
+
+      await expectLater(sync.sync(p), throwsA(isA<SyncException>()));
+      expect(
+        await sync.cachedCapability(p),
+        isNull,
+        reason: '认证失效后旧的能力结论不能再被信任',
+      );
+    });
+
     test('CACHE09 未验证或不支持安全同步时自动任务不启动', () async {
       final WebDavServer server = await WebDavServer.start(
         options: const WebDavOptions(ignoreIfMatch: true),
