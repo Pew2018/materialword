@@ -701,7 +701,7 @@
       }
     }
   },
-  "exportContentNote": "Exports word content only: no study history, notes or credentials. Use Backup & Restore for a full backup.",
+  "exportContentNote": "Exports a learning ZIP with selected lists, study events and progress. Device preferences and credentials are excluded.",
   "exportSelected": "Export {count, plural, =1{1 Word List} other{{count} Word Lists}}",
   "@exportSelected": {
     "placeholders": {
@@ -2278,5 +2278,16 @@
   "cloudBackupDownloading": "Downloading",
   "cloudBackupRestoreSection": "Restore",
   "cloudBackupRestoreHint": "Merge restore only adds missing data; snapshot restore replaces all local data and creates a protective backup first.",
-  "cloudBackupRunningHint": "Closing this window does not stop the backup. Reopen it to follow the progress."
+  "cloudBackupRunningHint": "Closing this window does not stop the backup. Reopen it to follow the progress.",
+  "bareContentNote": "Bare content files do not guarantee study progress.",
+  "mergePackageProgress": "Merge study progress too",
+  "packageScopeNote": "Off: import word lists only. On: merge the package’s lists and progress without replacing the library.",
+  "packageProgressSummary": "Includes study progress: {count} events",
+  "@packageProgressSummary": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  }
 }

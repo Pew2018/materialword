@@ -1195,7 +1195,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get exportContentNote =>
-      'Exports word content only: no study history, notes or credentials. Use Backup & Restore for a full backup.';
+      'Exports a learning ZIP with selected lists, study events and progress. Device preferences and credentials are excluded.';
 
   @override
   String exportSelected(int count) {
@@ -3762,4 +3762,20 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get cloudBackupRunningHint =>
       'Closing this window does not stop the backup. Reopen it to follow the progress.';
+
+  @override
+  String get bareContentNote =>
+      'Bare content files do not guarantee study progress.';
+
+  @override
+  String get mergePackageProgress => 'Merge study progress too';
+
+  @override
+  String get packageScopeNote =>
+      'Off: import word lists only. On: merge the package’s lists and progress without replacing the library.';
+
+  @override
+  String packageProgressSummary(int count) {
+    return 'Includes study progress: $count events';
+  }
 }

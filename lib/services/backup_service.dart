@@ -220,7 +220,6 @@ class BackupService {
         'sprintPlan': (await settings.loadSprintPlan()).toJson(),
         'version': await settings.sharedVersion(),
       },
-
     };
   });
 
@@ -722,8 +721,9 @@ class BackupService {
     for (final raw in rawStates) {
       if (raw is! Map) invalid();
       final id = raw['wordId'];
-      if (id is! String || !seen.add(id) || !expected.containsKey(id))
+      if (id is! String || !seen.add(id) || !expected.containsKey(id)) {
         invalid();
+      }
       for (final entry in expected[id]!.entries) {
         if (entry.key == 'updatedAt') {
           if (raw[entry.key] is! int || (raw[entry.key] as int) < 0) invalid();

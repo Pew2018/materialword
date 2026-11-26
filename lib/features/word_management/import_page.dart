@@ -33,6 +33,7 @@ class _ImportPageState extends ConsumerState<ImportPage> {
   List<WordBook> _books = const <WordBook>[];
   String? _bookId;
   bool _createNew = false;
+  bool _mergeProgress = false;
   bool _busy = false;
   String? _error;
   ImportOutcome? _outcome;
@@ -78,7 +79,7 @@ class _ImportPageState extends ConsumerState<ImportPage> {
       final List<PlatformFile> files = await FilePicker.pickFiles(
         dialogTitle: context.l10n.chooseWordListFile,
         type: FileType.custom,
-        allowedExtensions: <String>['txt', 'csv', 'json'],
+        allowedExtensions: <String>['txt', 'csv', 'json', 'zip'],
       );
       if (files.isEmpty) return;
       final PlatformFile file = files.first;
@@ -173,7 +174,7 @@ class _ImportPageState extends ConsumerState<ImportPage> {
   Future<void> _commit() async {
     final ImportPreview? preview = _preview;
     if (preview == null || preview.entries.isEmpty) return;
-    if (!_createNew && _bookId == null) {
+    if (preview.progress == null && !_createNew && _bookId == null) {
       setState(() => _error = context.l10n.chooseTargetList);
       return;
     }
@@ -193,6 +194,7 @@ class _ImportPageState extends ConsumerState<ImportPage> {
           .read(importServiceProvider)
           .commit(
             preview: preview,
+            mergeProgress: _mergeProgress,
             bookId: _createNew ? null : _bookId,
             newBookName: _createNew ? name : null,
             sourceType: preview.sourceUrl.isEmpty ? 'file' : 'url',
@@ -356,6 +358,23 @@ class _ImportPageState extends ConsumerState<ImportPage> {
                             ),
                           ],
                         ),
+                        AppSpacing.h8,
+                        Text(
+                          _preview!.progress == null
+                              ? context.l10n.bareContentNote
+                              : context.l10n.packageProgressSummary(
+                                  (_preview!.progress!['reviewEvents'] as List)
+                                      .length,
+                                ),
+                        ),
+                        if (_preview!.progress != null)
+                          SettingsSwitchTile(
+                            title: context.l10n.mergePackageProgress,
+                            subtitle: context.l10n.packageScopeNote,
+                            value: _mergeProgress,
+                            onChanged: (value) =>
+                                setState(() => _mergeProgress = value),
+                          ),
                         if (_preview!.droppedRows > 0) ...<Widget>[
                           AppSpacing.h12,
                           Text(
@@ -400,75 +419,79 @@ class _ImportPageState extends ConsumerState<ImportPage> {
                     ),
                   ),
                   AppSpacing.h16,
-                  SectionCard(
-                    title: context.l10n.stepTargetList,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: <Widget>[
-                        RadioListTile<bool>(
-                          dense: true,
-                          value: false,
-                          groupValue: _createNew,
-                          onChanged: _books.isEmpty
-                              ? null
-                              : (bool? v) {
-                                  setState(() => _createNew = v ?? false);
+                  if (_preview!.progress == null || !_mergeProgress)
+                    SectionCard(
+                      title: context.l10n.stepTargetList,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: <Widget>[
+                          RadioListTile<bool>(
+                            dense: true,
+                            value: false,
+                            groupValue: _createNew,
+                            onChanged: _books.isEmpty
+                                ? null
+                                : (bool? v) {
+                                    setState(() => _createNew = v ?? false);
+                                    _refreshStats();
+                                  },
+                            title: Text(context.l10n.addToExistingList),
+                          ),
+                          if (!_createNew)
+                            Padding(
+                              padding: const EdgeInsets.only(
+                                left: 16,
+                                bottom: 8,
+                              ),
+                              child: ClassicSelect<String>(
+                                label: context.l10n.targetList,
+                                value: _bookId ?? '',
+                                options: <ClassicOption<String>>[
+                                  if (_bookId == null)
+                                    ClassicOption<String>(
+                                      value: '',
+                                      label: context.l10n.chooseWordList,
+                                    ),
+                                  for (final WordBook book in _books)
+                                    ClassicOption<String>(
+                                      value: book.id,
+                                      label: book.name,
+                                    ),
+                                ],
+                                onChanged: (String value) {
+                                  setState(() => _bookId = value);
                                   _refreshStats();
                                 },
-                          title: Text(context.l10n.addToExistingList),
-                        ),
-                        if (!_createNew)
-                          Padding(
-                            padding: const EdgeInsets.only(left: 16, bottom: 8),
-                            child: ClassicSelect<String>(
-                              label: context.l10n.targetList,
-                              value: _bookId ?? '',
-                              options: <ClassicOption<String>>[
-                                if (_bookId == null)
-                                  ClassicOption<String>(
-                                    value: '',
-                                    label: context.l10n.chooseWordList,
-                                  ),
-                                for (final WordBook book in _books)
-                                  ClassicOption<String>(
-                                    value: book.id,
-                                    label: book.name,
-                                  ),
-                              ],
-                              onChanged: (String value) {
-                                setState(() => _bookId = value);
-                                _refreshStats();
-                              },
-                            ),
-                          ),
-                        RadioListTile<bool>(
-                          dense: true,
-                          value: true,
-                          groupValue: _createNew,
-                          onChanged: (bool? v) {
-                            setState(() => _createNew = v ?? true);
-                            _refreshStats();
-                          },
-                          title: Text(context.l10n.newWordList),
-                        ),
-                        if (_createNew)
-                          Padding(
-                            padding: const EdgeInsets.only(left: 16),
-                            child: TextField(
-                              controller: _newBookName,
-                              decoration: InputDecoration(
-                                labelText: context.l10n.wordListName,
                               ),
                             ),
+                          RadioListTile<bool>(
+                            dense: true,
+                            value: true,
+                            groupValue: _createNew,
+                            onChanged: (bool? v) {
+                              setState(() => _createNew = v ?? true);
+                              _refreshStats();
+                            },
+                            title: Text(context.l10n.newWordList),
                           ),
-                        AppSpacing.h8,
-                        Text(
-                          context.l10n.importMergeNote,
-                          style: theme.textTheme.bodySmall,
-                        ),
-                      ],
+                          if (_createNew)
+                            Padding(
+                              padding: const EdgeInsets.only(left: 16),
+                              child: TextField(
+                                controller: _newBookName,
+                                decoration: InputDecoration(
+                                  labelText: context.l10n.wordListName,
+                                ),
+                              ),
+                            ),
+                          AppSpacing.h8,
+                          Text(
+                            context.l10n.importMergeNote,
+                            style: theme.textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
                   AppSpacing.h24,
                   Row(
                     children: <Widget>[

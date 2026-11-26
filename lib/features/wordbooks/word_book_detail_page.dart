@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,6 +11,7 @@ import '../../l10n/export_labels.dart';
 import '../../l10n/l10n.dart';
 import '../../core/repositories/word_repository.dart';
 import '../../services/wordbook_export.dart';
+import '../../services/learning_package.dart';
 import '../../shared/widgets/common.dart';
 import '../word_management/import_page.dart';
 import '../word_management/quick_add_page.dart';
@@ -78,23 +77,20 @@ class _WordBookDetailPageState extends ConsumerState<WordBookDetailPage> {
       final List<Word> words = await ref
           .read(wordBookRepositoryProvider)
           .wordsInBook(widget.bookId);
-      final String body = WordBookExporter.encodeBook(
-        WordBookExport(book: book, words: words),
+      final bytes = await LearningPackage.export(
+        ref.read(backupServiceProvider),
+        {book.id},
         format,
-        exportedAt: ref.read(clockProvider).now(),
+        ref.read(clockProvider).now(),
       );
       final String safeName = book.name.replaceAll(
         RegExp(r'[\\/:*?"<>|]'),
         '_',
       );
       final Uri? saved = await FilePicker.saveFile(
-        fileName: '$safeName.${format.extension}',
-        bytes: utf8.encode(body),
-        mimeType: switch (format) {
-          WordBookExportFormat.txt => 'text/plain',
-          WordBookExportFormat.csv => 'text/csv',
-          WordBookExportFormat.json => 'application/json',
-        },
+        fileName: '$safeName.zip',
+        bytes: bytes,
+        mimeType: 'application/zip',
         dialogTitle: exportTitle,
       );
       if (!mounted) return;

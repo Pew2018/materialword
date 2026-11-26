@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:file_picker/file_picker.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
@@ -14,6 +12,7 @@ import '../../l10n/export_labels.dart';
 import '../../l10n/l10n.dart';
 import '../../services/import_service.dart';
 import '../../services/wordbook_export.dart';
+import '../../services/learning_package.dart';
 import '../../shared/widgets/common.dart';
 import '../word_management/import_page.dart';
 import '../word_management/word_management_page.dart';
@@ -251,28 +250,19 @@ class WordBooksPage extends ConsumerWidget {
             ),
           );
         }
-        final String body = exports.length == 1
-            ? WordBookExporter.encodeBook(
-                exports.first,
-                format,
-                exportedAt: ref.read(clockProvider).now(),
-              )
-            : WordBookExporter.encodeBooks(
-                exports,
-                format,
-                exportedAt: ref.read(clockProvider).now(),
-              );
+        final bytes = await LearningPackage.export(
+          ref.read(backupServiceProvider),
+          selected,
+          format,
+          ref.read(clockProvider).now(),
+        );
         final String fileName = exports.length == 1
-            ? '${exports.first.book.name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_')}.${format.extension}'
-            : 'materialword-wordbooks-${exports.length}.${format.extension}';
+            ? '${exports.first.book.name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_')}.zip'
+            : 'materialword-wordbooks-${exports.length}.zip';
         final Uri? saved = await FilePicker.saveFile(
           fileName: fileName,
-          bytes: utf8.encode(body),
-          mimeType: switch (format) {
-            WordBookExportFormat.txt => 'text/plain',
-            WordBookExportFormat.csv => 'text/csv',
-            WordBookExportFormat.json => 'application/json',
-          },
+          bytes: bytes,
+          mimeType: 'application/zip',
           dialogTitle: exportTitle,
         );
         if (!context.mounted) return;

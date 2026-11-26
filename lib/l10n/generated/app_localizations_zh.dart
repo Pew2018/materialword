@@ -1120,8 +1120,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get exportContentNote =>
-      '只导出词条内容：不含学习记录、笔记历史与同步凭据。完整备份请到「设置 → 备份与恢复」。';
+  String get exportContentNote => '默认导出学习 ZIP 包：包含所选词书、学习记录和进度，不包含设备偏好或凭据。';
 
   @override
   String exportSelected(int count) {
@@ -3460,4 +3459,18 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get cloudBackupRunningHint => '关闭此窗口不会中断备份，重新打开可查看进度。';
+
+  @override
+  String get bareContentNote => '裸内容文件不保证携带学习进度。';
+
+  @override
+  String get mergePackageProgress => '同时合并学习进度';
+
+  @override
+  String get packageScopeNote => '关闭时仅导入词书；开启时按包内词书归属合并，不覆盖全库。';
+
+  @override
+  String packageProgressSummary(int count) {
+    return '包含学习进度：$count 条学习记录';
+  }
 }

@@ -15,6 +15,11 @@ import '../core/repositories/word_repository.dart';
 import '../core/repositories/wordbook_repository.dart';
 import '../core/text/dictionary_text.dart';
 import 'dictionary_service.dart';
+import 'learning_package.dart';
+import 'backup_service.dart';
+import 'data_operation_gate.dart';
+import '../core/repositories/settings_repository.dart';
+import '../core/repositories/study_repository.dart';
 import 'word_intake_service.dart';
 
 /// One parsed row coming from a TXT / CSV / JSON file.
@@ -161,6 +166,7 @@ class ImportPreview {
     this.sourceName = '',
     this.contentHash = '',
     this.dictionaryEnrichable = true,
+    this.progress,
   });
 
   /// Backwards-compatible constructor for single-book previews.
@@ -191,6 +197,8 @@ class ImportPreview {
     contentHash: contentHash,
     dictionaryEnrichable: dictionaryEnrichable,
   );
+
+  final Map<String, Object?>? progress;
 
   final List<ImportSection> sections;
   final String format;
@@ -324,6 +332,13 @@ class ImportService {
   /// Cancels the download/parse currently in flight. The next call resets it.
   void cancel() => _cancelled = true;
 
+  BackupService get _backup => BackupService(
+    db: words.db,
+    words: words,
+    study: StudyRepository(words.db),
+    settings: SettingsRepository(words.db),
+  );
+
   WordIntakeService get _intake =>
       WordIntakeService(db: words.db, words: words, wordBooks: wordBooks);
 
@@ -350,6 +365,38 @@ class ImportService {
   /// bytes would corrupt the user's words, so a bad encoding is reported and the
   /// user can cancel instead.
   ImportPreview parseBytes(List<int> bytes, {required String name}) {
+    if (name.toLowerCase().endsWith('.zip') ||
+        (bytes.length >= 2 && bytes[0] == 0x50 && bytes[1] == 0x4b)) {
+      final data = LearningPackage.decode(bytes);
+      _backup.validateDataset(data);
+      final words = {for (final w in data['words'] as List) w['id']: w};
+      final exchange = {
+        'books': [
+          for (final b in data['wordBooks'] as List)
+            {
+              'name': b['name'],
+              'description': b['description'],
+              'words': [
+                for (final e in data['entries'] as List)
+                  if (e['wordBookId'] == b['id']) words[e['wordId']],
+              ],
+            },
+        ],
+      };
+      final parsed = _parseJson(jsonEncode(exchange), name);
+      if (parsed.invalidCount != 0 || parsed.droppedRows != 0) {
+        throw const FormatException('学习包超过词条上限或包含无效词条');
+      }
+      return ImportPreview(
+        sections: parsed.sections,
+        format: 'zip',
+        detectedBookName: parsed.detectedBookName,
+        totalRows: parsed.totalRows,
+        contentHash: parsed.contentHash,
+        progress: data,
+        dictionaryEnrichable: false,
+      );
+    }
     final List<int> data = bytes;
     if (data.length > maxFileBytes) {
       throw FormatException('文件过大（上限 ${_mb(maxFileBytes)}）');
@@ -442,6 +489,7 @@ class ImportService {
         sourceName: name,
         contentHash: preview.contentHash,
         dictionaryEnrichable: preview.dictionaryEnrichable,
+        progress: preview.progress,
       );
     } on FormatException {
       rethrow;
@@ -1142,6 +1190,7 @@ class ImportService {
   /// ignores both.
   Future<ImportOutcome> commit({
     required ImportPreview preview,
+    bool mergeProgress = false,
     String? bookId,
     String? newBookName,
     String bookDescription = '',
@@ -1152,6 +1201,31 @@ class ImportService {
     String sourceUrl = '',
   }) async {
     _cancelled = false;
+    if (mergeProgress && preview.progress != null) {
+      if (!DataOperationGate.tryEnter(words.db)) {
+        throw const BackupException('同步或恢复正在进行，请稍后重试');
+      }
+      try {
+        final data = await _backup.validateDatasetAsync(preview.progress!);
+        final report = await words.db.transaction(
+          () => _backup.mergeValidatedInTransaction(
+            data,
+            now: now,
+            applySharedSettings: false,
+          ),
+        );
+        return ImportOutcome(
+          created: report.newWords,
+          existing: preview.validCount - report.newWords,
+          linked: report.newEntries,
+          duplicateInFile: 0,
+          invalid: 0,
+          books: preview.sectionCount,
+        );
+      } finally {
+        DataOperationGate.leave(words.db);
+      }
+    }
     final Map<String, DictionaryEntry?> lookups = await _lookups(
       preview,
       enrichFromDictionary: enrichFromDictionary,

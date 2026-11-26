@@ -2135,7 +2135,7 @@ abstract class AppLocalizations {
   /// No description provided for @exportContentNote.
   ///
   /// In en, this message translates to:
-  /// **'Exports word content only: no study history, notes or credentials. Use Backup & Restore for a full backup.'**
+  /// **'Exports a learning ZIP with selected lists, study events and progress. Device preferences and credentials are excluded.'**
   String get exportContentNote;
 
   /// No description provided for @exportSelected.
@@ -6271,6 +6271,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Closing this window does not stop the backup. Reopen it to follow the progress.'**
   String get cloudBackupRunningHint;
+
+  /// No description provided for @bareContentNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Bare content files do not guarantee study progress.'**
+  String get bareContentNote;
+
+  /// No description provided for @mergePackageProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'Merge study progress too'**
+  String get mergePackageProgress;
+
+  /// No description provided for @packageScopeNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Off: import word lists only. On: merge the package’s lists and progress without replacing the library.'**
+  String get packageScopeNote;
+
+  /// No description provided for @packageProgressSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'Includes study progress: {count} events'**
+  String packageProgressSummary(int count);
 }
 
 class _AppLocalizationsDelegate
