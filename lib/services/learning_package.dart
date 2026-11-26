@@ -57,6 +57,7 @@ class LearningPackage {
     final tagIds = rows('wordTags').map((r) => r['tagId']).toSet();
     data['tags'] = rows('tags').where((r) => tagIds.contains(r['id'])).toList();
     data.remove('settings');
+    data['dictionaryPackages'] = <Object?>[];
     data['progressEventDigest'] = BackupService.eventDigest(
       data['reviewEvents'] as List,
     );
@@ -100,6 +101,8 @@ class LearningPackage {
           'dictionary': {
             'source': 'https://github.com/skywind3000/ECDICT',
             'license': 'MIT',
+            'version': '39cfb9672c0906b63569e0453c2e6abfb9ab182a',
+            'coreSha256': '30d1b6cb6b6602a1c844cf95bbdc24f17c9ebc86053f2ca4cb45212a293c26ae',
             'note': 'Word source fields retain provenance; custom content belongs to its author.',
           },
         }),
@@ -203,7 +206,7 @@ class LearningPackage {
       final data = json('progress.json');
       if (data.containsKey('settings') ||
           data.containsKey('deviceSettings') ||
-          data['schemaVersion'] != 5) {
+          !{5, 6}.contains(data['schemaVersion'])) {
         throw const FormatException('学习包数据范围无效');
       }
       final bookIds = (data['wordBooks'] as List).map((b) => b['id']).toSet();

@@ -3778,4 +3778,70 @@ class AppLocalizationsEn extends AppLocalizations {
   String packageProgressSummary(int count) {
     return 'Includes study progress: $count events';
   }
+
+  @override
+  String get libraryTitle => 'Libraries & dictionaries';
+
+  @override
+  String get librarySubtitle => 'Offline dictionary, exam lists and extensions';
+
+  @override
+  String get defaultDictionary => 'Default dictionary';
+
+  @override
+  String get offlineDictionaryNote => 'Bundled offline; includes word forms';
+
+  @override
+  String get optionalStudyBooks => 'Optional study lists';
+
+  @override
+  String get communityExamNote =>
+      'Community exam tags, not a current official complete syllabus. Preview shows the first 10 entries.';
+
+  @override
+  String get addCatalogBook => 'Add list';
+
+  @override
+  String get extensionDictionary => 'Extension dictionary';
+
+  @override
+  String get enableDictionary => 'Enable extension';
+
+  @override
+  String get dictionarySelectionNote =>
+      'Selection is backed up and synced; files are installed separately on each device.';
+
+  @override
+  String get installDictionary => 'Install / resume download';
+
+  @override
+  String get reinstallDictionary => 'Reinstall / retry';
+
+  @override
+  String get uninstallDictionary => 'Uninstall extension';
+
+  @override
+  String get uninstallDictionaryNote =>
+      'Remove the local read-only package and disable it. Added words, notes and progress are retained.';
+
+  @override
+  String get dictionaryMissing =>
+      'Dictionary resource missing; reinstall from Libraries';
+
+  @override
+  String get dictionaryOperationFailed =>
+      'Dictionary operation failed. Retry; existing valid resources are retained.';
+
+  @override
+  String get offlineMigrationTitle => 'Full offline migration';
+
+  @override
+  String get exportOfflineMigration => 'Export offline migration';
+
+  @override
+  String get restoreOfflineMigration => 'Restore offline migration';
+
+  @override
+  String get offlineMigrationWarning =>
+      'Restores the entire study snapshot and dictionary resources. A protective backup is created first and sync is paused afterward. Local appearance and voice preferences are retained.';
 }

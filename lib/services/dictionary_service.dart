@@ -23,6 +23,7 @@ class DictionaryEntry {
     required this.frqRank,
     required this.collins,
     required this.oxford,
+    this.exchange = '',
   });
 
   final String word;
@@ -36,6 +37,7 @@ class DictionaryEntry {
   final int frqRank;
   final int collins;
   final int oxford;
+  final String exchange;
 
   /// Human readable exam tags, e.g. `CET-6 · 考研`.
   String get tagLabel {
@@ -68,6 +70,7 @@ class DictionaryService {
   DictionaryService._(this._database, this.version);
 
   final Database _database;
+  DictionaryService? extension;
   final int version;
 
   bool get isReady => true;
@@ -144,7 +147,7 @@ class DictionaryService {
       'SELECT * FROM dictionary WHERE word = ? LIMIT 1',
       <Object>[key],
     );
-    if (rows.isEmpty) return null;
+    if (rows.isEmpty) return extension?.lookup(word);
     return _fromRow(rows.first);
   }
 
@@ -156,7 +159,39 @@ class DictionaryService {
       'SELECT * FROM dictionary WHERE word >= ? AND word < ? ORDER BY word LIMIT ?',
       <Object>[key, '$key\u{10FFFF}', limit],
     );
-    return rows.map(_fromRow).toList(growable: false);
+    final found = rows.map(_fromRow).toList();
+    if (extension != null && found.length < limit) {
+      final seen = found.map((e) => e.word).toSet();
+      found.addAll(
+        (await extension!.suggest(
+          prefix,
+          limit: limit,
+        )).where((e) => seen.add(e.word)),
+      );
+    }
+    return found.take(limit).toList(growable: false);
+  }
+
+  Future<List<DictionaryEntry>> examWords(String tag, {int? limit}) async {
+    if (!{
+      'zk',
+      'gk',
+      'cet4',
+      'cet6',
+      'ky',
+      'ielts',
+      'toefl',
+      'gre',
+    }.contains(tag)) {
+      throw const FormatException('未知考试标签');
+    }
+    return _database
+        .select(
+          "SELECT * FROM dictionary WHERE ' ' || tag || ' ' LIKE ? ORDER BY word LIMIT ?",
+          ['% $tag %', limit ?? 20000],
+        )
+        .map(_fromRow)
+        .toList();
   }
 
   Future<int> count() async {
@@ -166,7 +201,10 @@ class DictionaryService {
     return rows.first['c'] as int;
   }
 
-  void close() => _database.close();
+  void close() {
+    extension?.close();
+    _database.close();
+  }
 
   DictionaryEntry _fromRow(Row row) {
     return DictionaryEntry(
@@ -181,6 +219,9 @@ class DictionaryService {
       frqRank: (row['frq'] as int?) ?? 0,
       collins: (row['collins'] as int?) ?? 0,
       oxford: (row['oxford'] as int?) ?? 0,
+      exchange: row.keys.contains('exchange')
+          ? row['exchange'] as String? ?? ''
+          : '',
     );
   }
 

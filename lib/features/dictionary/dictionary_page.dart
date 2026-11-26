@@ -203,7 +203,7 @@ class _DictionaryPageState extends ConsumerState<DictionaryPage> {
                 translation: entry.translation,
                 definition: entry.definition,
               ),
-              source: 'dictionary',
+              source: 'ECDICT',
               examTags: entry.examTags,
               bncRank: entry.bncRank,
               frqRank: entry.frqRank,

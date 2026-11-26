@@ -6295,6 +6295,126 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Includes study progress: {count} events'**
   String packageProgressSummary(int count);
+
+  /// No description provided for @libraryTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Libraries & dictionaries'**
+  String get libraryTitle;
+
+  /// No description provided for @librarySubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Offline dictionary, exam lists and extensions'**
+  String get librarySubtitle;
+
+  /// No description provided for @defaultDictionary.
+  ///
+  /// In en, this message translates to:
+  /// **'Default dictionary'**
+  String get defaultDictionary;
+
+  /// No description provided for @offlineDictionaryNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Bundled offline; includes word forms'**
+  String get offlineDictionaryNote;
+
+  /// No description provided for @optionalStudyBooks.
+  ///
+  /// In en, this message translates to:
+  /// **'Optional study lists'**
+  String get optionalStudyBooks;
+
+  /// No description provided for @communityExamNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Community exam tags, not a current official complete syllabus. Preview shows the first 10 entries.'**
+  String get communityExamNote;
+
+  /// No description provided for @addCatalogBook.
+  ///
+  /// In en, this message translates to:
+  /// **'Add list'**
+  String get addCatalogBook;
+
+  /// No description provided for @extensionDictionary.
+  ///
+  /// In en, this message translates to:
+  /// **'Extension dictionary'**
+  String get extensionDictionary;
+
+  /// No description provided for @enableDictionary.
+  ///
+  /// In en, this message translates to:
+  /// **'Enable extension'**
+  String get enableDictionary;
+
+  /// No description provided for @dictionarySelectionNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Selection is backed up and synced; files are installed separately on each device.'**
+  String get dictionarySelectionNote;
+
+  /// No description provided for @installDictionary.
+  ///
+  /// In en, this message translates to:
+  /// **'Install / resume download'**
+  String get installDictionary;
+
+  /// No description provided for @reinstallDictionary.
+  ///
+  /// In en, this message translates to:
+  /// **'Reinstall / retry'**
+  String get reinstallDictionary;
+
+  /// No description provided for @uninstallDictionary.
+  ///
+  /// In en, this message translates to:
+  /// **'Uninstall extension'**
+  String get uninstallDictionary;
+
+  /// No description provided for @uninstallDictionaryNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove the local read-only package and disable it. Added words, notes and progress are retained.'**
+  String get uninstallDictionaryNote;
+
+  /// No description provided for @dictionaryMissing.
+  ///
+  /// In en, this message translates to:
+  /// **'Dictionary resource missing; reinstall from Libraries'**
+  String get dictionaryMissing;
+
+  /// No description provided for @dictionaryOperationFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Dictionary operation failed. Retry; existing valid resources are retained.'**
+  String get dictionaryOperationFailed;
+
+  /// No description provided for @offlineMigrationTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Full offline migration'**
+  String get offlineMigrationTitle;
+
+  /// No description provided for @exportOfflineMigration.
+  ///
+  /// In en, this message translates to:
+  /// **'Export offline migration'**
+  String get exportOfflineMigration;
+
+  /// No description provided for @restoreOfflineMigration.
+  ///
+  /// In en, this message translates to:
+  /// **'Restore offline migration'**
+  String get restoreOfflineMigration;
+
+  /// No description provided for @offlineMigrationWarning.
+  ///
+  /// In en, this message translates to:
+  /// **'Restores the entire study snapshot and dictionary resources. A protective backup is created first and sync is paused afterward. Local appearance and voice preferences are retained.'**
+  String get offlineMigrationWarning;
 }
 
 class _AppLocalizationsDelegate

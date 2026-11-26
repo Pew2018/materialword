@@ -1,3 +1,5 @@
+import '../wordbooks/library_page.dart';
+
 import 'dart:convert';
 import 'dart:io';
 
@@ -644,6 +646,7 @@ class _DownloadedBackupDialogState
       } else {
         await manager.restoreMerge(file);
       }
+      if (mounted) { await showMissingDictionaryNotice(context, ref); }
       ref.invalidate(bookSummariesProvider);
       ref.invalidate(statisticsProvider);
       ref.invalidate(todayProgressProvider);

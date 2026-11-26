@@ -2289,5 +2289,25 @@
         "type": "int"
       }
     }
-  }
+  },
+  "libraryTitle": "Libraries & dictionaries",
+  "librarySubtitle": "Offline dictionary, exam lists and extensions",
+  "defaultDictionary": "Default dictionary",
+  "offlineDictionaryNote": "Bundled offline; includes word forms",
+  "optionalStudyBooks": "Optional study lists",
+  "communityExamNote": "Community exam tags, not a current official complete syllabus. Preview shows the first 10 entries.",
+  "addCatalogBook": "Add list",
+  "extensionDictionary": "Extension dictionary",
+  "enableDictionary": "Enable extension",
+  "dictionarySelectionNote": "Selection is backed up and synced; files are installed separately on each device.",
+  "installDictionary": "Install / resume download",
+  "reinstallDictionary": "Reinstall / retry",
+  "uninstallDictionary": "Uninstall extension",
+  "uninstallDictionaryNote": "Remove the local read-only package and disable it. Added words, notes and progress are retained.",
+  "dictionaryMissing": "Dictionary resource missing; reinstall from Libraries",
+  "dictionaryOperationFailed": "Dictionary operation failed. Retry; existing valid resources are retained.",
+  "offlineMigrationTitle": "Full offline migration",
+  "exportOfflineMigration": "Export offline migration",
+  "restoreOfflineMigration": "Restore offline migration",
+  "offlineMigrationWarning": "Restores the entire study snapshot and dictionary resources. A protective backup is created first and sync is paused afterward. Local appearance and voice preferences are retained."
 }

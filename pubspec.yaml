@@ -55,5 +55,6 @@ flutter:
     # Offline dictionary, generated from ECDICT (MIT) by tool/build_dictionary.py.
     - assets/dictionary/ecdict_core.db
     - assets/dictionary/ecdict_core.db.meta.json
+    - assets/dictionary/ECDICT_LICENSE.txt
     # Tiny demo wordbook used by "载入示例词书".
     - assets/wordbooks/sample_cet6.json

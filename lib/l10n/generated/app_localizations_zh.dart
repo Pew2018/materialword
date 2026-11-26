@@ -3473,4 +3473,65 @@ class AppLocalizationsZh extends AppLocalizations {
   String packageProgressSummary(int count) {
     return '包含学习进度：$count 条学习记录';
   }
+
+  @override
+  String get libraryTitle => '词库与词典';
+
+  @override
+  String get librarySubtitle => '默认离线词典、可选考试词书和扩展词典';
+
+  @override
+  String get defaultDictionary => '默认释义词典';
+
+  @override
+  String get offlineDictionaryNote => '内置，可离线查词；含词形信息';
+
+  @override
+  String get optionalStudyBooks => '可选学习词书';
+
+  @override
+  String get communityExamNote => '基于社区考试标签整理，不是最新官方完整词表。预览显示前 10 条。';
+
+  @override
+  String get addCatalogBook => '添加词书';
+
+  @override
+  String get extensionDictionary => '扩展释义词典';
+
+  @override
+  String get enableDictionary => '启用扩展词典';
+
+  @override
+  String get dictionarySelectionNote => '词典选择随备份和同步保存；包文件需要在各设备安装。';
+
+  @override
+  String get installDictionary => '安装 / 继续下载';
+
+  @override
+  String get reinstallDictionary => '重新安装 / 重试';
+
+  @override
+  String get uninstallDictionary => '卸载扩展词典';
+
+  @override
+  String get uninstallDictionaryNote => '删除本机只读词典包并停用。已添加的词条、笔记和进度会保留。';
+
+  @override
+  String get dictionaryMissing => '词典资源缺失，请到词库页重新获取';
+
+  @override
+  String get dictionaryOperationFailed => '词典操作未完成，请重试；原有有效资源会保留。';
+
+  @override
+  String get offlineMigrationTitle => '完整离线迁移';
+
+  @override
+  String get exportOfflineMigration => '导出离线迁移包';
+
+  @override
+  String get restoreOfflineMigration => '恢复离线迁移包';
+
+  @override
+  String get offlineMigrationWarning =>
+      '此操作恢复整个学习快照和词典资源。会先创建保护性备份，完成后暂停同步；本机外观和发音偏好保留。';
 }

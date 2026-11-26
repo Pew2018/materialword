@@ -1039,5 +1039,25 @@
         "type": "int"
       }
     }
-  }
+  },
+  "libraryTitle": "词库与词典",
+  "librarySubtitle": "默认离线词典、可选考试词书和扩展词典",
+  "defaultDictionary": "默认释义词典",
+  "offlineDictionaryNote": "内置，可离线查词；含词形信息",
+  "optionalStudyBooks": "可选学习词书",
+  "communityExamNote": "基于社区考试标签整理，不是最新官方完整词表。预览显示前 10 条。",
+  "addCatalogBook": "添加词书",
+  "extensionDictionary": "扩展释义词典",
+  "enableDictionary": "启用扩展词典",
+  "dictionarySelectionNote": "词典选择随备份和同步保存；包文件需要在各设备安装。",
+  "installDictionary": "安装 / 继续下载",
+  "reinstallDictionary": "重新安装 / 重试",
+  "uninstallDictionary": "卸载扩展词典",
+  "uninstallDictionaryNote": "删除本机只读词典包并停用。已添加的词条、笔记和进度会保留。",
+  "dictionaryMissing": "词典资源缺失，请到词库页重新获取",
+  "dictionaryOperationFailed": "词典操作未完成，请重试；原有有效资源会保留。",
+  "offlineMigrationTitle": "完整离线迁移",
+  "exportOfflineMigration": "导出离线迁移包",
+  "restoreOfflineMigration": "恢复离线迁移包",
+  "offlineMigrationWarning": "此操作恢复整个学习快照和词典资源。会先创建保护性备份，完成后暂停同步；本机外观和发音偏好保留。"
 }

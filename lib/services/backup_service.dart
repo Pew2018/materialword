@@ -15,6 +15,7 @@ import '../core/repositories/study_repository.dart';
 import '../core/repositories/word_repository.dart';
 import '../core/text/dictionary_text.dart';
 import 'study_scheduler.dart';
+import 'dictionary_packages.dart';
 import 'word_metadata_sync.dart';
 
 const Uuid _uuid = Uuid();
@@ -32,8 +33,8 @@ const Uuid _uuid = Uuid();
 ///   accent, TTS, keep-screen-on) for device migration. The sync dataset stays
 ///   at v3 so an older client never receives a version it cannot read, and the
 ///   device block never travels between devices.
-const int backupSchemaVersion = 5;
-const int syncSchemaVersion = 5;
+const int backupSchemaVersion = 6;
+const int syncSchemaVersion = 6;
 const String backupKind = 'materialword-backup';
 
 /// Summary of what an import/merge actually changed.
@@ -205,6 +206,7 @@ class BackupService {
           .toList(growable: false),
       'entries': entryRows.map(_entryToJson).toList(growable: false),
       'reviewEvents': eventRows.map(_eventToJson).toList(growable: false),
+      'dictionaryPackages': await DictionaryPackages.snapshot(db),
       'learningStates': stateRows
           .map((s) => s.toJson())
           .toList(growable: false),
@@ -428,6 +430,13 @@ class BackupService {
     }
     _validateRecords(dataset, version);
     if (version >= 5) _validateProgress(dataset);
+    if (version >= 6) {
+      try {
+        DictionaryPackages.validate(dataset['dictionaryPackages']);
+      } on FormatException {
+        throw const BackupException('词典清单无效，未恢复数据');
+      }
+    }
     return dataset;
   }
 
@@ -830,6 +839,7 @@ class BackupService {
       'entries': entries,
       'reviewEvents': events,
       'learningStates': states,
+      'dictionaryPackages': dataset['dictionaryPackages'] ?? [],
       'progressAlgorithmVersion': dataset['progressAlgorithmVersion'],
       'favorites': favorites,
       'tags': tags,
@@ -1293,6 +1303,13 @@ class BackupService {
     // per word.
     await study.rebuildStatesForWords(touchedWords);
     phase('replay');
+    if (applySharedSettings) {
+      await DictionaryPackages.merge(
+        db,
+        valid['dictionaryPackages'],
+        replace: forceSharedSettings,
+      );
+    }
 
     conflictSink?.addAll(conflictDetails);
     return MergeReport(

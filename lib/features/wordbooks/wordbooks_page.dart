@@ -17,6 +17,7 @@ import '../../shared/widgets/common.dart';
 import '../word_management/import_page.dart';
 import '../word_management/word_management_page.dart';
 import 'word_book_detail_page.dart';
+import 'library_page.dart';
 
 /// All wordbooks with real progress numbers, as a compact classic list.
 class WordBooksPage extends ConsumerWidget {
@@ -321,6 +322,15 @@ class WordBooksPage extends ConsumerWidget {
                   onPressed: createBook,
                 ),
               ],
+            ),
+          ),
+          SettingsTile(
+            leading: const Icon(Icons.local_library_outlined),
+            title: context.l10n.libraryTitle,
+            subtitle: context.l10n.librarySubtitle,
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push<void>(
+              MaterialPageRoute(builder: (_) => const LibraryPage()),
             ),
           ),
           if (books.hasError)

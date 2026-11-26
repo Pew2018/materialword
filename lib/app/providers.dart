@@ -24,6 +24,7 @@ import '../services/cloud_backup/cloud_backup_coordinator.dart';
 import '../services/backup_files.dart';
 import '../services/backup_manager.dart';
 import '../services/dictionary_service.dart';
+import '../services/dictionary_packages.dart';
 import '../services/import_service.dart';
 import '../services/word_intake_service.dart';
 import '../services/sync/credential_store.dart';
@@ -128,12 +129,26 @@ final Provider<SyncConflictResolutionService> syncConflictResolutionProvider =
       ),
     );
 
+final dictionaryPackagesProvider = Provider<DictionaryPackages>((ref) {
+  final packages = DictionaryPackages(ref.watch(databaseProvider));
+  ref.onDispose(packages.close);
+  return packages;
+});
+
 /// Dictionary loading is lazy: the bundled SQLite file is only copied/opened the
 /// first time a screen (or the quick-add flow) actually needs a lookup.
 final FutureProvider<DictionaryService> dictionaryProvider =
-    FutureProvider<DictionaryService>(
-      (Ref ref) => DictionaryService.openBundled(),
-    );
+    FutureProvider<DictionaryService>((Ref ref) async {
+      final service = await DictionaryService.openBundled();
+      final packages = ref.watch(dictionaryPackagesProvider);
+      if (await packages.enabled() && await packages.installed()) {
+        service.extension = DictionaryService.openFile(
+          (await packages.file()).path,
+        );
+      }
+      ref.onDispose(service.close);
+      return service;
+    });
 
 final Provider<ImportService> importServiceProvider = Provider<ImportService>((
   Ref ref,
