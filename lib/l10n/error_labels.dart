@@ -68,8 +68,9 @@ String describeCloudBackupError(AppLocalizations l10n, Object error) {
   if (detail.contains('target changed')) return l10n.cloudBackupTargetChanged;
   if (detail.contains('incomplete') ||
       detail.contains('pagination') ||
-      detail.contains('list changed'))
+      detail.contains('list changed')) {
     return l10n.cloudBackupListUncertain;
+  }
   if (detail.contains('outcome unknown')) return l10n.cloudBackupDeleteUnknown;
   if (detail.contains('busy')) return l10n.cloudBackupBusy;
   if (detail.contains('not configured')) return l10n.cloudBackupNotConfigured;

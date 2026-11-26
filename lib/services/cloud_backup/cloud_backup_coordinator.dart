@@ -473,8 +473,9 @@ class CloudBackupCoordinator extends ChangeNotifier {
     provider,
     op,
   ) async {
-    if (plan.fingerprint != config.fingerprint)
+    if (plan.fingerprint != config.fingerprint) {
       throw const CloudBackupException('Cloud backup target changed');
+    }
     if (plan.remove.isEmpty) return CloudBackupDeletionResult([], {}, []);
     final all = await _completeList(config, provider);
     if (_listToken(all) != plan.listToken ||
@@ -518,13 +519,14 @@ class CloudBackupCoordinator extends ChangeNotifier {
         errors[entry.objectName] = e;
       }
     }
-    if (changed)
+    if (changed) {
       return CloudBackupDeletionResult(
         [],
         {},
         entries.map((e) => e.objectName).toList(),
         targetChanged: true,
       );
+    }
     try {
       final visible = (await _completeList(
         config,

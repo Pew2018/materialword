@@ -526,8 +526,9 @@ class _CloudBackupBrowserState extends ConsumerState<CloudBackupBrowser> {
         }
       });
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         setState(() => error = describeCloudBackupError(context.l10n, e));
+      }
     } finally {
       if (mounted) {
         setState(() => deleting = false);

@@ -331,6 +331,8 @@ void main() {
                 entry,
           ],
           'reviewEvents': const <Object?>[],
+          'learningStates': const <Object?>[],
+          'progressEventDigest': BackupService.eventDigest([]),
         };
         await env.backup.mergeDataset(local, now: env.clock.now());
         final Stopwatch watch = Stopwatch()..start();

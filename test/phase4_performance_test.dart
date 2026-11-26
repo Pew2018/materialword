@@ -57,6 +57,9 @@ void main() {
         );
       }
     });
+    await env.study.rebuildStatesForWords([
+      for (var i = 0; i < words; i++) 'word-$i',
+    ]);
     return env;
   }
 

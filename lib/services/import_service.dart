@@ -726,22 +726,23 @@ class ImportService {
         note: cell(row, noteIndex),
         examTags: cell(row, examTagsIndex),
       );
-      if (!seen.add(entry.key)) {
+      final String book = cell(row, bookIndex);
+      final String scope = book.isEmpty ? fallbackName : book;
+      if (!seen.add('$scope\u0000${entry.key}')) {
         duplicate++;
         continue;
       }
       entries.add(entry);
-      final String book = cell(row, bookIndex);
-      (byBook[book.isEmpty ? fallbackName : book] ??= <ParsedEntry>[]).add(
-        entry,
-      );
+      (byBook[scope] ??= <ParsedEntry>[]).add(entry);
     }
     _rejectOverLimit(entries.length);
     // A row without a `book` cell belongs to the file-named book, never to
     // "nowhere": otherwise a multi-book CSV would drop those rows.
     if (byBook.isEmpty) byBook[fallbackName] = entries;
     final List<ImportSection> sections = byBook.length <= 1
-        ? <ImportSection>[ImportSection(name: fallbackName, entries: entries)]
+        ? <ImportSection>[
+            ImportSection(name: byBook.keys.first, entries: entries),
+          ]
         : <ImportSection>[
             for (final MapEntry<String, List<ParsedEntry>> group
                 in byBook.entries)

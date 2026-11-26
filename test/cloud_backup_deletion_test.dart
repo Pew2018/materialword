@@ -53,8 +53,9 @@ class History implements CloudBackupProvider {
 
   @override
   Future<void> deleteBackup(String name) async {
-    if (denied.contains(name))
+    if (denied.contains(name)) {
       throw const CloudBackupException('permission denied', status: 403);
+    }
     files.remove(name);
     afterDelete?.call();
     if (loseDeleteResponse) throw const CloudBackupException('outcome unknown');

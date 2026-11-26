@@ -62,6 +62,9 @@ void main() {
         }
       }),
     );
+    await a.study.rebuildStatesForWords([
+      for (var i = 0; i < 20000; i++) 'word-$i',
+    ]);
     final found = await measure(
       'search_ms',
       () => a.study.managedWords(search: 'synthetic19999'),

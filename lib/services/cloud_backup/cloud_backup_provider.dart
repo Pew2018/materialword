@@ -300,8 +300,9 @@ class S3BackupProvider extends _HttpBackupProvider {
 
   @override
   Future<void> deleteBackup(String name) async {
-    if (!cloudBackupName.hasMatch(name))
+    if (!cloudBackupName.hasMatch(name)) {
       throw const CloudBackupException('Invalid backup name');
+    }
     final response = await _signed('DELETE', objectUri(name));
     // No versionId: versioned buckets create a delete marker, retaining old versions.
     if (response.statusCode != 200 &&
@@ -533,8 +534,9 @@ class WebDavBackupProvider extends _HttpBackupProvider {
 
   @override
   Future<void> deleteBackup(String name) async {
-    if (!cloudBackupName.hasMatch(name))
+    if (!cloudBackupName.hasMatch(name)) {
       throw const CloudBackupException('Invalid backup name');
+    }
     final response = await _send('DELETE', objectUri(name));
     if (response.statusCode != 200 &&
         response.statusCode != 204 &&

@@ -245,9 +245,9 @@ void main() {
     );
   }, timeout: const Timeout(Duration(minutes: 5)));
 
-  test('E2E Schema 与协议版本未变', () async {
+  test('E2E 数据库 Schema 保持 3，备份与同步协议升级为 6', () async {
     expect(AppDatabase.currentSchemaVersion, 3);
-    expect(syncSchemaVersion, 3);
-    expect(backupSchemaVersion, 4);
+    expect(syncSchemaVersion, 6);
+    expect(backupSchemaVersion, 6);
   });
 }
