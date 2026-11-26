@@ -14,6 +14,7 @@ word) so diffs stay small.
 """
 from __future__ import annotations
 
+import argparse
 import csv
 import hashlib
 import json
@@ -25,7 +26,7 @@ import sys
 csv.field_size_limit(10**9)
 
 EXAM_TAGS = {"zk", "gk", "cet4", "cet6", "ky", "toefl", "ielts", "gre"}
-FREQ_LIMIT = 20000
+FREQ_LIMIT = 50000
 WORD_RE = re.compile(r"^[a-z][a-z\-' ]*$")
 
 SCHEMA = """
@@ -40,7 +41,8 @@ CREATE TABLE dictionary (
   bnc         INTEGER NOT NULL DEFAULT 0,
   frq         INTEGER NOT NULL DEFAULT 0,
   collins     INTEGER NOT NULL DEFAULT 0,
-  oxford      INTEGER NOT NULL DEFAULT 0
+  oxford      INTEGER NOT NULL DEFAULT 0,
+  exchange    TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX idx_dictionary_frq ON dictionary (frq);
 """
@@ -64,7 +66,7 @@ def should_keep(row: dict) -> bool:
     tags = set((row.get("tag") or "").split())
     bnc = int(row.get("bnc") or 0)
     frq = int(row.get("frq") or 0)
-    return bool(tags & EXAM_TAGS) or (0 < bnc <= FREQ_LIMIT) or (0 < frq <= FREQ_LIMIT)
+    return FREQ_LIMIT == 0 or bool(tags & EXAM_TAGS) or (0 < bnc <= FREQ_LIMIT) or (0 < frq <= FREQ_LIMIT)
 
 
 def to_int(value, default: int = 0) -> int:
@@ -75,10 +77,15 @@ def to_int(value, default: int = 0) -> int:
 
 
 def main() -> int:
-    if len(sys.argv) != 3:
-        print(__doc__)
-        return 2
-    source, target = sys.argv[1], sys.argv[2]
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('source')
+    parser.add_argument('target')
+    parser.add_argument('--frequency-limit', type=int, default=50000)
+    parser.add_argument('--upstream-revision', required=True)
+    args = parser.parse_args()
+    source, target = args.source, args.target
+    global FREQ_LIMIT
+    FREQ_LIMIT = args.frequency_limit
 
     entries: dict[str, tuple] = {}
     total = 0
@@ -101,6 +108,7 @@ def main() -> int:
                 to_int(row.get("frq")),
                 to_int(row.get("collins")),
                 to_int(row.get("oxford")),
+                (row.get("exchange") or "").strip(),
             )
             existing = entries.get(word)
             # Prefer the row with the richest Chinese translation when duplicated.
@@ -115,10 +123,10 @@ def main() -> int:
     connection.executescript(SCHEMA)
     connection.executemany(
         "INSERT INTO dictionary (word, display, phonetic, pos, translation, definition,"
-        " tag, bnc, frq, collins, oxford) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        " tag, bnc, frq, collins, oxford, exchange) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
         [entries[key] for key in sorted(entries)],
     )
-    connection.execute("PRAGMA user_version = 1")
+    connection.execute("PRAGMA user_version = 2")
     connection.commit()
     connection.execute("VACUUM")
     connection.commit()
@@ -130,7 +138,11 @@ def main() -> int:
     with open(target, "rb") as handle:
         digest = hashlib.sha256(handle.read()).hexdigest()
     meta = {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
+        "source": "https://github.com/skywind3000/ECDICT",
+        "upstreamRevision": args.upstream_revision,
+        "license": "MIT",
+        "frequencyLimit": FREQ_LIMIT,
         "sha256": digest,
         "bytes": os.path.getsize(target),
         "entries": len(entries),
