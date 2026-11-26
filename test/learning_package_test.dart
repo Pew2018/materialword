@@ -102,11 +102,16 @@ void main() {
       final altered = Archive();
       for (final entry in files.entries) {
         altered.addFile(
-          ArchiveFile.noCompress(entry.key, entry.value.length, entry.value),
+          ArchiveFile.noCompress(
+            entry.key,
+            entry.value.length,
+            InputStream(entry.value),
+          ),
         );
       }
+      final alteredBytes = ZipEncoder().encode(altered)!;
       expect(
-        () => LearningPackage.decode(ZipEncoder().encode(altered)!),
+        () => LearningPackage.decode(alteredBytes),
         throwsA(
           isA<FormatException>().having(
             (e) => e.message,
