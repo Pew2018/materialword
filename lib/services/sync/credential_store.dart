@@ -189,4 +189,10 @@ class CredentialKeys {
   static const String githubToken = 'sync.github.token';
   static const String webdavPassword = 'sync.webdav.password';
   static const String webdavUsername = 'sync.webdav.username';
+
+  /// S3 credentials. The access key id is stored with the secret rather than in
+  /// the configuration document, so the sync config (and therefore any backup
+  /// or diagnostic export of it) never contains a credential.
+  static const String s3AccessKeyId = 'sync.s3.accessKeyId';
+  static const String s3SecretAccessKey = 'sync.s3.secretAccessKey';
 }

@@ -4028,6 +4028,12 @@ abstract class AppLocalizations {
   /// **'Syncs through a compatible WebDAV service.'**
   String get webdavHint;
 
+  /// No description provided for @s3Hint.
+  ///
+  /// In en, this message translates to:
+  /// **'Syncs to an S3-compatible bucket (AWS S3, Cloudflare R2).'**
+  String get s3Hint;
+
   /// No description provided for @credentialsUnreadable.
   ///
   /// In en, this message translates to:
@@ -5797,6 +5803,84 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Couldn\'t create the folder. Check the permissions and try again.'**
   String get createFolderFailed;
+
+  /// No description provided for @s3Endpoint.
+  ///
+  /// In en, this message translates to:
+  /// **'Endpoint'**
+  String get s3Endpoint;
+
+  /// No description provided for @s3EndpointHint.
+  ///
+  /// In en, this message translates to:
+  /// **'https://s3.us-east-1.amazonaws.com'**
+  String get s3EndpointHint;
+
+  /// No description provided for @s3Region.
+  ///
+  /// In en, this message translates to:
+  /// **'Region'**
+  String get s3Region;
+
+  /// No description provided for @s3RegionHint.
+  ///
+  /// In en, this message translates to:
+  /// **'us-east-1, or auto for Cloudflare R2'**
+  String get s3RegionHint;
+
+  /// No description provided for @s3Bucket.
+  ///
+  /// In en, this message translates to:
+  /// **'Bucket'**
+  String get s3Bucket;
+
+  /// No description provided for @s3BucketHint.
+  ///
+  /// In en, this message translates to:
+  /// **'materialword-sync'**
+  String get s3BucketHint;
+
+  /// No description provided for @s3ObjectKey.
+  ///
+  /// In en, this message translates to:
+  /// **'Object key'**
+  String get s3ObjectKey;
+
+  /// No description provided for @s3ObjectKeyHint.
+  ///
+  /// In en, this message translates to:
+  /// **'materialword/materialword-data.json'**
+  String get s3ObjectKeyHint;
+
+  /// No description provided for @s3AccessKeyId.
+  ///
+  /// In en, this message translates to:
+  /// **'Access Key ID'**
+  String get s3AccessKeyId;
+
+  /// No description provided for @s3SecretKey.
+  ///
+  /// In en, this message translates to:
+  /// **'Secret Access Key'**
+  String get s3SecretKey;
+
+  /// No description provided for @s3ConfigNote.
+  ///
+  /// In en, this message translates to:
+  /// **'HTTPS only. AWS endpoints are addressed virtual-hosted, other services path-style. The object key is percent-encoded, so Chinese characters, spaces, + and % are safe.'**
+  String get s3ConfigNote;
+
+  /// No description provided for @s3CredentialsHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Kept in the system keychain, never in backups or diagnostics.'**
+  String get s3CredentialsHint;
+
+  /// No description provided for @syncCapabilityPermissionDenied.
+  ///
+  /// In en, this message translates to:
+  /// **'Permission denied. Check the access key permissions and the bucket policy.'**
+  String get syncCapabilityPermissionDenied;
 }
 
 class _AppLocalizationsDelegate

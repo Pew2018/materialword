@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
+import 'package:http/http.dart' as http;
 
 import '../../core/database/app_database.dart';
 import '../../core/repositories/settings_repository.dart';
@@ -13,6 +14,7 @@ import 'conflict_store.dart';
 import 'credential_store.dart';
 import 'github_sync_provider.dart';
 import 'local_file_sync_provider.dart';
+import 's3_sync_provider.dart';
 import 'sync_capability_cache.dart';
 import 'sync_provider.dart';
 import 'webdav_sync_provider.dart';
@@ -104,6 +106,7 @@ class SyncCoordinator {
     required this.settings,
     required this.credentials,
     this.clock = const SystemClock(),
+    this.httpClient,
   });
 
   final AppDatabase db;
@@ -112,6 +115,13 @@ class SyncCoordinator {
   final SettingsRepository settings;
   final CredentialStore credentials;
   final Clock clock;
+
+  /// Client used by providers built from the stored configuration.
+  ///
+  /// Null in the app (each provider owns a default client). Tests inject a
+  /// client that trusts their loopback certificate, so the real transport,
+  /// the real signature and the real conditional headers are exercised.
+  final http.Client? httpClient;
 
   /// Verified capabilities, keyed by sync target and bound to a fingerprint.
   late final SyncCapabilityCache capabilityCache = SyncCapabilityCache(db);
@@ -147,6 +157,11 @@ class SyncCoordinator {
       'webdav' => WebDavSyncProvider.fromConfig(
         config,
         credentials: credentials,
+      ),
+      's3' => S3SyncProvider.fromConfig(
+        config,
+        credentials: credentials,
+        client: httpClient,
       ),
       _ => null,
     };
@@ -187,19 +202,23 @@ class SyncCoordinator {
       _activeConfigRevision = await db.readMeta(
         SettingsRepository.syncConfigRevisionKey,
       );
-      if (provider is GitHubSyncProvider) await provider.captureCredentials();
-      if (provider is WebDavSyncProvider) await provider.captureCredentials();
+      if (provider is SessionScopedSyncProvider) {
+        await provider.captureCredentials();
+      }
       onProgress?.call(SyncStage.validating, '检查配置');
-      if (provider is WebDavSyncProvider) {
+      if (provider is VerifiableSyncProvider) {
         // Capability is remembered per target: a server that already passed the
         // full probe is not probed again on every automatic run. An unverified
         // server is never treated as verified — `safeBidirectionalSync` is the
-        // only thing that opens the gate.
+        // only thing that opens the gate. This holds for every automatic entry
+        // point (start-up, resume, change, session end) because they all come
+        // through here.
         final SyncCapability capability = await ensureCapability(provider);
         if (!capability.safeBidirectionalSync) {
           throw SyncCapabilityException(capability);
         }
-        if (capability.status == SyncCapabilityStatus.safeSnapshotWrite) {
+        if (provider is WebDavSyncProvider &&
+            capability.status == SyncCapabilityStatus.safeSnapshotWrite) {
           return await _syncWebDavSnapshots(
             provider,
             replay: resumeAfterRestore,
@@ -252,10 +271,15 @@ class SyncCoordinator {
             );
           }
           final SyncPayload? remote = fetched.payload;
-          if (provider is WebDavSyncProvider &&
-              remote != null &&
-              remote.revision == null) {
-            throw const SyncException('WebDAV 未提供强 ETag，无法安全同步。请使用手动备份');
+          if (remote != null && remote.revision == null) {
+            // A conditional write needs a version to condition on. Refusing is
+            // the only honest answer: an unconditional write would silently
+            // overwrite whatever the other device stored in the meantime.
+            throw SyncException(
+              provider is S3SyncProvider
+                  ? '远程对象没有可用的 ETag，无法确认要覆盖的是哪一版数据，已停止同步'
+                  : 'WebDAV 未提供强 ETag，无法安全同步。请使用手动备份',
+            );
           }
           final Map<String, Object?> localBefore = await backup.buildDataset(
             now: clock.now(),
@@ -345,12 +369,15 @@ class SyncCoordinator {
           uploaded = true;
 
           onProgress?.call(SyncStage.verifying, '校验上传结果');
-          await _verifyUpload(provider, mergedHash);
+          final String? verifiedRevision = await _verifyUpload(
+            provider,
+            mergedHash,
+          );
 
           await _persistState(
             now: clock.now(),
             hash: mergedHash,
-            revision: result.revision ?? remote?.revision,
+            revision: verifiedRevision ?? result.revision ?? remote?.revision,
             outcome: SyncOutcome.synced,
             merge: merge,
           );
@@ -428,7 +455,7 @@ class SyncCoordinator {
       // remote *data* (empty/corrupt/missing) say nothing about capability, so
       // they keep the cache — otherwise a single timeout would silently switch
       // automatic sync off until the user tested again.
-      if (provider is WebDavSyncProvider &&
+      if (provider is VerifiableSyncProvider &&
           !e.retryable &&
           e is! SyncEmptyRemoteException &&
           e is! SyncDataException &&
@@ -447,11 +474,7 @@ class SyncCoordinator {
       await _recordFailure(clock.now());
       throw SyncException('同步失败：$e');
     } finally {
-      if (provider is WebDavSyncProvider) {
-        provider.clearCapturedCredentials();
-        provider.close();
-      }
-      if (provider is GitHubSyncProvider) {
+      if (provider is SessionScopedSyncProvider) {
         provider.clearCapturedCredentials();
         provider.close();
       }
@@ -503,11 +526,11 @@ class SyncCoordinator {
     );
     if (!result.ok) throw SyncException('初始化失败：${result.message}');
     onProgress?.call(SyncStage.verifying, '校验初始化结果');
-    await _verifyUpload(provider, hash);
+    final String? verifiedRevision = await _verifyUpload(provider, hash);
     await _persistState(
       now: clock.now(),
       hash: hash,
-      revision: result.revision ?? revision,
+      revision: verifiedRevision ?? result.revision ?? revision,
       outcome: SyncOutcome.initialised,
       message: 'remote file initialised from this device',
     );
@@ -531,12 +554,14 @@ class SyncCoordinator {
   /// configuration, after any change to address/directory/credentials, after the
   /// TTL expires, or when [force] is set (the user pressed 测试连接).
   Future<SyncCapability> ensureCapability(
-    WebDavSyncProvider provider, {
+    VerifiableSyncProvider provider, {
     bool force = false,
   }) async {
     final String target = targetKey(provider);
     final String fingerprint = await provider.capabilityFingerprint();
-    final bool usesSnapshots = (await _snapshotState(provider)).isNotEmpty;
+    final bool usesSnapshots =
+        provider is WebDavSyncProvider &&
+        (await _snapshotState(provider)).isNotEmpty;
     if (!force) {
       final SyncCapability? cached = await capabilityCache.read(
         targetKey: target,
@@ -566,7 +591,7 @@ class SyncCoordinator {
   }
 
   Future<SyncCapability?> cachedCapability(SyncProvider provider) async {
-    if (provider is! WebDavSyncProvider) return null;
+    if (provider is! VerifiableSyncProvider) return null;
     return capabilityCache.read(
       targetKey: targetKey(provider),
       fingerprint: await provider.capabilityFingerprint(),
@@ -579,7 +604,7 @@ class SyncCoordinator {
     SyncCapability capability, {
     String? fingerprint,
   }) async {
-    if (provider is! WebDavSyncProvider) return;
+    if (provider is! VerifiableSyncProvider) return;
     final String target = targetKey(provider);
     if (!capability.safeBidirectionalSync) {
       // A failure is never cached: the next run must re-probe.
@@ -893,7 +918,8 @@ class SyncCoordinator {
         !await hasSyncedTarget(provider)) {
       return null;
     }
-    if (provider is WebDavSyncProvider && !(await _verifiedForAuto(provider))) {
+    if (provider is VerifiableSyncProvider &&
+        !(await _verifiedForAuto(provider))) {
       return null;
     }
     final state = await _autoState(provider),
@@ -924,7 +950,7 @@ class SyncCoordinator {
       }
       // A WebDAV target only runs automatically once its capability has been
       // *proven and remembered*. An unverified server is not "probably fine".
-      if (provider is WebDavSyncProvider &&
+      if (provider is VerifiableSyncProvider &&
           !(await _verifiedForAuto(provider))) {
         return null;
       }
@@ -994,12 +1020,20 @@ class SyncCoordinator {
   /// True only for a WebDAV target whose capability was verified and is still
   /// inside the cache TTL. Unknown is false: automatic sync must not start on a
   /// hope.
-  Future<bool> _verifiedForAuto(WebDavSyncProvider provider) async {
+  Future<bool> _verifiedForAuto(VerifiableSyncProvider provider) async {
     final SyncCapability? capability = await cachedCapability(provider);
     return capability?.safeBidirectionalSync ?? false;
   }
 
-  Future<void> _verifyUpload(SyncProvider provider, String expectedHash) async {
+  /// Reads the remote back and returns the revision it was stored under.
+  ///
+  /// The revision of the *verified* document is the authoritative one: a PUT
+  /// response can be missing (or, on some S3-compatible services, stale), while
+  /// the read-back proves which bytes are actually on the remote.
+  Future<String?> _verifyUpload(
+    SyncProvider provider,
+    String expectedHash,
+  ) async {
     final after = await provider.download();
     if (after == null) throw const SyncException('上传后无法读回远程数据');
     await backup.validateDatasetAsync(after.dataset);
@@ -1007,6 +1041,7 @@ class SyncCoordinator {
     if (actual != expectedHash) {
       throw const SyncConflictException('上传后远程内容再次变化，重新读取并合并');
     }
+    return after.revision;
   }
 
   /// Persists the outcome.
@@ -1082,6 +1117,15 @@ class SyncCoordinator {
         p.baseUrl.trim().replaceAll(RegExp(r'/+$'), ''),
         p.remoteDir,
         p.fileName,
+        p.identityEpoch,
+      ]),
+      S3SyncProvider p => jsonEncode([
+        's3',
+        p.target?.endpoint.toString() ?? p.endpoint.trim(),
+        p.region.trim(),
+        p.target?.bucket ?? p.bucket.trim(),
+        p.target?.objectKey ?? p.objectKey.trim(),
+        p.target?.usesVirtualHost ?? false,
         p.identityEpoch,
       ]),
       LocalFileSyncProvider p => jsonEncode(['local-file', p.filePath]),

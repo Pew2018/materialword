@@ -2220,6 +2220,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get webdavHint => '使用兼容的 WebDAV 服务同步';
 
   @override
+  String get s3Hint => '同步到 S3 兼容存储桶（AWS S3、Cloudflare R2）';
+
+  @override
   String credentialsUnreadable(String reason) {
     return '$reason。已保存的同步凭据无法读取，请重新输入；离线学习不受影响。';
   }
@@ -3220,4 +3223,45 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get createFolderFailed => '无法创建文件夹，请检查权限后重试。';
+
+  @override
+  String get s3Endpoint => 'Endpoint';
+
+  @override
+  String get s3EndpointHint => 'https://s3.us-east-1.amazonaws.com';
+
+  @override
+  String get s3Region => 'Region';
+
+  @override
+  String get s3RegionHint => 'us-east-1；Cloudflare R2 填 auto';
+
+  @override
+  String get s3Bucket => 'Bucket';
+
+  @override
+  String get s3BucketHint => 'materialword-sync';
+
+  @override
+  String get s3ObjectKey => '对象键';
+
+  @override
+  String get s3ObjectKeyHint => 'materialword/materialword-data.json';
+
+  @override
+  String get s3AccessKeyId => 'Access Key ID';
+
+  @override
+  String get s3SecretKey => 'Secret Access Key';
+
+  @override
+  String get s3ConfigNote =>
+      '仅支持 HTTPS。AWS 域名使用 virtual-hosted 寻址，其他服务使用 path-style。对象键按 RFC 3986 编码，中文、空格、+ 和 % 均可安全使用。';
+
+  @override
+  String get s3CredentialsHint => '保存在系统钥匙串，不会写入备份或诊断报告。';
+
+  @override
+  String get syncCapabilityPermissionDenied =>
+      '权限不足：请检查 Access Key 的权限与 Bucket 策略';
 }

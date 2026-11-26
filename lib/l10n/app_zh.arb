@@ -655,6 +655,7 @@
   "githubPrivateRepo": "GitHub",
   "githubHint": "使用私有仓库保存学习数据",
   "webdavHint": "使用兼容的 WebDAV 服务同步",
+  "s3Hint": "同步到 S3 兼容存储桶（AWS S3、Cloudflare R2）",
   "credentialsUnreadable": "{reason}。已保存的同步凭据无法读取，请重新输入；离线学习不受影响。",
   "tokenMissing": "未读取到已保存的访问令牌，请重新输入后再同步。",
   "passwordMissing": "未读取到已保存的 WebDAV 密码，请重新输入后再同步。",
@@ -949,5 +950,18 @@
   "exportFormatTxt": "纯文本（每行一个单词）",
   "exportFormatCsv": "CSV（含释义与例句）",
   "exportFormatJson": "JSON（结构化字段，可无损往返）",
-  "createFolderFailed": "无法创建文件夹，请检查权限后重试。"
+  "createFolderFailed": "无法创建文件夹，请检查权限后重试。",
+  "s3Endpoint": "Endpoint",
+  "s3EndpointHint": "https://s3.us-east-1.amazonaws.com",
+  "s3Region": "Region",
+  "s3RegionHint": "us-east-1；Cloudflare R2 填 auto",
+  "s3Bucket": "Bucket",
+  "s3BucketHint": "materialword-sync",
+  "s3ObjectKey": "对象键",
+  "s3ObjectKeyHint": "materialword/materialword-data.json",
+  "s3AccessKeyId": "Access Key ID",
+  "s3SecretKey": "Secret Access Key",
+  "s3ConfigNote": "仅支持 HTTPS。AWS 域名使用 virtual-hosted 寻址，其他服务使用 path-style。对象键按 RFC 3986 编码，中文、空格、+ 和 % 均可安全使用。",
+  "s3CredentialsHint": "保存在系统钥匙串，不会写入备份或诊断报告。",
+  "syncCapabilityPermissionDenied": "权限不足：请检查 Access Key 的权限与 Bucket 策略"
 }

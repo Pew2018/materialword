@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:drift/drift.dart';
+import 'package:http/http.dart' as http;
 import 'package:drift/native.dart';
 import 'package:materialword/core/database/app_database.dart';
 import 'package:materialword/core/repositories/settings_repository.dart';
@@ -77,14 +78,23 @@ class TestEnv {
     clock: clock,
   );
 
+  /// Secrets for tests: real code paths read them, nothing touches the
+  /// platform keychain.
+  late final InMemoryCredentialStore credentials = InMemoryCredentialStore();
+
   late final SyncCoordinator coordinator = SyncCoordinator(
     db: db,
     backup: backup,
     study: study,
     settings: settings,
-    credentials: InMemoryCredentialStore(),
+    credentials: credentials,
     clock: clock,
+    httpClient: httpClient,
   );
+
+  /// Set before the first use of [coordinator] when a test needs a client that
+  /// trusts a loopback TLS certificate.
+  http.Client? httpClient;
 
   late final SyncConflictStore conflicts = SyncConflictStore(db);
 

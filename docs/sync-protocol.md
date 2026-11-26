@@ -38,6 +38,18 @@ JSON 包含 `kind=materialword-backup`、`schemaVersion=3`、datasetId、作者 
 - 已验证的能力按目标指纹（规范化地址、目录、文件名、凭据 epoch、用户名摘要）缓存 7 天，自动同步不再每次重新探测；正式上传仍保留条件请求。失败结果不缓存。
 - 每个请求按阶段记入脱敏诊断（`stage` / `method` / `path` / `status`），403 与 404 可在「同步诊断信息」中定位到具体请求。
 
+## S3
+
+- 仅 HTTPS；`Endpoint`、`Region`、`Bucket`、对象键分别配置，配置阶段拒绝 `http://`、带路径的 Endpoint、非法 Bucket 名与含 `..`／控制字符／连续斜杠的键。
+- 寻址方式按端点自动决定：`*.amazonaws.com`／`*.amazonaws.com.cn` 用 virtual-hosted，其余（Cloudflare R2、MinIO 等）用 path-style；Bucket 名含 `.` 时强制 path-style，因为通配证书无法匹配 `<bucket.with.dots>.s3.amazonaws.com`。
+- 使用 AWS Signature V4（`service=s3`）。签名路径直接取实际发送的 `Uri.path`，对象键按 RFC 3986 逐段百分号编码（中文、空格、`+`、`%` 均编码），签名、URL 与键三者由同一输入产生；`If-Match`／`If-None-Match` 与 `x-amz-content-sha256` 都在签名头内，条件头无法被中途剥离。
+- ETag 只当版本令牌，不当内容哈希；内容完整性继续用已有数据校验与内容哈希。远程对象存在但没有可用 ETag 时停止上传并说明原因，绝不退化为无条件覆盖。
+- 首次创建用 `If-None-Match: *`，更新用 `If-Match: <本轮读取的 ETag>`，正式对象写入始终携带条件。`412` 与条件写入的 `409 ConditionalRequestConflict` 交给协调器的「重新读取→合并→校验→按新版本重试」流程；达到上限时保留本机数据并区分「已合并到本机」与「已上传」。
+- 上传响应丢失（超时／连接中断）时先 `GET` 远端比对内容哈希：一致则判定前次提交已生效并采用该 ETag，不一致才报可重试失败。
+- 不跟随任何重定向：签名覆盖 `Host`，跟随即等于把签名请求交给别的主机。`301` 与 `400 AuthorizationHeaderMalformed` 归为 Region 不匹配，并给出服务端提示的 `x-amz-bucket-region`。
+- 能力探测在 `<前缀>/materialword-probe-<uuid>.json` 上依次验证：`If-None-Match:*` 创建、读回、条件读、重复创建被拒、过期 `If-Match` 被拒、有效 `If-Match` 更新后 ETag 变化、`HEAD` 与 `GET` 的 ETag 一致、条件删除。只有全部通过且临时对象清理成功才是 `safeConditionalWrite`；忽略条件头只是 `basicReadWrite`，协调器拒绝自动与手动双向同步。
+- 对象层面的 `403` 在部分权限配置下也出现在「对象不存在」的场景，因此 `probeRemote` 只在明确 `404` 时报告 missing，`403` 一律视为无法确认。
+
 ## GitHub
 
 使用 Fine-grained PAT 和 Contents API 的 SHA 条件 PUT；不会创建数据仓库。拒绝将数据写入 Pew2018/materialword 源码仓库。90 MB 是应用保护上限，不要求删除历史。1–90 MB 的 encoding:none 响应通过同一仓库的 immutable blob SHA + raw 媒体类型读取，避免两次 branch 查询间的竞态。

@@ -19,7 +19,7 @@ import 'sync_provider.dart';
 /// Security: complete syncs capture one in-memory credential snapshot and clear
 /// it afterwards. Standalone calls read secure storage; secrets never enter
 /// SQLite, the backup JSON or logs.
-class GitHubSyncProvider implements SyncProvider {
+class GitHubSyncProvider implements SyncProvider, SessionScopedSyncProvider {
   GitHubSyncProvider({
     required this.owner,
     required this.repo,
@@ -63,12 +63,14 @@ class GitHubSyncProvider implements SyncProvider {
   String? _capturedToken;
   bool _hasCapturedToken = false;
 
+  @override
   Future<void> captureCredentials() => CredentialStore.exclusive(() async {
     clearCapturedCredentials();
     _capturedToken = await _token();
     _hasCapturedToken = true;
   });
 
+  @override
   void clearCapturedCredentials() {
     _capturedToken = null;
     _hasCapturedToken = false;
@@ -120,6 +122,7 @@ class GitHubSyncProvider implements SyncProvider {
 
   http.Client get _http => _client ?? (_ownedClient ??= http.Client());
 
+  @override
   void close() {
     _ownedClient?.close();
     _ownedClient = null;

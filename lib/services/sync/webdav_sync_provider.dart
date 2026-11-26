@@ -62,7 +62,8 @@ class WebDavDirectoryEntry {
 /// bidirectional sync.
 enum WebDavPropfindProfile { collectionProbe, directoryListing, fileMetadata }
 
-class WebDavSyncProvider implements SyncProvider {
+class WebDavSyncProvider
+    implements SyncProvider, VerifiableSyncProvider, SessionScopedSyncProvider {
   WebDavSyncProvider({
     required this.baseUrl,
     this.remoteDir = 'materialword',
@@ -117,13 +118,16 @@ class WebDavSyncProvider implements SyncProvider {
   WebDavTrace trace = WebDavTrace();
 
   /// Capability report of the most recent [probeCapability]/[testConnection].
+  @override
   SyncCapability? lastCapability;
 
+  @override
   Future<void> captureCredentials() => CredentialStore.exclusive(() async {
     clearCapturedCredentials();
     _capturedAuth = await _auth();
   });
 
+  @override
   void clearCapturedCredentials() {
     _capturedAuth = null;
     lastCapability = null;
@@ -154,6 +158,7 @@ class WebDavSyncProvider implements SyncProvider {
   http.Client? _ownedClient;
   http.Client get _http => _client ?? (_ownedClient ??= http.Client());
 
+  @override
   void close() {
     _ownedClient?.close();
     _ownedClient = null;
@@ -183,6 +188,7 @@ class WebDavSyncProvider implements SyncProvider {
   /// epoch and a hash of the user name — never the password, never the
   /// Authorization header. Used as the cache fingerprint, so changing any of
   /// them invalidates a previously verified capability.
+  @override
   Future<String> capabilityFingerprint() async {
     final WebDavPaths? p = paths;
     final String user = (await _auth()).username ?? '';
@@ -857,6 +863,7 @@ class WebDavSyncProvider implements SyncProvider {
   }
 
   /// Fills in everything that can be checked without writing.
+  @override
   Future<SyncCapability> probeCapability({bool deep = true}) async {
     trace = WebDavTrace(mirror: traceDiagnostics);
     final WebDavPaths? p = paths;

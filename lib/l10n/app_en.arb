@@ -1525,6 +1525,7 @@
   "githubPrivateRepo": "GitHub",
   "githubHint": "Keeps study data in a private repository.",
   "webdavHint": "Syncs through a compatible WebDAV service.",
+  "s3Hint": "Syncs to an S3-compatible bucket (AWS S3, Cloudflare R2).",
   "credentialsUnreadable": "{reason}. The saved credentials can't be read; enter them again. Offline study is unaffected.",
   "@credentialsUnreadable": {
     "placeholders": {
@@ -2199,5 +2200,18 @@
   "exportFormatTxt": "Plain text (one word per line)",
   "exportFormatCsv": "CSV (with meanings and examples)",
   "exportFormatJson": "JSON (structured, lossless round trip)",
-  "createFolderFailed": "Couldn't create the folder. Check the permissions and try again."
+  "createFolderFailed": "Couldn't create the folder. Check the permissions and try again.",
+  "s3Endpoint": "Endpoint",
+  "s3EndpointHint": "https://s3.us-east-1.amazonaws.com",
+  "s3Region": "Region",
+  "s3RegionHint": "us-east-1, or auto for Cloudflare R2",
+  "s3Bucket": "Bucket",
+  "s3BucketHint": "materialword-sync",
+  "s3ObjectKey": "Object key",
+  "s3ObjectKeyHint": "materialword/materialword-data.json",
+  "s3AccessKeyId": "Access Key ID",
+  "s3SecretKey": "Secret Access Key",
+  "s3ConfigNote": "HTTPS only. AWS endpoints are addressed virtual-hosted, other services path-style. The object key is percent-encoded, so Chinese characters, spaces, + and % are safe.",
+  "s3CredentialsHint": "Kept in the system keychain, never in backups or diagnostics.",
+  "syncCapabilityPermissionDenied": "Permission denied. Check the access key permissions and the bucket policy."
 }

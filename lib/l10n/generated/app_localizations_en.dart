@@ -2464,6 +2464,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get webdavHint => 'Syncs through a compatible WebDAV service.';
 
   @override
+  String get s3Hint =>
+      'Syncs to an S3-compatible bucket (AWS S3, Cloudflare R2).';
+
+  @override
   String credentialsUnreadable(String reason) {
     return '$reason. The saved credentials can\'t be read; enter them again. Offline study is unaffected.';
   }
@@ -3512,4 +3516,46 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get createFolderFailed =>
       'Couldn\'t create the folder. Check the permissions and try again.';
+
+  @override
+  String get s3Endpoint => 'Endpoint';
+
+  @override
+  String get s3EndpointHint => 'https://s3.us-east-1.amazonaws.com';
+
+  @override
+  String get s3Region => 'Region';
+
+  @override
+  String get s3RegionHint => 'us-east-1, or auto for Cloudflare R2';
+
+  @override
+  String get s3Bucket => 'Bucket';
+
+  @override
+  String get s3BucketHint => 'materialword-sync';
+
+  @override
+  String get s3ObjectKey => 'Object key';
+
+  @override
+  String get s3ObjectKeyHint => 'materialword/materialword-data.json';
+
+  @override
+  String get s3AccessKeyId => 'Access Key ID';
+
+  @override
+  String get s3SecretKey => 'Secret Access Key';
+
+  @override
+  String get s3ConfigNote =>
+      'HTTPS only. AWS endpoints are addressed virtual-hosted, other services path-style. The object key is percent-encoded, so Chinese characters, spaces, + and % are safe.';
+
+  @override
+  String get s3CredentialsHint =>
+      'Kept in the system keychain, never in backups or diagnostics.';
+
+  @override
+  String get syncCapabilityPermissionDenied =>
+      'Permission denied. Check the access key permissions and the bucket policy.';
 }

@@ -11,6 +11,7 @@ import '../../services/sync/conflict_store.dart';
 import '../../services/sync/credential_store.dart';
 import '../../services/sync/github_sync_provider.dart';
 import '../../services/sync/local_file_sync_provider.dart';
+import '../../services/sync/s3_sync_provider.dart';
 import '../../services/sync/sync_coordinator.dart';
 import '../../services/sync/sync_provider.dart';
 import '../../services/sync/webdav_sync_provider.dart';
@@ -42,10 +43,11 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
     (id: 'local-file', label: l10n.localFile, description: l10n.localFileHint),
     (id: 'github', label: l10n.githubPrivateRepo, description: l10n.githubHint),
     (id: 'webdav', label: 'WebDAV', description: l10n.webdavHint),
+    (id: 's3', label: 'S3', description: l10n.s3Hint),
   ];
 
   String _provider = 'none';
-  String _savedToken = '', _savedUser = '';
+  String _savedToken = '', _savedUser = '', _savedAccessKeyId = '';
   final Map<String, String> _fields = <String, String>{};
   final TextEditingController _githubToken = TextEditingController();
   final TextEditingController _webdavUser = TextEditingController();
@@ -53,6 +55,10 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
   // Driven by a controller because the folder picker writes into it: an
   // uncontrolled field would keep showing the old path after a selection.
   final TextEditingController _webdavDir = TextEditingController();
+  // S3 credentials live in the keychain, like the WebDAV password: the saved
+  // configuration only holds endpoint, region, bucket and key.
+  final TextEditingController _s3AccessKeyId = TextEditingController();
+  final TextEditingController _s3SecretKey = TextEditingController();
 
   bool _loaded = false;
   bool _busy = false;
@@ -95,6 +101,8 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
     _webdavUser.dispose();
     _webdavPassword.dispose();
     _webdavDir.dispose();
+    _s3AccessKeyId.dispose();
+    _s3SecretKey.dispose();
     super.dispose();
   }
 
@@ -106,7 +114,9 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
     final CredentialStore credentials = ref.read(credentialStoreProvider);
     String? token;
     String? user;
+    String? accessKeyId;
     bool hasPassword = false;
+    bool hasSecretKey = false;
     bool credentialsUnavailable = false;
     try {
       await CredentialStore.exclusive(() async {
@@ -114,6 +124,9 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
         user = await credentials.read(CredentialKeys.webdavUsername);
         hasPassword =
             (await credentials.read(CredentialKeys.webdavPassword)) != null;
+        accessKeyId = await credentials.read(CredentialKeys.s3AccessKeyId);
+        hasSecretKey =
+            (await credentials.read(CredentialKeys.s3SecretAccessKey)) != null;
       });
     } on CredentialStoreUnavailable {
       // The stored secrets are unreadable, not absent: ask the user to type
@@ -145,6 +158,9 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
           credentialNotice = context.l10n.tokenMissing;
         } else if (_provider == 'webdav' && !hasPassword) {
           credentialNotice = context.l10n.passwordMissing;
+        } else if (_provider == 's3' &&
+            (!hasSecretKey || (accessKeyId ?? '').isEmpty)) {
+          credentialNotice = context.l10n.credentialsUnavailable;
         }
       }
       _credentialNotice = credentialNotice;
@@ -158,6 +174,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
         });
       _savedToken = token ?? '';
       _savedUser = user ?? '';
+      _savedAccessKeyId = accessKeyId ?? '';
       // Suggested default for a brand-new WebDAV configuration. An explicitly
       // emptied field stays empty, which means "the base collection itself".
       if (_provider == 'webdav' && _fields['dir'] == null) {
@@ -167,6 +184,8 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       _webdavUser.text = user ?? '';
       _webdavDir.text = _field('dir');
       _webdavPassword.text = hasPassword ? '••••••••' : '';
+      _s3AccessKeyId.text = accessKeyId ?? '';
+      _s3SecretKey.text = hasSecretKey ? '••••••••' : '';
       _lastSyncAt = lastAt;
       _lastResult = lastResult;
       _pendingChanges = pending;
@@ -184,12 +203,12 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
   /// requests. A verified result from an earlier session is enough to keep the
   /// status icon honest until something invalidates it.
   Future<void> _refreshCapability() async {
-    if (_provider != 'webdav') {
+    if (_provider != 'webdav' && _provider != 's3') {
       if (mounted && _capability != null) setState(() => _capability = null);
       return;
     }
     final SyncProvider? provider = _buildProvider();
-    if (provider is! WebDavSyncProvider) return;
+    if (provider is! VerifiableSyncProvider) return;
     final int generation = _verificationGeneration;
     try {
       final SyncCapability? cached = await ref
@@ -210,7 +229,11 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       (_provider == 'webdav' &&
           (_webdavUser.text.trim() != _savedUser.trim() ||
               (_webdavPassword.text.isNotEmpty &&
-                  _webdavPassword.text != '••••••••')));
+                  _webdavPassword.text != '••••••••'))) ||
+      (_provider == 's3' &&
+          (_s3AccessKeyId.text.trim() != _savedAccessKeyId.trim() ||
+              (_s3SecretKey.text.isNotEmpty &&
+                  _s3SecretKey.text != '••••••••')));
 
   Future<void> _setAutoOption(String key, bool value) async {
     setState(() => _fields[key] = value.toString());
@@ -228,7 +251,11 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
         (_provider == 'webdav' &&
             (_webdavUser.text.trim() != _savedUser.trim() ||
                 (_webdavPassword.text.isNotEmpty &&
-                    _webdavPassword.text != '••••••••')));
+                    _webdavPassword.text != '••••••••'))) ||
+        (_provider == 's3' &&
+            (_s3AccessKeyId.text.trim() != _savedAccessKeyId.trim() ||
+                (_s3SecretKey.text.isNotEmpty &&
+                    _s3SecretKey.text != '••••••••')));
     if (draftChanged) {
       showMessage(context, context.l10n.draftNotSaved);
       return;
@@ -244,7 +271,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       } else if (saved &&
           value &&
           mounted &&
-          _provider == 'webdav' &&
+          (_provider == 'webdav' || _provider == 's3') &&
           !(_capability?.safeBidirectionalSync ?? false)) {
         // The preference is kept, but the promise is not: automatic sync will
         // not run until the server passes the safety verification.
@@ -272,6 +299,25 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
           client: ref.read(syncHttpClientProvider),
           tokenOverride: draft && _githubToken.text.trim().isNotEmpty
               ? _githubToken.text.trim()
+              : null,
+        );
+      case 's3':
+        return S3SyncProvider(
+          endpoint: _field('endpoint'),
+          region: _field('region', fallback: 'us-east-1'),
+          bucket: _field('bucket'),
+          objectKey: _field('key', fallback: 'materialword-data.json'),
+          identityEpoch: _field('credentialEpoch'),
+          credentials: ref.read(credentialStoreProvider),
+          client: ref.read(syncHttpClientProvider),
+          accessKeyIdOverride: draft && _s3AccessKeyId.text.trim().isNotEmpty
+              ? _s3AccessKeyId.text.trim()
+              : null,
+          secretAccessKeyOverride:
+              draft &&
+                  _s3SecretKey.text.isNotEmpty &&
+                  _s3SecretKey.text != '••••••••'
+              ? _s3SecretKey.text
               : null,
         );
       case 'webdav':
@@ -312,6 +358,21 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
               CredentialKeys.githubToken,
               _githubToken.text.trim(),
             );
+          }
+          if (_provider == 's3') {
+            if (_s3AccessKeyId.text.trim().isNotEmpty) {
+              await credentials.write(
+                CredentialKeys.s3AccessKeyId,
+                _s3AccessKeyId.text.trim(),
+              );
+            }
+            if (_s3SecretKey.text.isNotEmpty &&
+                _s3SecretKey.text != '••••••••') {
+              await credentials.write(
+                CredentialKeys.s3SecretAccessKey,
+                _s3SecretKey.text,
+              );
+            }
           }
           if (_provider == 'webdav') {
             if (_webdavUser.text.trim().isNotEmpty) {
@@ -361,6 +422,14 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
           ..['url'] = _field('url')
           ..['dir'] = _field('dir')
           ..['file'] = _field('file', fallback: 'materialword-data.json');
+      case 's3':
+        // Only public fields: credentials are never part of the configuration
+        // document, so exporting it cannot leak a key.
+        config
+          ..['endpoint'] = _field('endpoint')
+          ..['region'] = _field('region', fallback: 'us-east-1')
+          ..['bucket'] = _field('bucket')
+          ..['key'] = _field('key', fallback: 'materialword-data.json');
     }
     await ref
         .read(settingsRepositoryProvider)
@@ -380,15 +449,16 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       _testResult = null;
     });
     try {
-      if (provider is GitHubSyncProvider) await provider.captureCredentials();
-      if (provider is WebDavSyncProvider) await provider.captureCredentials();
+      if (provider is SessionScopedSyncProvider) {
+        await provider.captureCredentials();
+      }
       final SyncTestResult result = await provider.testConnection();
       final SyncCapability? capability = result.capability;
       if (mounted &&
           generation == _verificationGeneration &&
           savedCredentials &&
           capability != null &&
-          provider is WebDavSyncProvider) {
+          provider is VerifiableSyncProvider) {
         // Remember what was just proven, so automatic sync can trust it and the
         // next page load does not have to probe again.
         await ref
@@ -420,11 +490,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
         }
       });
     } finally {
-      if (provider is GitHubSyncProvider) {
-        provider.clearCapturedCredentials();
-        provider.close();
-      }
-      if (provider is WebDavSyncProvider) {
+      if (provider is SessionScopedSyncProvider) {
         provider.clearCapturedCredentials();
         provider.close();
       }
@@ -485,7 +551,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       return;
     }
 
-    if (provider is WebDavSyncProvider) {
+    if (provider is VerifiableSyncProvider) {
       final SyncCapability? capability = _capability;
       if (capability != null && !capability.safeBidirectionalSync) {
         await _explainUnsafeTarget(capability);
@@ -835,6 +901,8 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       await credentials.delete(CredentialKeys.githubToken);
       await credentials.delete(CredentialKeys.webdavPassword);
       await credentials.delete(CredentialKeys.webdavUsername);
+      await credentials.delete(CredentialKeys.s3AccessKeyId);
+      await credentials.delete(CredentialKeys.s3SecretAccessKey);
     });
     await ref.read(settingsRepositoryProvider).setSyncConfig(null);
     if (!mounted) return;
@@ -846,6 +914,8 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       _githubToken.clear();
       _webdavUser.clear();
       _webdavPassword.clear();
+      _s3AccessKeyId.clear();
+      _s3SecretKey.clear();
       _status = context.l10n.syncTurnedOff;
       _testResult = null;
     });
@@ -1050,7 +1120,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
                       ],
                     ),
                   ),
-                  if (_provider == 'webdav' &&
+                  if ((_provider == 'webdav' || _provider == 's3') &&
                       !(_capability?.safeBidirectionalSync ?? false) &&
                       (autoStart ||
                           autoResume ||
@@ -1270,7 +1340,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
         icon: Icons.help_outline,
         color: neutral,
         text: context.l10n.connectionNotVerified,
-        hint: _provider == 'webdav'
+        hint: _provider == 'webdav' || _provider == 's3'
             ? context.l10n.connectionNotVerifiedHint
             : null,
         details: const <String>[],
@@ -1301,6 +1371,10 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       ),
       SyncCapabilityStatus.authenticationFailed => (
         Icons.lock_outline,
+        AppColors.unknown,
+      ),
+      SyncCapabilityStatus.permissionDenied => (
+        Icons.block_outlined,
         AppColors.unknown,
       ),
       SyncCapabilityStatus.connectionFailed => (
@@ -1487,6 +1561,52 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
               child: Text(
                 context.l10n.privateRepoNote,
+                style: theme.textTheme.bodySmall,
+              ),
+            ),
+          ],
+        );
+      case 's3':
+        return SettingsGroup(
+          children: <Widget>[
+            field(
+              'endpoint',
+              context.l10n.s3Endpoint,
+              hint: context.l10n.s3EndpointHint,
+            ),
+            field(
+              'region',
+              context.l10n.s3Region,
+              hint: context.l10n.s3RegionHint,
+              fallback: 'us-east-1',
+            ),
+            field(
+              'bucket',
+              context.l10n.s3Bucket,
+              hint: context.l10n.s3BucketHint,
+            ),
+            field(
+              'key',
+              context.l10n.s3ObjectKey,
+              hint: context.l10n.s3ObjectKeyHint,
+              fallback: 'materialword-data.json',
+            ),
+            _SyncTextField(
+              label: context.l10n.s3AccessKeyId,
+              controller: _s3AccessKeyId,
+              helper: context.l10n.s3CredentialsHint,
+              onChanged: (String _) => _invalidateVerification(),
+            ),
+            secretField(
+              context.l10n.s3SecretKey,
+              controller: _s3SecretKey,
+              helper: context.l10n.leaveBlankToKeep,
+              onChanged: (String _) => _invalidateVerification(),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+              child: Text(
+                context.l10n.s3ConfigNote,
                 style: theme.textTheme.bodySmall,
               ),
             ),

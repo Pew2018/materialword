@@ -55,6 +55,10 @@ enum SyncCapabilityStatus {
   /// The server answered, but rejected the credentials.
   authenticationFailed,
 
+  /// The credentials were accepted, but this account may not perform the
+  /// operation (S3 `403 AccessDenied`, a bucket policy, or a read-only key).
+  permissionDenied,
+
   /// The server rejected the WebDAV request format; authentication is unknown.
   requestRejected,
 
@@ -352,7 +356,7 @@ enum SyncOutcome {
 class SyncCapabilityException extends SyncException {
   SyncCapabilityException(this.capability)
     : super(
-        'WebDAV capability ${capability.status.name}: ${capability.detail ?? ''}',
+        'Sync capability ${capability.status.name}: ${capability.detail ?? ''}',
       );
 
   final SyncCapability capability;
@@ -512,6 +516,37 @@ abstract class SyncProvider {
     Map<String, Object?> dataset, {
     String? ifRevision,
   });
+}
+
+/// A provider whose target can be **proven** safe for two devices.
+///
+/// The coordinator refuses to run a WebDAV/S3 sync on a hope: [capability] is
+/// the only thing that opens the gate, and [capabilityFingerprint] ties a proven
+/// result to *this* endpoint, bucket, key and credential revision so a cached
+/// verdict can never be inherited by a different target.
+abstract class VerifiableSyncProvider implements SyncProvider {
+  /// Full probe (writes only to an isolated temporary object).
+  Future<SyncCapability> probeCapability({bool deep = true});
+
+  /// Stable digest of everything a capability result depends on.
+  Future<String> capabilityFingerprint();
+
+  /// Result of the most recent probe, when one ran in this instance.
+  SyncCapability? get lastCapability;
+  set lastCapability(SyncCapability? value);
+}
+
+/// A provider that holds request-scoped secrets and a HTTP client.
+///
+/// The coordinator closes these in `finally`, so a captured password or an
+/// access key cannot outlive one sync run, and results from an in-flight
+/// request cannot be attributed to a configuration the user has since changed.
+abstract class SessionScopedSyncProvider implements SyncProvider {
+  Future<void> captureCredentials();
+
+  void clearCapturedCredentials();
+
+  void close();
 }
 
 /// Helper for tests and for the "not implemented" placeholders.
