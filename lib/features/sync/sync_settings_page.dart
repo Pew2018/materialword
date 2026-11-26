@@ -1278,7 +1278,8 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
     }
 
     final (IconData, Color) visual = switch (capability.status) {
-      SyncCapabilityStatus.safeConditionalWrite => (
+      SyncCapabilityStatus.safeConditionalWrite ||
+      SyncCapabilityStatus.safeSnapshotWrite => (
         Icons.check_circle,
         AppColors.known,
       ),

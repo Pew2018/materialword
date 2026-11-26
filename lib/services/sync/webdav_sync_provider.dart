@@ -13,6 +13,8 @@ import 'sync_provider.dart';
 import 'webdav_paths.dart';
 import 'webdav_trace.dart';
 
+part 'webdav_snapshot_store.dart';
+
 /// A folder or file listed by `PROPFIND Depth: 1`.
 class WebDavDirectoryEntry {
   const WebDavDirectoryEntry({
@@ -272,7 +274,9 @@ class WebDavSyncProvider implements SyncProvider {
           stage: stage,
           method: method,
           host: current.host,
-          path: WebDavTrace.maskNonce(current.path),
+          path: stage == WebDavStage.snapshotTransfer
+              ? '/<snapshot>'
+              : WebDavTrace.maskNonce(current.path),
           hasQuery: current.hasQuery,
           hasFragment: current.hasFragment,
           depth: depth,
@@ -313,16 +317,16 @@ class WebDavSyncProvider implements SyncProvider {
       } on TimeoutException {
         record(null, 'timeout');
         throw const SyncException('网络超时：请检查网络后重试', retryable: true);
-      } on http.ClientException catch (e) {
+      } on http.ClientException {
         record(null, 'network_error');
-        throw SyncException('网络请求失败：${e.message}', retryable: true);
+        throw const SyncException('网络请求失败：请检查网络后重试', retryable: true);
       } catch (e) {
         if (e is SyncException) {
           record(null, 'network_error');
           rethrow;
         }
         record(null, 'network_error');
-        throw SyncException('网络请求失败：$e', retryable: true);
+        throw const SyncException('网络请求失败：请检查网络后重试', retryable: true);
       }
       final http.Response response = await http.Response.fromStream(streamed)
           .timeout(const Duration(seconds: 45));
@@ -336,6 +340,10 @@ class WebDavSyncProvider implements SyncProvider {
         if (next.origin != current.origin || next.userInfo.isNotEmpty) {
           record(response, 'cross_origin_redirect');
           throw const SyncException('WebDAV 服务器重定向到其他主机，已拒绝携带认证信息继续请求');
+        }
+        if (stage == WebDavStage.snapshotTransfer && next != uri) {
+          record(response, 'snapshot_redirect_rejected');
+          throw const SyncException('WebDAV 重定向改变了快照请求的目标');
         }
         if (probeResource &&
             (next.pathSegments.lastOrNull != probeName ||
@@ -391,6 +399,9 @@ class WebDavSyncProvider implements SyncProvider {
     if (status == 412) {
       throw const SyncConflictException('远程文件已被其他设备修改');
     }
+    if (status == 429) {
+      throw const SyncException('WebDAV 请求过于频繁，请稍后重试', retryable: true);
+    }
     if (status == 507) {
       throw const SyncException('WebDAV 服务器存储空间不足');
     }
@@ -441,6 +452,8 @@ class WebDavSyncProvider implements SyncProvider {
         headers: <String, String>{
           ...authHeaders,
           'Depth': depth,
+          if (stage == WebDavStage.snapshotTransfer)
+            'Cache-Control': 'no-cache',
           if (mode != 'no_body') 'Content-Type': '$mode; charset=utf-8',
         },
         body: mode == 'no_body' ? null : utf8.encode(_propfindBody(profile)),
@@ -1001,13 +1014,27 @@ class WebDavSyncProvider implements SyncProvider {
           probe.supportsStrongEtag &&
           probe.supportsIfMatch &&
           probe.supportsIfNoneMatch;
-      final SyncCapabilityStatus status;
+      SyncCapabilityStatus status;
       if (!probe.canCreate || !probe.canUpdate) {
         status = SyncCapabilityStatus.readOnly;
       } else if (conditionalOk) {
         status = SyncCapabilityStatus.safeConditionalWrite;
       } else {
         status = SyncCapabilityStatus.basicReadWrite;
+      }
+      if (!conditionalOk &&
+          !probe.supportsStrongEtag &&
+          probe.duplicateOverwrote &&
+          listingSupported &&
+          probe.canCreate &&
+          probe.canRead) {
+        try {
+          await WebDavSnapshotStore(this).verifyAccess();
+          status = SyncCapabilityStatus.safeSnapshotWrite;
+        } on SyncException {
+          // Retain the negative single-file result if the alternate transport
+          // cannot be verified. Never write the shared legacy file.
+        }
       }
       return baseCapability.copyWith(
         status: status,
@@ -1020,7 +1047,11 @@ class WebDavSyncProvider implements SyncProvider {
         supportsIfMatch: probe.supportsIfMatch,
         supportsIfNoneMatch: probe.supportsIfNoneMatch,
         probeCleanedUp: probe.cleanedUp,
-        failureStage: probe.issue == null ? null : 'basic_write_probe',
+        failureStage: probe.duplicateOverwrote
+            ? 'duplicate_create_probe'
+            : probe.issue == null
+            ? null
+            : 'basic_write_probe',
         failureMethod: probe.issueMethod,
         failureStatus: probe.issueStatus,
         detail: probe.issue,
@@ -1216,6 +1247,7 @@ class WebDavSyncProvider implements SyncProvider {
           sameTarget && matches(afterDuplicate, initial);
       final bool duplicateOverwroteProbe =
           sameTarget && matches(afterDuplicate, changed);
+      result.duplicateOverwrote = duplicateOverwroteProbe;
       result.supportsIfNoneMatch =
           duplicate.statusCode == 412 && duplicateUnchanged;
       outcome(
@@ -1491,7 +1523,9 @@ class WebDavSyncProvider implements SyncProvider {
           capability.canDelete) {
         details.add('基础读写验证通过：创建、读回、更新、删除');
       }
-      if (capability.safeBidirectionalSync) {
+      if (capability.status == SyncCapabilityStatus.safeSnapshotWrite) {
+        details.add('已验证独立同步快照可以发布、列出和读取');
+      } else if (capability.safeBidirectionalSync) {
         details.add('已验证 If-Match、If-None-Match、更新与读回 ETag');
       } else if (capability.status == SyncCapabilityStatus.basicReadWrite) {
         details.add(
@@ -1508,7 +1542,7 @@ class WebDavSyncProvider implements SyncProvider {
         details.add('支持浏览远程文件夹');
       }
       final bool connected =
-          capability.status == SyncCapabilityStatus.safeConditionalWrite ||
+          capability.safeBidirectionalSync ||
           capability.status == SyncCapabilityStatus.basicReadWrite ||
           capability.status == SyncCapabilityStatus.readOnly;
       return SyncTestResult(
@@ -1841,6 +1875,7 @@ class WebDavSyncProvider implements SyncProvider {
 class _WriteProbe {
   _WriteProbe();
 
+  bool duplicateOverwrote = false;
   bool canRead = false;
   bool canCreate = false;
   bool canUpdate = false;

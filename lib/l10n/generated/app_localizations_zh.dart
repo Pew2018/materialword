@@ -2624,7 +2624,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get httpsOnly => '只使用 HTTPS，不会关闭证书校验。';
 
   @override
-  String get etagNote => '同步使用条件请求（ETag）保护多设备同时修改；服务器不支持时，本页不会启用自动同步。';
+  String get etagNote => '同步通过条件写入或独立快照保护多设备修改。验证通过后可开启自动同步。';
 
   @override
   String get serverNoConditionalWrite => '此服务器没有通过安全写入验证。';
@@ -3135,6 +3135,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get syncCapabilityUnsafe => '基础读写可用，未能验证安全同步';
+
+  @override
+  String get syncCapabilitySnapshot => '连接成功，将通过独立快照同步';
 
   @override
   String get syncCapabilitySafe => '连接成功，可以同步';

@@ -247,9 +247,7 @@ class _StudyPageState extends ConsumerState<StudyPage>
                 backgroundColor:
                     (theme.appBarTheme.foregroundColor ?? Colors.white)
                         .withValues(alpha: 0.24),
-                valueColor: AlwaysStoppedAnimation<Color>(
-                  theme.colorScheme.onPrimary,
-                ),
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
               ),
             ),
             // A long title plus four icon buttons plus the counter overflowed a
@@ -321,7 +319,7 @@ class _StudyPageState extends ConsumerState<StudyPage>
                       child: Text(
                         '${_session.position}/${_session.totalCards}',
                         style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.onPrimary,
+                          color: Colors.white,
                         ),
                       ),
                     ),

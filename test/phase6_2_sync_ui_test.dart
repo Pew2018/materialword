@@ -10,6 +10,7 @@ import 'package:materialword/features/settings/diagnostics_page.dart';
 import 'package:materialword/features/sync/sync_settings_page.dart';
 import 'package:materialword/features/sync/webdav_directory_picker.dart';
 import 'package:materialword/services/sync/credential_store.dart';
+import 'package:materialword/services/sync/sync_capability_cache.dart';
 import 'package:materialword/services/sync/sync_coordinator.dart';
 import 'package:materialword/services/sync/sync_provider.dart';
 import 'package:materialword/services/sync/webdav_sync_provider.dart';
@@ -75,7 +76,7 @@ void main() {
     await env.db.writeMeta(
       'sync_capability:${SyncCoordinator.targetKey(provider)}',
       jsonEncode(<String, Object?>{
-        'v': '1',
+        'v': SyncCapabilityCache.version,
         'at': env.clock.now().toUtc().toIso8601String(),
         'fingerprint': await provider.capabilityFingerprint(),
         'capability': capability.toJson(),

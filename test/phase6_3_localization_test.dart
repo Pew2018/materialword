@@ -452,26 +452,34 @@ void main() {
       }
     });
 
-    test('THEME14/THEME15 亮色强调色上的前景可读、涟漪可见', () {
-      double contrast(Color a, Color b) {
-        final double la = a.computeLuminance() + 0.05;
-        final double lb = b.computeLuminance() + 0.05;
-        return la > lb ? la / lb : lb / la;
-      }
+    test('Classic filled components keep white foregrounds in both themes', () {
+      double whiteContrast(Color background) =>
+          1.05 / (background.computeLuminance() + 0.05);
 
-      for (final AccentPalette palette in accentPalettes) {
-        final Color foreground = AppTheme.onColor(palette.color);
-        // 4.5:1 is the WCAG AA threshold for body text; every preset must pass
-        // it against the colour it is painted on (AppBar, filled buttons, FAB).
-        expect(
-          contrast(palette.color, foreground),
-          greaterThanOrEqualTo(4.5),
-          reason:
-              '${palette.hex} 上的前景对比度不足: '
-              '${contrast(palette.color, foreground).toStringAsFixed(2)}',
-        );
-        // The ripple is the *foreground* colour at 20% opacity over the bar:
-        // it must be visible against the bar, which the contrast above covers.
+      for (final accent in [
+        ...accentPalettes.map((palette) => palette.color),
+        Colors.white,
+      ]) {
+        for (final brightness in Brightness.values) {
+          final theme = AppTheme.of(brightness, accent);
+          final bar = theme.appBarTheme;
+          final button = theme.elevatedButtonTheme.style!;
+          final fab = theme.floatingActionButtonTheme;
+          expect(bar.foregroundColor, Colors.white);
+          expect(bar.titleTextStyle!.color, Colors.white);
+          expect(bar.iconTheme!.color, Colors.white);
+          expect(bar.actionsIconTheme!.color, Colors.white);
+          expect(button.foregroundColor!.resolve({}), Colors.white);
+          expect(fab.foregroundColor, Colors.white);
+          expect(theme.tabBarTheme.labelColor, Colors.white);
+          for (final background in [
+            bar.backgroundColor!,
+            button.backgroundColor!.resolve({})!,
+            fab.backgroundColor!,
+          ]) {
+            expect(whiteContrast(background), greaterThanOrEqualTo(4.5));
+          }
+        }
       }
     });
 

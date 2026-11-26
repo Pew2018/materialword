@@ -26,7 +26,7 @@ class SyncCapabilityCache {
   Duration ttl;
 
   /// Bumped when the meaning of a stored capability changes.
-  static const String version = '1';
+  static const String version = '2';
 
   static const String _prefix = 'sync_capability:';
 

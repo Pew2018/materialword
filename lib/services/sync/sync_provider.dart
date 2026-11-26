@@ -69,6 +69,9 @@ enum SyncCapabilityStatus {
 
   /// Proven: strong ETag + If-Match + If-None-Match all behave.
   safeConditionalWrite,
+
+  /// Verified publication of immutable, separately named snapshots.
+  safeSnapshotWrite,
 }
 
 class SyncCapability {
@@ -127,14 +130,16 @@ class SyncCapability {
 
   /// The only property automatic bidirectional sync may depend on.
   bool get safeBidirectionalSync =>
-      status == SyncCapabilityStatus.safeConditionalWrite &&
       directoryAccessible &&
       canRead &&
       canCreate &&
-      canUpdate &&
-      supportsStrongEtag &&
-      supportsIfMatch &&
-      supportsIfNoneMatch;
+      ((status == SyncCapabilityStatus.safeSnapshotWrite &&
+              directoryListingSupported) ||
+          (status == SyncCapabilityStatus.safeConditionalWrite &&
+              canUpdate &&
+              supportsStrongEtag &&
+              supportsIfMatch &&
+              supportsIfNoneMatch));
 
   /// Sync is possible at all (manual merge at minimum).
   bool get usable => directoryAccessible && canRead;

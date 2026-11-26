@@ -182,7 +182,7 @@ class WebDavMock {
           return http.Response('', 412);
         }
         final next = (
-          body: request.body,
+          body: utf8.decode(request.bodyBytes),
           revision: (current?.revision ?? 0) + 1,
         );
         files[path] = next;
@@ -201,8 +201,8 @@ class WebDavMock {
         if (obeysConditions && match != null && match != '*' && match != tag) {
           return http.Response('', 412);
         }
-        return http.Response(
-          request.method == 'HEAD' ? '' : file.body,
+        return http.Response.bytes(
+          request.method == 'HEAD' ? const [] : utf8.encode(file.body),
           200,
           headers: <String, String>{'etag': ?tag},
         );

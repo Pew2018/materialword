@@ -349,6 +349,25 @@ class AppTheme {
     return (lighter + 0.05) / (darker + 0.05);
   }
 
+  /// Keep the classic white foreground by lowering the luminance of the
+  /// surface painted directly under it, without modifying the accent itself.
+  static Color whiteForegroundSurface(Color color) {
+    const double minimumContrast = 4.5;
+    if (_contrastRatio(color, Colors.white) >= minimumContrast) return color;
+    double low = 0;
+    double high = 1;
+    for (int step = 0; step < 16; step++) {
+      final double amount = (low + high) / 2;
+      final Color candidate = Color.lerp(color, Colors.black, amount)!;
+      if (_contrastRatio(candidate, Colors.white) >= minimumContrast) {
+        high = amount;
+      } else {
+        low = amount;
+      }
+    }
+    return Color.lerp(color, Colors.black, high)!;
+  }
+
   static ThemeData _build(
     Brightness brightness,
     Color accent,
@@ -359,6 +378,7 @@ class AppTheme {
     // Dark theme needs a slightly lighter accent to stay legible on #121212.
     final Color primary = isDark ? _lighten(accent, 0.22) : accent;
     final Color onPrimary = onColor(primary);
+    final Color filledAccent = whiteForegroundSurface(primary);
     final MaterialColor swatch = _swatch(accent);
 
     final Color background = isDark
@@ -484,20 +504,17 @@ class AppTheme {
         centerTitle: false,
         backgroundColor: isDark
             ? Color.alphaBlend(primary.withValues(alpha: 0.16), surface)
-            : primary,
-        foregroundColor: isDark ? textPrimary : onPrimary,
+            : filledAccent,
+        foregroundColor: Colors.white,
         titleTextStyle: TextStyle(
           fontSize: AppDimens.appBarTitleSize,
           fontWeight: FontWeight.w500,
-          color: isDark ? textPrimary : onPrimary,
+          color: Colors.white,
         ),
-        iconTheme: IconThemeData(
-          size: AppDimens.iconSize,
-          color: isDark ? textPrimary : onPrimary,
-        ),
+        iconTheme: IconThemeData(size: AppDimens.iconSize, color: Colors.white),
         actionsIconTheme: IconThemeData(
           size: AppDimens.iconSize,
-          color: isDark ? textPrimary : onPrimary,
+          color: Colors.white,
         ),
       ),
       cardTheme: CardThemeData(
@@ -536,8 +553,10 @@ class AppTheme {
           elevation: 2,
           minimumSize: const Size(88, 40),
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          backgroundColor: primary,
-          foregroundColor: onPrimary,
+          backgroundColor: filledAccent,
+          foregroundColor: Colors.white,
+          disabledForegroundColor: Colors.white,
+          disabledBackgroundColor: Color.lerp(filledAccent, Colors.black, 0.25),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppDimens.buttonRadius),
           ),
@@ -568,8 +587,8 @@ class AppTheme {
         ),
       ),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
-        backgroundColor: primary,
-        foregroundColor: onPrimary,
+        backgroundColor: filledAccent,
+        foregroundColor: Colors.white,
         elevation: 6,
         shape: const CircleBorder(),
       ),
@@ -583,11 +602,9 @@ class AppTheme {
         contentTextStyle: textTheme.bodyMedium,
       ),
       tabBarTheme: TabBarThemeData(
-        labelColor: isDark ? primary : onPrimary,
-        unselectedLabelColor: isDark
-            ? textSecondary
-            : onPrimary.withValues(alpha: 0.7),
-        indicatorColor: isDark ? primary : onPrimary,
+        labelColor: Colors.white,
+        unselectedLabelColor: Colors.white,
+        indicatorColor: Colors.white,
         labelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
         unselectedLabelStyle: const TextStyle(fontSize: 14),
       ),

@@ -2892,7 +2892,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get etagNote =>
-      'Sync uses conditional requests (ETag) to protect concurrent edits; automatic sync stays off when a server doesn\'t support them.';
+      'Sync protects edits from multiple devices with conditional writes or separate snapshots. Automatic sync requires a verified connection.';
 
   @override
   String get serverNoConditionalWrite =>
@@ -3423,6 +3423,10 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get syncCapabilityUnsafe =>
       'Basic file access works, but safe syncing could not be verified';
+
+  @override
+  String get syncCapabilitySnapshot =>
+      'Connected. Sync uses versioned snapshots.';
 
   @override
   String get syncCapabilitySafe => 'Connected. Ready to sync.';

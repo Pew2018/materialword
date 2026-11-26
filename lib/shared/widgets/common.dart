@@ -61,6 +61,7 @@ class ClassicAppBar extends StatelessWidget implements PreferredSizeWidget {
     return Theme(
       data: theme.copyWith(
         splashFactory: InkRipple.splashFactory,
+        disabledColor: foreground.withValues(alpha: 0.38),
         splashColor: foreground.withValues(alpha: 0.20),
         highlightColor: foreground.withValues(alpha: 0.12),
         hoverColor: foreground.withValues(alpha: 0.08),

@@ -27,6 +27,7 @@ enum WebDavStage {
   conditionalExistingCreateProbe('duplicate_create_probe'),
   conditionalValidUpdateProbe('conditional_valid_update_probe'),
   probeCleanup('probe_cleanup'),
+  snapshotTransfer('snapshot_transfer'),
   datasetDownload('dataset_download'),
   datasetUpload('dataset_upload'),
   datasetVerification('dataset_verification');

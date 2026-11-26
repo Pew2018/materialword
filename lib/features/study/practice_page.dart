@@ -271,7 +271,7 @@ class _PracticePageState extends ConsumerState<PracticePage>
                 child: Text(
                   '${_session.questionNumber}/${_session.total}',
                   style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onPrimary,
+                    color: Colors.white,
                   ),
                 ),
               ),

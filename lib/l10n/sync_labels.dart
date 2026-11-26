@@ -45,6 +45,7 @@ String syncCapabilityLabel(
   SyncCapabilityStatus.readOnly => l10n.syncCapabilityReadOnly,
   SyncCapabilityStatus.basicReadWrite => l10n.syncCapabilityUnsafe,
   SyncCapabilityStatus.safeConditionalWrite => l10n.syncCapabilitySafe,
+  SyncCapabilityStatus.safeSnapshotWrite => l10n.syncCapabilitySnapshot,
 };
 
 String syncCapabilitySummary(

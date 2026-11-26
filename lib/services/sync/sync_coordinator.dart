@@ -199,6 +199,14 @@ class SyncCoordinator {
         if (!capability.safeBidirectionalSync) {
           throw SyncCapabilityException(capability);
         }
+        if (capability.status == SyncCapabilityStatus.safeSnapshotWrite) {
+          return await _syncWebDavSnapshots(
+            provider,
+            replay: resumeAfterRestore,
+            allowRemoteRecreate: allowRemoteRecreate,
+            onProgress: onProgress,
+          );
+        }
       } else if (!skipConnectionTest) {
         final SyncTestResult test = await provider.testConnection();
         if (!test.ok) {
@@ -528,18 +536,30 @@ class SyncCoordinator {
   }) async {
     final String target = targetKey(provider);
     final String fingerprint = await provider.capabilityFingerprint();
+    final bool usesSnapshots = (await _snapshotState(provider)).isNotEmpty;
     if (!force) {
       final SyncCapability? cached = await capabilityCache.read(
         targetKey: target,
         fingerprint: fingerprint,
         now: clock.now(),
       );
-      if (cached != null) {
+      if (cached != null &&
+          (!usesSnapshots ||
+              cached.status == SyncCapabilityStatus.safeSnapshotWrite)) {
         provider.lastCapability = cached;
         return cached;
       }
     }
-    final SyncCapability capability = await provider.probeCapability();
+    SyncCapability capability = await provider.probeCapability();
+    if (capability.status == SyncCapabilityStatus.safeConditionalWrite &&
+        usesSnapshots) {
+      // A server gaining conditional support must not fork a migrated target
+      // back onto its old, single-file protocol.
+      await WebDavSnapshotStore(provider).verifyAccess();
+      capability = capability.copyWith(
+        status: SyncCapabilityStatus.safeSnapshotWrite,
+      );
+    }
     provider.lastCapability = capability;
     await rememberCapability(provider, capability, fingerprint: fingerprint);
     return capability;
@@ -577,6 +597,192 @@ class SyncCoordinator {
   Future<void> invalidateCapability(SyncProvider provider) =>
       capabilityCache.clear(targetKey(provider));
 
+  String _snapshotKey(WebDavSyncProvider provider) =>
+      'webdav_snapshots:${targetKey(provider)}';
+
+  Future<Map<String, Object?>> _snapshotState(
+    WebDavSyncProvider provider,
+  ) async {
+    final String? raw = await db.readMeta(_snapshotKey(provider));
+    return raw == null ? {} : (jsonDecode(raw) as Map<String, Object?>);
+  }
+
+  Future<SyncReport> _syncWebDavSnapshots(
+    WebDavSyncProvider provider, {
+    required bool replay,
+    required bool allowRemoteRecreate,
+    void Function(SyncStage stage, String detail)? onProgress,
+  }) async {
+    final WebDavSnapshotStore store = WebDavSnapshotStore(provider);
+    final String key = _snapshotKey(provider);
+    final Map<String, Object?> state = await _snapshotState(provider);
+    final Map<String, String> applied = Map<String, String>.from(
+      state['applied'] as Map? ?? {},
+    );
+    final DateTime now = clock.now();
+    final bool hasConflict = (await SyncConflictStore(db).list()).isNotEmpty;
+    if (state['blockedByConflict'] == true && hasConflict) {
+      throw const SyncDataException('请先处理同步冲突，再发布本机数据');
+    }
+
+    onProgress?.call(SyncStage.downloading, '读取远程快照');
+    final remote = await store.list();
+    if (applied.entries.any((entry) => remote[entry.key] != entry.value)) {
+      if (remote.isNotEmpty) {
+        throw const SyncDataException('部分已同步的远程快照不可见，请检查远端文件');
+      }
+      if (!allowRemoteRecreate) {
+        throw const SyncRemoteMissingException('已同步的远程快照不可见，已暂停同步');
+      }
+      await store.verifyAccess();
+      // Never reuse an old name after explicitly rebuilding a lost collection.
+      applied.clear();
+      state.remove('pending');
+      state.remove('settled');
+    }
+
+    // The legacy file is read-only in this mode. Import it on first sync and
+    // stop if an older app later modifies it.
+    final RemoteDataset legacy = await provider.fetchRemote();
+    final Map<String, Object?>? legacyDataset = legacy.payload?.dataset;
+    final String legacyHash = legacyDataset != null
+        ? await BackupService.contentHashOfAsync(legacyDataset)
+        : legacy.isEmpty
+        ? 'empty'
+        : 'missing';
+    if (state['legacy'] != null && state['legacy'] != legacyHash) {
+      throw const SyncDataException('旧版同步文件已变化，请暂停旧版客户端并检查远端备份');
+    }
+
+    bool uploaded = false;
+    final Object? pending = state['pending'];
+    if (pending is Map<String, Object?>) {
+      // Recover exactly the original publication, even if PUT succeeded just
+      // before the previous request timed out or the app exited.
+      final String id = pending['id'] as String;
+      final String digest = await store.publish(id, pending['json'] as String);
+      state.remove('pending');
+      state['settled'] = pending['hash'];
+      await db.writeMeta(key, jsonEncode(state));
+      remote[id] = digest;
+      uploaded = true;
+    }
+
+    final List<(String?, String, Map<String, Object?>)> incoming = [];
+    if (legacyDataset != null && state['legacy'] == null) {
+      incoming.add((
+        null,
+        legacyHash,
+        await backup.validateDatasetAsync(legacyDataset),
+      ));
+    }
+    for (final String id in remote.keys.toList()..sort()) {
+      final String digest = remote[id]!;
+      if (!replay && applied[id] == digest) continue;
+      final dataset = await store.fetch(id, digest);
+      incoming.add((id, digest, await backup.validateDatasetAsync(dataset)));
+    }
+    final Set<String> remoteContent = {};
+    for (final (_, _, dataset) in incoming) {
+      remoteContent.add(await BackupService.contentHashOfAsync(dataset));
+    }
+
+    MergeReport? merge;
+    int conflicts = 0;
+    if (incoming.isNotEmpty) {
+      onProgress?.call(SyncStage.merging, '合并远程快照');
+    }
+    await recoverPendingRebuild();
+    final (
+      String localBefore,
+      Map<String, Object?> merged,
+    ) = await db.transaction(() async {
+      // Local edits cannot land between this baseline and the outbound
+      // snapshot. Edits after the transaction remain dirty for the next sync.
+      final String before = await BackupService.contentHashOfAsync(
+        await backup.buildDataset(now: now),
+      );
+      for (final (id, digest, dataset) in incoming) {
+        final MergeReport report = await backup.mergeValidatedInTransaction(
+          dataset,
+          now: now,
+        );
+        if (merge == null || report.hasChanges) merge = report;
+        if (report.conflictDetails.isNotEmpty) {
+          conflicts += await SyncConflictStore(db)
+              .record(report.conflictDetails, now: now);
+          state['blockedByConflict'] = true;
+        }
+        if (id != null) applied[id] = digest;
+      }
+      if (incoming.isNotEmpty) {
+        state['applied'] = applied;
+        state['legacy'] = legacyHash;
+        await db.writeMeta(key, jsonEncode(state));
+      }
+      return (before, await backup.buildDataset(now: now));
+    });
+    if (state['blockedByConflict'] == true &&
+        (await SyncConflictStore(db).list()).isNotEmpty) {
+      throw const SyncPartialException(
+        '远端快照已合并，请先处理同步冲突再发布',
+        localChanged: true,
+      );
+    }
+    state.remove('blockedByConflict');
+
+    final String mergedHash = await BackupService.contentHashOfAsync(merged);
+    final bool needsPublication =
+        (state['settled'] != localBefore || remote.isEmpty) &&
+        (remote.isEmpty || !remoteContent.contains(mergedHash));
+    state['legacy'] = legacyHash;
+    if (needsPublication) {
+      onProgress?.call(SyncStage.uploading, '发布同步快照');
+      final String id = await store.nextId();
+      final String json = await encodeDatasetJson(merged);
+      state['pending'] = {'id': id, 'json': json, 'hash': mergedHash};
+      await db.writeMeta(key, jsonEncode(state));
+      try {
+        applied[id] = await store.publish(id, json);
+      } on SyncException catch (error) {
+        if (merge?.hasChanges == true) {
+          throw SyncPartialException(error.message, localChanged: true);
+        }
+        rethrow;
+      }
+      state.remove('pending');
+      uploaded = true;
+    }
+    state['settled'] = mergedHash;
+    state['applied'] = applied;
+    final SyncOutcome outcome = uploaded
+        ? SyncOutcome.synced
+        : merge?.hasChanges == true
+        ? SyncOutcome.remoteHasData
+        : SyncOutcome.unchanged;
+    await db.transaction(() async {
+      await db.writeMeta(key, jsonEncode(state));
+      await _persistState(
+        now: now,
+        hash: mergedHash,
+        outcome: outcome,
+        merge: merge,
+      );
+    });
+    return SyncReport(
+      ok: true,
+      outcome: outcome,
+      message: 'snapshot sync',
+      at: now,
+      merge: merge,
+      uploaded: uploaded,
+      skipped: !uploaded,
+      localMerged: merge?.hasChanges ?? false,
+      conflicts: conflicts,
+      stage: SyncStage.done,
+    );
+  }
+
   Future<int> _recordConflicts(MergeReport? merge) async {
     if (merge == null || merge.conflictDetails.isEmpty) return 0;
     try {
@@ -603,6 +809,20 @@ class SyncCoordinator {
     final SyncProvider? target =
         provider ?? providerFromConfig(await settings.syncConfig());
     if (target == null || !target.supportsConditionalWrites) return false;
+    if (target is WebDavSyncProvider &&
+        (await cachedCapability(target))?.status ==
+            SyncCapabilityStatus.safeSnapshotWrite) {
+      final Map<String, Object?> state = await _snapshotState(target);
+      final Map<String, String> applied = Map<String, String>.from(
+        state['applied'] as Map? ?? {},
+      );
+      if (state['pending'] != null || state['blockedByConflict'] == true) {
+        return true;
+      }
+      final remote = await WebDavSnapshotStore(target).list();
+      return remote.length != applied.length ||
+          applied.entries.any((entry) => remote[entry.key] != entry.value);
+    }
     final String? raw = await db.readMeta('sync_target:${targetKey(target)}');
     if (raw == null) return true;
     String? lastRevision;

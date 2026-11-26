@@ -4787,7 +4787,7 @@ abstract class AppLocalizations {
   /// No description provided for @etagNote.
   ///
   /// In en, this message translates to:
-  /// **'Sync uses conditional requests (ETag) to protect concurrent edits; automatic sync stays off when a server doesn\'t support them.'**
+  /// **'Sync protects edits from multiple devices with conditional writes or separate snapshots. Automatic sync requires a verified connection.'**
   String get etagNote;
 
   /// No description provided for @serverNoConditionalWrite.
@@ -5635,6 +5635,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Basic file access works, but safe syncing could not be verified'**
   String get syncCapabilityUnsafe;
+
+  /// No description provided for @syncCapabilitySnapshot.
+  ///
+  /// In en, this message translates to:
+  /// **'Connected. Sync uses versioned snapshots.'**
+  String get syncCapabilitySnapshot;
 
   /// No description provided for @syncCapabilitySafe.
   ///
