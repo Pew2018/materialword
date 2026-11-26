@@ -368,6 +368,68 @@ class AppTheme {
     return Color.lerp(color, Colors.black, high)!;
   }
 
+  /// The single style behind every **solid** accent button.
+  ///
+  /// `ElevatedButton` and `FilledButton` both point here, so the pair can never
+  /// drift apart again: same background, always-white ink and icon, the same
+  /// disabled pair, the classic 2dp corner, the 88×40 minimum and the 16dp
+  /// horizontal padding. Only [elevation] differs, because an elevated button
+  /// is meant to lift off the surface while a filled one sits on it.
+  ///
+  /// The overlay is white-tinted: the global splash colour follows the accent,
+  /// which is invisible on top of an accent-coloured fill.
+  static ButtonStyle solidButtonStyle({
+    required Color background,
+    double elevation = 0,
+  }) {
+    final Color disabledBackground = Color.lerp(
+      background,
+      Colors.black,
+      0.25,
+    )!;
+    return ButtonStyle(
+      elevation: WidgetStateProperty.resolveWith<double?>(
+        (Set<WidgetState> states) =>
+            states.contains(WidgetState.disabled) ? 0 : elevation,
+      ),
+      backgroundColor: WidgetStateProperty.resolveWith<Color?>(
+        (Set<WidgetState> states) => states.contains(WidgetState.disabled)
+            ? disabledBackground
+            : background,
+      ),
+      // Never `onColor(background)`: the accent fill is normalised by
+      // [whiteForegroundSurface] so white is always the readable choice here.
+      foregroundColor: const WidgetStatePropertyAll<Color>(Colors.white),
+      iconColor: const WidgetStatePropertyAll<Color>(Colors.white),
+      overlayColor: WidgetStateProperty.resolveWith<Color?>((
+        Set<WidgetState> states,
+      ) {
+        if (states.contains(WidgetState.pressed)) {
+          return Colors.white.withValues(alpha: 0.20);
+        }
+        if (states.contains(WidgetState.focused)) {
+          return Colors.white.withValues(alpha: 0.16);
+        }
+        if (states.contains(WidgetState.hovered)) {
+          return Colors.white.withValues(alpha: 0.10);
+        }
+        return null;
+      }),
+      minimumSize: const WidgetStatePropertyAll<Size>(Size(88, 40)),
+      padding: const WidgetStatePropertyAll<EdgeInsetsGeometry>(
+        EdgeInsets.symmetric(horizontal: 16),
+      ),
+      shape: WidgetStatePropertyAll<OutlinedBorder>(
+        RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppDimens.buttonRadius),
+        ),
+      ),
+      textStyle: const WidgetStatePropertyAll<TextStyle>(
+        TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+      ),
+    );
+  }
+
   static ThemeData _build(
     Brightness brightness,
     Color accent,
@@ -548,20 +610,17 @@ class AppTheme {
         ),
         unselectedLabelStyle: const TextStyle(fontSize: 12),
       ),
+      // One definition for both filled button classes. `FilledButton` used to
+      // fall back to the Material defaults (a 20dp pill with an automatically
+      // chosen, sometimes black, foreground), which is how the backup dialogs
+      // ended up with green pills and black text. Elevation is the only
+      // deliberate difference: an elevated button lifts off the surface, a
+      // filled one sits on it.
       elevatedButtonTheme: ElevatedButtonThemeData(
-        style: ElevatedButton.styleFrom(
-          elevation: 2,
-          minimumSize: const Size(88, 40),
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          backgroundColor: filledAccent,
-          foregroundColor: Colors.white,
-          disabledForegroundColor: Colors.white,
-          disabledBackgroundColor: Color.lerp(filledAccent, Colors.black, 0.25),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppDimens.buttonRadius),
-          ),
-          textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-        ),
+        style: solidButtonStyle(background: filledAccent, elevation: 2),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: solidButtonStyle(background: filledAccent),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(

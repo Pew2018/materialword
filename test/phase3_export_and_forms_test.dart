@@ -54,7 +54,10 @@ void main() {
       );
       final Set<String> unique = candidates.map((c) => c.lemma).toSet();
       expect(unique.length, candidates.length);
-      expect(candidates.first.relation, isNotEmpty);
+      // `relation` is a typed enum since phase 6, so "is not empty" is not a
+      // statement about anything: assert the relation the guesser derived.
+      expect(candidates.first.lemma, isNotEmpty);
+      expect(candidates.first.relation, WordFormRelation.presentParticiple);
     });
   });
 

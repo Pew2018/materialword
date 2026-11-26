@@ -3697,4 +3697,69 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get cloudBackupReadOnly =>
       'History available; uploading is unavailable';
+
+  @override
+  String get cloudBackupUploadOnly => 'Uploading works; history is unavailable';
+
+  @override
+  String get cloudBackupAddressingAuto => 'Auto';
+
+  @override
+  String get cloudBackupAddressingPath => 'Path-style';
+
+  @override
+  String get cloudBackupAddressingVirtual => 'Virtual-hosted';
+
+  @override
+  String get cloudBackupAccessKeyId => 'Access key ID';
+
+  @override
+  String get cloudBackupSecretAccessKey => 'Secret access key';
+
+  @override
+  String get cloudBackupCredentialsSaved =>
+      'Credentials saved. Leave blank to keep them.';
+
+  @override
+  String get cloudBackupSectionServer => 'Server';
+
+  @override
+  String get cloudBackupSectionAuth => 'Credentials';
+
+  @override
+  String get cloudBackupSectionActions => 'Configuration';
+
+  @override
+  String get cloudBackupSectionDanger => 'Danger zone';
+
+  @override
+  String get cloudBackupDeleteHint =>
+      'Removes the configuration and credentials on this device only. Backups already in the cloud are kept.';
+
+  @override
+  String get cloudBackupBusy =>
+      'A backup is already running. Try again in a moment.';
+
+  @override
+  String get cloudBackupTooLarge => 'The backup is larger than 100 MB.';
+
+  @override
+  String get cloudBackupUnknownTime => 'Unrecognised time';
+
+  @override
+  String get cloudBackupSizeUnknown => 'Size unknown';
+
+  @override
+  String get cloudBackupDownloading => 'Downloading';
+
+  @override
+  String get cloudBackupRestoreSection => 'Restore';
+
+  @override
+  String get cloudBackupRestoreHint =>
+      'Merge restore only adds missing data; snapshot restore replaces all local data and creates a protective backup first.';
+
+  @override
+  String get cloudBackupRunningHint =>
+      'Closing this window does not stop the backup. Reopen it to follow the progress.';
 }

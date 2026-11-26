@@ -1,5 +1,7 @@
+import '../core/time_utils.dart';
 import '../services/backup_manager.dart';
 import '../services/backup_service.dart';
+import '../services/cloud_backup/cloud_backup_repository.dart';
 import '../services/import_service.dart';
 import 'l10n.dart';
 
@@ -81,3 +83,35 @@ String describeImportIssue(AppLocalizations l10n, ImportIssue issue) =>
       ImportIssueCode.notEntry => l10n.importIssueNotEntry,
       ImportIssueCode.invalidEntry => l10n.importIssueInvalidEntry,
     };
+
+/// `512 B`, `256 KB`, `1.4 MB` — a size a user can read at a glance, never a
+/// raw byte count in a list.
+String cloudBackupFileSize(AppLocalizations l10n, int? bytes) {
+  if (bytes == null) return l10n.cloudBackupSizeUnknown;
+  if (bytes < 1024) return '$bytes B';
+  if (bytes < 1024 * 1024) {
+    final double kb = bytes / 1024;
+    return '${kb < 10 ? kb.toStringAsFixed(1) : kb.round()} KB';
+  }
+  return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+}
+
+/// A stored UTC timestamp as the device-local `2026-11-26 11:28`.
+///
+/// Presentation only: the ISO string keeps living in the success record, the
+/// object name and the exported dataset exactly as written. A missing or
+/// unreadable value says so instead of rendering `1970-01-01 08:00`.
+String cloudBackupTime(AppLocalizations l10n, Object? raw) {
+  final DateTime? parsed = raw is String ? DateTime.tryParse(raw) : null;
+  return parsed == null ? l10n.cloudBackupUnknownTime : formatDateTime(parsed);
+}
+
+/// How a configured target is named in a selector or a list row.
+///
+/// S3 is identified by its bucket, WebDAV by its host: the full endpoint would
+/// take three lines of a menu row and tell the user nothing extra.
+String cloudBackupTargetLabel(CloudBackupConfig config) {
+  if (config.providerId == 's3') return 'S3 · ${config.bucket}';
+  final String host = Uri.tryParse(config.endpoint)?.host ?? '';
+  return 'WebDAV · ${host.isEmpty ? config.endpoint : host}';
+}

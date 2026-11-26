@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:materialword/l10n/l10n.dart';
+import 'package:materialword/l10n/language_store.dart';
 import 'package:materialword/app/app.dart';
 import 'package:materialword/app/navigation.dart';
 import 'package:materialword/app/providers.dart';
@@ -419,6 +420,436 @@ void main() {
     // Special drills are list rows, not a row of competing buttons.
     expect(find.text('专项复习'), findsOneWidget);
     expect(find.widgetWithText(TextButton, '困难词复习'), findsNothing);
+    expect(tester.takeException(), isNull);
+    await clean(tester);
+    await env.dispose();
+  });
+
+  // ── Phase 6.5A: the solid button style is defined once and always white ──
+
+  double contrast(Color a, Color b) {
+    final double la = a.computeLuminance();
+    final double lb = b.computeLuminance();
+    final double hi = la > lb ? la : lb;
+    final double lo = la > lb ? lb : la;
+    return (hi + 0.05) / (lo + 0.05);
+  }
+
+  test('T02-T07 filled and elevated buttons share one classic solid style', () {
+    for (final ThemeData theme in <ThemeData>[
+      AppTheme.light(),
+      AppTheme.dark(),
+    ]) {
+      expect(theme.useMaterial3, isFalse);
+      expect(theme.filledButtonTheme.style, isNotNull);
+      for (final ButtonStyle style in <ButtonStyle>[
+        theme.elevatedButtonTheme.style!,
+        theme.filledButtonTheme.style!,
+      ]) {
+        // 2dp, not a pill: `StadiumBorder` and a 10–20dp radius are both gone.
+        expect(
+          radiusOf(style),
+          BorderRadius.circular(AppDimens.buttonRadius),
+          reason: 'classic corner',
+        );
+        expect(style.foregroundColor!.resolve(<WidgetState>{}), Colors.white);
+        expect(
+          style.iconColor!.resolve(<WidgetState>{}),
+          Colors.white,
+          reason: 'the icon of a solid button is white too',
+        );
+        expect(
+          style.foregroundColor!.resolve(<WidgetState>{WidgetState.disabled}),
+          Colors.white,
+          reason: 'a disabled fill keeps white ink, it just dims the fill',
+        );
+        expect(style.minimumSize!.resolve(<WidgetState>{}), const Size(88, 40));
+      }
+    }
+    // Only the elevation may differ.
+    expect(
+      AppTheme.light().elevatedButtonTheme.style!.elevation!.resolve(
+        <WidgetState>{},
+      ),
+      2,
+    );
+    expect(
+      AppTheme.light().filledButtonTheme.style!.elevation!.resolve(
+        <WidgetState>{},
+      ),
+      0,
+    );
+  });
+
+  test('T08-T13 every accent keeps white readable on every solid fill', () {
+    expect(accentPalettes, hasLength(23));
+    final List<Color> accents = <Color>[
+      for (final AccentPalette palette in accentPalettes) palette.color,
+      // Deliberately extreme custom accents: the brightest yellow a user can
+      // pick and a pure white.
+      const Color(0xFFFFF176),
+      const Color(0xFFFFFFFF),
+      const Color(0xFFF2A227),
+    ];
+    for (final Color accent in accents) {
+      for (final Brightness brightness in Brightness.values) {
+        final ThemeData theme = AppTheme.of(brightness, accent);
+        final Color fill = theme.filledButtonTheme.style!.backgroundColor!
+            .resolve(<WidgetState>{})!;
+        final Color ink = theme.filledButtonTheme.style!.foregroundColor!
+            .resolve(<WidgetState>{})!;
+        expect(ink, Colors.white, reason: '${hexOf(accent)} ink');
+        expect(
+          contrast(fill, ink),
+          greaterThanOrEqualTo(4.5),
+          reason: '${hexOf(accent)} $brightness fill contrast',
+        );
+        // The app bar uses the same normalised surface in light mode, and a
+        // mixed surface in dark mode: both must carry a white title.
+        final Color bar = theme.appBarTheme.backgroundColor!;
+        if (brightness == Brightness.light) expect(bar, fill);
+        expect(
+          contrast(bar, Colors.white),
+          greaterThanOrEqualTo(4.5),
+          reason: '${hexOf(accent)} $brightness app bar',
+        );
+        expect(theme.appBarTheme.titleTextStyle!.color, Colors.white);
+        expect(theme.appBarTheme.iconTheme!.color, Colors.white);
+        expect(theme.appBarTheme.actionsIconTheme!.color, Colors.white);
+      }
+    }
+  });
+
+  test(
+    'T14-T15 the accent preference and the answer colours are untouched',
+    () {
+      const Color bright = Color(0xFFF2A227);
+      final ThemeData theme = AppTheme.light(accent: bright);
+      final Color fill = theme.filledButtonTheme.style!.backgroundColor!
+          .resolve(<WidgetState>{})!;
+      // The fill is darkened so white stays readable…
+      expect(fill, isNot(bright));
+      // …but neither the stored value nor the picker swatch changes.
+      expect(hexOf(bright), '#F2A227');
+      expect(parseAccent(hexOf(bright)), bright);
+      expect(
+        accentPalettes
+            .firstWhere((AccentPalette p) => p.id == 'classic.lemonYellow')
+            .color,
+        bright,
+      );
+      // Answer semantics stay conventional in every theme.
+      expect(AppColors.known, const Color(0xFF2E7D32));
+      expect(AppColors.hazy, const Color(0xFFEF6C00));
+      expect(AppColors.unknown, const Color(0xFFC62828));
+      expect(AppColors.forAnswer(0), AppColors.unknown);
+      expect(AppColors.forAnswer(1), AppColors.hazy);
+      expect(AppColors.forAnswer(2), AppColors.known);
+    },
+  );
+
+  // ── Phase 6.5B: one menu, anchored to its trigger, inside the overlay ──
+
+  Future<void> pumpSelect(
+    WidgetTester tester, {
+    required Size size,
+    required double top,
+    int options = 3,
+    bool enabled = true,
+    String label = '备份目标',
+    String longLabel = '',
+  }) async {
+    tester.view.physicalSize = size;
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    String value = 'a';
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        locale: const Locale('zh'),
+        theme: AppTheme.light(),
+        home: Scaffold(
+          body: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: Padding(
+                padding: EdgeInsets.only(top: top),
+                child: SizedBox(
+                  width: 220,
+                  child: StatefulBuilder(
+                    builder: (BuildContext context, StateSetter setState) =>
+                        ClassicSelect<String>(
+                          label: label,
+                          value: value,
+                          enabled: enabled,
+                          options: <ClassicOption<String>>[
+                            ClassicOption<String>(
+                              value: 'a',
+                              label: longLabel.isEmpty ? '选项 A' : longLabel,
+                            ),
+                            for (int i = 1; i < options; i++)
+                              ClassicOption<String>(
+                                value: 'o$i',
+                                label: '选项 $i',
+                              ),
+                          ],
+                          onChanged: (String picked) =>
+                              setState(() => value = picked),
+                        ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await settle(tester);
+    await tester.tap(find.byType(ClassicSelect<String>));
+    await settle(tester);
+  }
+
+  List<Rect> menuItems(WidgetTester tester) => <Rect>[
+    for (final Element e in find.byType(PopupMenuItem<String>).evaluate())
+      tester.getRect(find.byWidget(e.widget)),
+  ];
+
+  testWidgets('T22-T23 the menu sits under the trigger, left aligned', (
+    WidgetTester tester,
+  ) async {
+    await pumpSelect(tester, size: const Size(700, 800), top: 100);
+    final Rect trigger = tester.getRect(find.byType(ClassicSelect<String>));
+    final List<Rect> items = menuItems(tester);
+    expect(items, hasLength(3));
+    expect(
+      items.first.left,
+      closeTo(trigger.left, 0.5),
+      reason: 'left aligned',
+    );
+    expect(
+      items.first.top,
+      greaterThanOrEqualTo(trigger.bottom),
+      reason: 'opens below',
+    );
+    expect(
+      items.first.top - trigger.bottom,
+      lessThanOrEqualTo(14),
+      reason: 'about 4dp gap plus the menu surface padding',
+    );
+    // Never the page width: 700dp window, 320dp menu at most.
+    expect(items.first.width, lessThanOrEqualTo(320));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('T24 the menu flips above when the space below is too small', (
+    WidgetTester tester,
+  ) async {
+    await pumpSelect(tester, size: const Size(700, 800), top: 520, options: 8);
+    final Rect trigger = tester.getRect(find.byType(ClassicSelect<String>));
+    final List<Rect> items = menuItems(tester);
+    expect(items, hasLength(8));
+    final double menuBottom = items.last.bottom;
+    expect(
+      menuBottom,
+      lessThanOrEqualTo(trigger.top),
+      reason: 'eight 48dp rows cannot fit below a trigger at y=520',
+    );
+  });
+
+  testWidgets('T25-T27 a narrow window never produces illegal bounds', (
+    WidgetTester tester,
+  ) async {
+    // 240dp is narrower than the 160dp minimum plus two 16dp margins.
+    await pumpSelect(tester, size: const Size(240, 420), top: 40);
+    final List<Rect> items = menuItems(tester);
+    expect(items, isNotEmpty);
+    for (final Rect item in items) {
+      expect(item.width, greaterThan(0));
+      expect(item.left, greaterThanOrEqualTo(0));
+      expect(item.right, lessThanOrEqualTo(240));
+    }
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('T26 a roomy window keeps at least a 16dp margin', (
+    WidgetTester tester,
+  ) async {
+    await pumpSelect(tester, size: const Size(1000, 800), top: 40);
+    final List<Rect> items = menuItems(tester);
+    expect(items.first.left, greaterThanOrEqualTo(16));
+    expect(items.first.right, lessThanOrEqualTo(1000 - 16));
+    expect(items.first.top, greaterThanOrEqualTo(16));
+  });
+
+  testWidgets('T28 a long label cannot push the check mark out of the menu', (
+    WidgetTester tester,
+  ) async {
+    await pumpSelect(
+      tester,
+      size: const Size(400, 800),
+      top: 40,
+      options: 2,
+      longLabel:
+          'WebDAV · dav.a-very-long-host-name.example.com/materialword-backups',
+    );
+    final Rect menu = menuItems(tester).first;
+    final Finder check = find.byIcon(Icons.check);
+    expect(check, findsOneWidget);
+    final Rect tick = tester.getRect(check);
+    expect(tick.right, lessThanOrEqualTo(menu.right + 0.5));
+    expect(tick.left, greaterThan(menu.left));
+    // The field shows the same label; both truncate rather than overflow.
+    final Text label = tester.widget<Text>(
+      find.textContaining('dav.a-very-long-host-name').last,
+    );
+    expect(label.overflow, TextOverflow.ellipsis);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('T30 a disabled selector cannot open a menu', (
+    WidgetTester tester,
+  ) async {
+    await pumpSelect(
+      tester,
+      size: const Size(700, 800),
+      top: 40,
+      enabled: false,
+    );
+    expect(find.byType(PopupMenuItem<String>), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('T31 a selector inside a dialog is positioned in the overlay', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(700, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        locale: const Locale('zh'),
+        theme: AppTheme.light(),
+        home: Scaffold(
+          body: Builder(
+            builder: (BuildContext context) => TextButton(
+              onPressed: () => showDialog<void>(
+                context: context,
+                builder: (_) => AlertDialog(
+                  title: const Text('手动备份'),
+                  content: SizedBox(
+                    width: 390,
+                    child: ClassicSelect<String>(
+                      label: '备份目标',
+                      value: 'a',
+                      options: const <ClassicOption<String>>[
+                        ClassicOption<String>(value: 'a', label: 'S3 · bucket'),
+                        ClassicOption<String>(
+                          value: 'b',
+                          label: 'WebDAV · dav',
+                        ),
+                      ],
+                      onChanged: (_) {},
+                    ),
+                  ),
+                  actions: const <Widget>[SizedBox.shrink()],
+                ),
+              ),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await settle(tester);
+    await tester.tap(find.byType(ClassicSelect<String>));
+    await settle(tester);
+
+    final Rect trigger = tester.getRect(find.byType(ClassicSelect<String>));
+    final Rect item = menuItems(tester).first;
+    expect(item.left, closeTo(trigger.left, 0.5));
+    expect(item.top, greaterThanOrEqualTo(trigger.bottom));
+    expect(item.left, greaterThanOrEqualTo(16));
+    expect(item.right, lessThanOrEqualTo(700 - 16));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('T32 the menu stays inside the window after a resize', (
+    WidgetTester tester,
+  ) async {
+    await pumpSelect(tester, size: const Size(1000, 800), top: 40);
+    tester.view.physicalSize = const Size(360, 640);
+    await tester.pump();
+    await settle(tester);
+    final List<Rect> items = menuItems(tester);
+    expect(items, isNotEmpty);
+    for (final Rect item in items) {
+      expect(item.left, greaterThanOrEqualTo(0));
+      expect(item.right, lessThanOrEqualTo(360));
+      expect(item.bottom, lessThanOrEqualTo(640));
+    }
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('T18-T19 the language preference is a classic select, not a '
+      'radio dialog', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(920, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final TestEnv env = await TestEnv.create();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          databaseProvider.overrideWithValue(env.db),
+          clockProvider.overrideWithValue(env.clock),
+          languageStoreProvider.overrideWithValue(
+            MemoryLanguageStore(AppLanguage.zh),
+          ),
+        ],
+        child: const MaterialWordApp(),
+      ),
+    );
+    await settle(tester);
+    await tester.tap(find.text('设置').last);
+    await settle(tester);
+
+    // The appearance group holds it, as one enumerated preference.
+    final Finder select = find.byType(ClassicSelect<AppLanguage>);
+    await tester.scrollUntilVisible(
+      select,
+      240,
+      scrollable: find
+          .descendant(
+            of: find.byType(ListView),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+    await settle(tester);
+    expect(select, findsOneWidget);
+
+    await tester.tap(select);
+    await settle(tester);
+    // The old centred radio sheet is gone for good.
+    expect(find.byType(SimpleDialog), findsNothing);
+    expect(find.byType(RadioListTile<AppLanguage>), findsNothing);
+    expect(find.text('English'), findsOneWidget);
+
+    await tester.tap(find.text('English'));
+    await settle(tester);
+    // Same route, same scroll position, different language.
+    expect(find.text('Appearance'), findsWidgets);
+    expect(find.byType(ClassicSelect<AppLanguage>), findsOneWidget);
     expect(tester.takeException(), isNull);
     await clean(tester);
     await env.dispose();

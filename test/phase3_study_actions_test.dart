@@ -11,6 +11,7 @@ import 'package:materialword/features/settings/settings_page.dart';
 import 'package:materialword/features/word_management/word_detail_page.dart';
 import 'package:materialword/services/tts_service.dart';
 
+import 'helpers/l10n_fixture.dart';
 import 'helpers/test_env.dart';
 
 class _SilentTts extends TtsService {
@@ -69,7 +70,7 @@ void main() {
         ),
       );
       await settle(tester);
-      final refresh = find.text('刷新语音列表');
+      final refresh = find.text(zhText.refreshVoices);
       await tester.scrollUntilVisible(
         refresh,
         300,
@@ -192,14 +193,16 @@ void main() {
       await tester.tap(find.byTooltip('编辑单词'));
       await settle(tester);
       expect(find.byType(WordDetailPage), findsOneWidget);
-      final note = find.widgetWithText(TextField, '个人笔记');
+      final note = find.widgetWithText(TextField, zhText.notes);
       await tester.ensureVisible(note);
       await tester.enterText(note, 'edited during study');
-      final save = find.text('保存修改');
+      final save = find.text(zhText.commonSave);
       await tester.ensureVisible(save);
       await tester.tap(save);
       await settle(tester);
-      await tester.pageBack();
+      // `pageBack()` only recognises an English "Back" tooltip or a Cupertino
+      // button; this app runs in Chinese on the classic Material app bar.
+      await tester.tap(find.byType(BackButton));
       await settle(tester);
       expect(find.byType(StudyPage), findsOneWidget);
       expect(find.text('alpha'), findsWidgets);

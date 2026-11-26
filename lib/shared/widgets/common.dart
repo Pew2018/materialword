@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show TextInputFormatter;
 
 import '../../app/theme.dart';
+import '../../l10n/l10n.dart';
 
 /// True for pointer/keyboard platforms (macOS, Windows, Linux). Mobile UI hides
 /// shortcut hints and desktop-only affordances.
@@ -574,7 +575,10 @@ class ErrorBanner extends StatelessWidget {
           AppSpacing.w8,
           Expanded(child: Text(message, style: theme.textTheme.bodySmall)),
           if (onRetry != null)
-            TextButton(onPressed: onRetry, child: const Text('重试')),
+            TextButton(
+              onPressed: onRetry,
+              child: Text(context.l10n.commonRetry),
+            ),
         ],
       ),
     );
@@ -669,10 +673,13 @@ Future<bool> confirmDialog(
   BuildContext context, {
   required String title,
   required String message,
-  String confirmLabel = '确定',
-  String cancelLabel = '取消',
+  String? confirmLabel,
+  String? cancelLabel,
   bool destructive = false,
 }) async {
+  // The defaults come from the current language, not from a Chinese literal:
+  // a caller that only passes a title must still read correctly in English.
+  final AppLocalizations l10n = context.l10n;
   final bool? result = await showDialog<bool>(
     context: context,
     builder: (BuildContext context) => AlertDialog(
@@ -682,14 +689,14 @@ Future<bool> confirmDialog(
       actions: <Widget>[
         TextButton(
           onPressed: () => Navigator.of(context).pop(false),
-          child: Text(cancelLabel),
+          child: Text(cancelLabel ?? l10n.commonCancel),
         ),
         TextButton(
           onPressed: () => Navigator.of(context).pop(true),
           style: destructive
               ? TextButton.styleFrom(foregroundColor: AppColors.unknown)
               : null,
-          child: Text(confirmLabel),
+          child: Text(confirmLabel ?? l10n.ok),
         ),
       ],
     ),
@@ -718,16 +725,18 @@ Future<String?> promptForText(
   required String title,
   required String label,
   String initialValue = '',
-  String confirmLabel = '确定',
+  String? confirmLabel,
   List<TextInputFormatter>? inputFormatters,
 }) async {
+  final AppLocalizations l10n = context.l10n;
   return showDialog<String>(
     context: context,
     builder: (_) => _TextPrompt(
       title: title,
       label: label,
       initialValue: initialValue,
-      confirmLabel: confirmLabel,
+      confirmLabel: confirmLabel ?? l10n.ok,
+      cancelLabel: l10n.commonCancel,
       inputFormatters: inputFormatters,
     ),
   );
@@ -739,9 +748,10 @@ class _TextPrompt extends StatefulWidget {
     required this.label,
     required this.initialValue,
     required this.confirmLabel,
+    required this.cancelLabel,
     this.inputFormatters,
   });
-  final String title, label, initialValue, confirmLabel;
+  final String title, label, initialValue, confirmLabel, cancelLabel;
   final List<TextInputFormatter>? inputFormatters;
   @override
   State<_TextPrompt> createState() => _TextPromptState();
@@ -772,7 +782,7 @@ class _TextPromptState extends State<_TextPrompt> {
     actions: [
       TextButton(
         onPressed: () => Navigator.of(context).pop(),
-        child: const Text('取消'),
+        child: Text(widget.cancelLabel),
       ),
       TextButton(
         onPressed: () => Navigator.of(context).pop(_controller.text),

@@ -2,10 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/providers.dart';
+import '../../app/theme.dart';
+import '../../l10n/backup_labels.dart';
+import '../../l10n/error_labels.dart';
 import '../../l10n/l10n.dart';
 import '../../services/cloud_backup/cloud_backup_repository.dart';
 import '../../services/sync/credential_store.dart';
 import '../../services/sync/webdav_sync_provider.dart';
+import '../../shared/widgets/classic_select.dart';
 import '../../shared/widgets/common.dart';
 import '../sync/webdav_directory_picker.dart';
 
@@ -43,45 +47,44 @@ class _CloudBackupSettingsSectionState
   }
 
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      SectionHeader(title: context.l10n.cloudBackupTitle),
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Text(context.l10n.cloudBackupIndependentHint),
-      ),
-      SettingsGroup(
-        children: [
-          for (final id in ['s3', 'webdav'])
-            ListTile(
-              leading: Icon(
-                id == 's3' ? Icons.cloud_outlined : Icons.folder_outlined,
+  Widget build(BuildContext context) {
+    final AppLocalizations l10n = context.l10n;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SectionHeader(title: l10n.cloudBackupTitle),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: Text(l10n.cloudBackupIndependentHint),
+        ),
+        SettingsGroup(
+          children: [
+            for (final String id in ['s3', 'webdav'])
+              SettingsTile(
+                leading: Icon(
+                  id == 's3' ? Icons.cloud_outlined : Icons.folder_outlined,
+                ),
+                title: id == 's3' ? l10n.cloudBackupS3 : l10n.cloudBackupWebDav,
+                subtitle: _configs.any((c) => c.providerId == id)
+                    ? '${l10n.cloudBackupConfigured} · '
+                          '${l10n.cloudBackupLastSuccess}: '
+                          '${_last[id] == null ? l10n.cloudBackupNever : cloudBackupTime(l10n, _last[id]?['completedAt'])}'
+                    : l10n.cloudBackupNotConfiguredShort,
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () async {
+                  await Navigator.of(context).push<void>(
+                    MaterialPageRoute(
+                      builder: (_) => CloudBackupConfigPage(providerId: id),
+                    ),
+                  );
+                  _load();
+                },
               ),
-              title: Text(
-                id == 's3'
-                    ? context.l10n.cloudBackupS3
-                    : context.l10n.cloudBackupWebDav,
-              ),
-              subtitle: Text(
-                _configs.any((c) => c.providerId == id)
-                    ? '${context.l10n.cloudBackupConfigured} · ${context.l10n.cloudBackupLastSuccess}: ${_last[id]?['completedAt'] ?? context.l10n.cloudBackupNever}'
-                    : context.l10n.cloudBackupNotConfiguredShort,
-              ),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () async {
-                await Navigator.of(context).push<void>(
-                  MaterialPageRoute(
-                    builder: (_) => CloudBackupConfigPage(providerId: id),
-                  ),
-                );
-                _load();
-              },
-            ),
-        ],
-      ),
-    ],
-  );
+          ],
+        ),
+      ],
+    );
+  }
 }
 
 class CloudBackupConfigPage extends ConsumerStatefulWidget {
@@ -103,13 +106,19 @@ class _CloudBackupConfigPageState extends ConsumerState<CloudBackupConfigPage> {
   CloudBackupConfig? saved;
   bool busy = false;
   String? message;
-  bool hasMatchingSync = false;
+  bool messageIsError = false;
+
+  /// True only when *both* credentials for the saved epoch are actually
+  /// present in the keychain. An empty username field next to a saved
+  /// configuration otherwise looks like "nothing was saved".
+  bool credentialsSaved = false;
+
+  bool get isS3 => widget.providerId == 's3';
+
   @override
   void initState() {
     super.initState();
-    directory.text = widget.providerId == 's3'
-        ? 'materialword-backups/'
-        : 'materialword-backups';
+    directory.text = isS3 ? 'materialword-backups/' : 'materialword-backups';
     _load();
   }
 
@@ -126,6 +135,26 @@ class _CloudBackupConfigPageState extends ConsumerState<CloudBackupConfigPage> {
       directory.text = config.directory;
       addressing = config.addressing;
     });
+    await _probeCredentials(config);
+  }
+
+  /// Asks the keychain whether a complete credential pair exists.
+  ///
+  /// The values themselves never leave this method: only the boolean reaches
+  /// the widget state, so a configuration screenshot or a state dump can never
+  /// carry a secret.
+  Future<void> _probeCredentials(CloudBackupConfig config) async {
+    bool complete;
+    try {
+      final (String one, String two) = await ref
+          .read(cloudBackupRepositoryProvider)
+          .readSecrets(config);
+      complete = one.isNotEmpty && two.isNotEmpty;
+    } catch (_) {
+      // Missing, unreadable or partially written: claim nothing.
+      complete = false;
+    }
+    if (mounted) setState(() => credentialsSaved = complete);
   }
 
   @override
@@ -148,16 +177,23 @@ class _CloudBackupConfigPageState extends ConsumerState<CloudBackupConfigPage> {
     addressing: addressing,
     credentialEpoch: saved?.credentialEpoch ?? '',
   );
+
   Future<void> _run(Future<void> Function() action) async {
     if (busy) return;
     setState(() {
       busy = true;
       message = null;
+      messageIsError = false;
     });
     try {
       await action();
     } catch (e) {
-      if (mounted) setState(() => message = e.toString());
+      if (mounted) {
+        setState(() {
+          message = describeCloudBackupError(context.l10n, e);
+          messageIsError = true;
+        });
+      }
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -188,25 +224,30 @@ class _CloudBackupConfigPageState extends ConsumerState<CloudBackupConfigPage> {
     if (mounted) {
       setState(() {
         saved = config;
+        credentialsSaved = true;
         message = context.l10n.commonDone;
+        messageIsError = false;
       });
     }
   });
+
   Future<void> _test() => _run(() async {
     final (one, two) = await _secrets();
     final result = await ref
         .read(cloudBackupCoordinatorProvider)
         .testConnection(draft, one, two);
     if (mounted) {
-      setState(
-        () => message = !result.canUpload
+      setState(() {
+        message = !result.canUpload
             ? context.l10n.cloudBackupReadOnly
             : result.canList
             ? context.l10n.cloudBackupReady
-            : '${context.l10n.cloudBackupReady} · ${context.l10n.cloudBackupBrowse}: —',
-      );
+            : context.l10n.cloudBackupUploadOnly;
+        messageIsError = false;
+      });
     }
   });
+
   Future<void> _browse() => _run(() async {
     if (draft.validate() != null) throw ArgumentError(draft.validate());
     final (username, password) = await _secrets();
@@ -230,11 +271,15 @@ class _CloudBackupConfigPageState extends ConsumerState<CloudBackupConfigPage> {
       pickerProvider.close();
     }
   });
+
   Future<void> _copy() async {
     final sync = await ref.read(settingsRepositoryProvider).syncConfig();
     if (sync?['provider'] != widget.providerId) {
       if (mounted) {
-        setState(() => message = context.l10n.cloudBackupNoSyncConfig);
+        setState(() {
+          message = context.l10n.cloudBackupNoSyncConfig;
+          messageIsError = false;
+        });
       }
       return;
     }
@@ -259,7 +304,7 @@ class _CloudBackupConfigPageState extends ConsumerState<CloudBackupConfigPage> {
     if (ok != true || !mounted) return;
     await _run(() async {
       final store = ref.read(credentialStoreProvider);
-      final keys = widget.providerId == 's3'
+      final keys = isS3
           ? (CredentialKeys.s3AccessKeyId, CredentialKeys.s3SecretAccessKey)
           : (CredentialKeys.webdavUsername, CredentialKeys.webdavPassword);
       final one = await store.read(keys.$1);
@@ -267,15 +312,11 @@ class _CloudBackupConfigPageState extends ConsumerState<CloudBackupConfigPage> {
       if (one == null || two == null) {
         throw StateError('Missing sync credentials');
       }
-      endpoint.text =
-          (sync![widget.providerId == 's3' ? 'endpoint' : 'url'] as String?) ??
-          '';
+      endpoint.text = (sync![isS3 ? 'endpoint' : 'url'] as String?) ?? '';
       region.text = (sync['region'] as String?) ?? 'us-east-1';
       bucket.text = (sync['bucket'] as String?) ?? '';
       addressing = (sync['addressing'] as String?) ?? 'auto';
-      directory.text = widget.providerId == 's3'
-          ? 'materialword-backups/'
-          : 'materialword-backups';
+      directory.text = isS3 ? 'materialword-backups/' : 'materialword-backups';
       first.text = one;
       second.text = two;
       final config = await ref
@@ -286,7 +327,9 @@ class _CloudBackupConfigPageState extends ConsumerState<CloudBackupConfigPage> {
       if (mounted) {
         setState(() {
           saved = config;
+          credentialsSaved = true;
           message = context.l10n.commonDone;
+          messageIsError = false;
         });
       }
     });
@@ -322,98 +365,200 @@ class _CloudBackupConfigPageState extends ConsumerState<CloudBackupConfigPage> {
     TextEditingController controller, {
     bool secret = false,
   }) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 6),
+    padding: const EdgeInsets.only(bottom: 12),
     child: TextField(
       controller: controller,
       obscureText: secret,
+      // The 4dp radius, divider border, focus colour and paddings all come
+      // from `InputDecorationTheme`; a local `OutlineInputBorder()` would
+      // silently drop the theme's focused colour.
       decoration: InputDecoration(
         labelText: label,
-        border: const OutlineInputBorder(),
-        hintText: secret && saved != null ? '••••••••' : null,
+        hintText: secret && credentialsSaved ? '••••••••' : null,
+        helperText: secret && credentialsSaved
+            ? context.l10n.cloudBackupCredentialsSaved
+            : null,
       ),
     ),
   );
+
+  /// One section of labelled fields on the classic flat surface.
+  Widget _fields(List<Widget> children) => SettingsGroup(
+    children: <Widget>[
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: children,
+        ),
+      ),
+    ],
+  );
+
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: ClassicAppBar(
-      title: Text(widget.providerId == 's3' ? 'S3' : 'WebDAV'),
-    ),
-    body: ContentColumn(
-      child: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          if (message != null)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Text(message!),
-            ),
-          if (busy) const LinearProgressIndicator(),
-          field(context.l10n.cloudBackupEndpoint, endpoint),
-          if (widget.providerId == 's3') ...[
-            field(context.l10n.cloudBackupRegion, region),
-            field(context.l10n.cloudBackupBucket, bucket),
-          ],
-          field(context.l10n.cloudBackupDirectory, directory),
-          if (widget.providerId == 's3')
-            DropdownButtonFormField<String>(
-              initialValue: addressing,
-              decoration: InputDecoration(
-                labelText: context.l10n.cloudBackupAddressing,
+  Widget build(BuildContext context) {
+    final AppLocalizations l10n = context.l10n;
+    final ThemeData theme = Theme.of(context);
+    return Scaffold(
+      appBar: ClassicAppBar(title: Text(isS3 ? 'S3' : 'WebDAV')),
+      body: ContentColumn(
+        child: ListView(
+          padding: const EdgeInsets.only(bottom: 24),
+          children: <Widget>[
+            if (busy) const LinearProgressIndicator(),
+            SectionHeader(title: l10n.cloudBackupSectionServer),
+            _fields(<Widget>[
+              field(l10n.cloudBackupEndpoint, endpoint),
+              if (isS3) field(l10n.cloudBackupRegion, region),
+              if (isS3) field(l10n.cloudBackupBucket, bucket),
+              field(l10n.cloudBackupDirectory, directory),
+              if (!isS3)
+                // The picker belongs to the directory field, not to the bottom
+                // of the form: it edits exactly that value.
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: busy ? null : _browse,
+                    icon: const Icon(
+                      Icons.folder_open,
+                      size: AppDimens.iconSizeSmall,
+                    ),
+                    label: Text(l10n.chooseRemoteFolder),
+                  ),
+                ),
+              if (isS3)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: ClassicSelect<String>(
+                    label: l10n.cloudBackupAddressing,
+                    value: addressing,
+                    enabled: !busy,
+                    options: <ClassicOption<String>>[
+                      ClassicOption<String>(
+                        value: 'auto',
+                        label: l10n.cloudBackupAddressingAuto,
+                      ),
+                      ClassicOption<String>(
+                        value: 'path',
+                        label: l10n.cloudBackupAddressingPath,
+                      ),
+                      ClassicOption<String>(
+                        value: 'virtual',
+                        label: l10n.cloudBackupAddressingVirtual,
+                      ),
+                    ],
+                    onChanged: (String value) =>
+                        setState(() => addressing = value),
+                  ),
+                ),
+            ]),
+            SectionHeader(title: l10n.cloudBackupSectionAuth),
+            _fields(<Widget>[
+              field(
+                isS3 ? l10n.cloudBackupAccessKeyId : l10n.cloudBackupUsername,
+                first,
+                secret: true,
               ),
-              items: const [
-                DropdownMenuItem(value: 'auto', child: Text('Auto')),
-                DropdownMenuItem(value: 'path', child: Text('Path')),
-                DropdownMenuItem(value: 'virtual', child: Text('Virtual')),
+              field(
+                isS3
+                    ? l10n.cloudBackupSecretAccessKey
+                    : l10n.cloudBackupPassword,
+                second,
+                secret: true,
+              ),
+            ]),
+            SectionHeader(title: l10n.cloudBackupSectionActions),
+            SettingsGroup(
+              children: <Widget>[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      if (message != null) ...<Widget>[
+                        _status(l10n, theme),
+                        AppSpacing.h12,
+                      ],
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        alignment: WrapAlignment.end,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: <Widget>[
+                          TextButton(
+                            onPressed: busy ? null : _copy,
+                            child: Text(l10n.cloudBackupCopySync),
+                          ),
+                          OutlinedButton(
+                            onPressed: busy ? null : _test,
+                            child: Text(l10n.cloudBackupTest),
+                          ),
+                          ElevatedButton(
+                            onPressed: busy ? null : _save,
+                            child: Text(l10n.commonSave),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
               ],
-              onChanged: (value) {
-                if (value != null) setState(() => addressing = value);
-              },
             ),
-          field(
-            widget.providerId == 's3'
-                ? 'Access Key ID'
-                : context.l10n.cloudBackupUsername,
-            first,
-            secret: true,
-          ),
-          field(
-            widget.providerId == 's3'
-                ? 'Secret Access Key'
-                : context.l10n.cloudBackupPassword,
-            second,
-            secret: true,
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              if (widget.providerId == 'webdav')
-                OutlinedButton(
-                  onPressed: busy ? null : _browse,
-                  child: Text(context.l10n.chooseRemoteFolder),
-                ),
-              OutlinedButton(
-                onPressed: busy ? null : _copy,
-                child: Text(context.l10n.cloudBackupCopySync),
+            if (saved != null) ...<Widget>[
+              SectionHeader(title: l10n.cloudBackupSectionDanger),
+              SettingsGroup(
+                children: <Widget>[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          l10n.cloudBackupDeleteHint,
+                          style: theme.textTheme.bodySmall,
+                        ),
+                        AppSpacing.h8,
+                        TextButton(
+                          onPressed: busy ? null : _remove,
+                          style: TextButton.styleFrom(
+                            foregroundColor: theme.colorScheme.error,
+                          ),
+                          child: Text(l10n.commonDelete),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-              OutlinedButton(
-                onPressed: busy ? null : _test,
-                child: Text(context.l10n.cloudBackupTest),
-              ),
-              FilledButton(
-                onPressed: busy ? null : _save,
-                child: Text(context.l10n.commonSave),
-              ),
-              if (saved != null)
-                TextButton(
-                  onPressed: busy ? null : _remove,
-                  child: Text(context.l10n.commonDelete),
-                ),
             ],
-          ),
-        ],
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  }
+
+  /// Connection-test / save feedback in the app's own status vocabulary
+  /// instead of a bare `Text(message)`.
+  Widget _status(AppLocalizations l10n, ThemeData theme) {
+    final bool error = messageIsError;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Icon(
+          error ? Icons.error_outline : Icons.check_circle,
+          size: AppDimens.iconSizeSmall,
+          color: error ? theme.colorScheme.error : AppColors.known,
+        ),
+        AppSpacing.w8,
+        Expanded(
+          child: Text(
+            message!,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: error ? theme.colorScheme.error : null,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 }

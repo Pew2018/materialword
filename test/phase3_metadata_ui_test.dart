@@ -8,6 +8,7 @@ import 'package:materialword/core/repositories/word_metadata_repository.dart';
 import 'package:materialword/features/word_management/word_management_page.dart';
 import 'package:materialword/features/word_management/word_metadata_widgets.dart';
 
+import 'helpers/l10n_fixture.dart';
 import 'helpers/test_env.dart';
 
 void main() {
@@ -146,11 +147,14 @@ void main() {
       await tester.tap(find.text('仅收藏'));
       await settle(tester);
       expect(find.text('全部单词（121）'), findsOneWidget);
-      await tester.ensureVisible(find.text('选择全部 121 项'));
-      await tester.tap(find.text('选择全部 121 项'));
+      // 121 rows match but only the first page is loaded, so the batch action
+      // is "select all matching" rather than "select the loaded rows".
+      final Finder selectAll = find.text(zhText.selectAllResults(121));
+      await tester.ensureVisible(selectAll);
+      await tester.tap(selectAll);
       await settle(tester);
       expect(find.text('已选 121'), findsOneWidget);
-      await tester.tap(find.byTooltip('收藏与标签批量操作'));
+      await tester.tap(find.byTooltip(zhText.batchFavoritesAndTags));
       await settle(tester);
       await tester.tap(find.text('取消收藏'));
       await settle(tester);

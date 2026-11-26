@@ -3399,4 +3399,65 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get cloudBackupReadOnly => '可浏览历史备份，但无法上传';
+
+  @override
+  String get cloudBackupUploadOnly => '可上传备份，但无法列出历史';
+
+  @override
+  String get cloudBackupAddressingAuto => '自动';
+
+  @override
+  String get cloudBackupAddressingPath => '路径式';
+
+  @override
+  String get cloudBackupAddressingVirtual => '虚拟主机式';
+
+  @override
+  String get cloudBackupAccessKeyId => '访问密钥 ID';
+
+  @override
+  String get cloudBackupSecretAccessKey => '访问密钥';
+
+  @override
+  String get cloudBackupCredentialsSaved => '已保存凭证，留空则保持不变';
+
+  @override
+  String get cloudBackupSectionServer => '服务器';
+
+  @override
+  String get cloudBackupSectionAuth => '身份验证';
+
+  @override
+  String get cloudBackupSectionActions => '配置操作';
+
+  @override
+  String get cloudBackupSectionDanger => '危险操作';
+
+  @override
+  String get cloudBackupDeleteHint => '只删除本机保存的配置与凭证，云端已有的备份文件不会被删除。';
+
+  @override
+  String get cloudBackupBusy => '备份正在进行，请稍后重试。';
+
+  @override
+  String get cloudBackupTooLarge => '备份文件超过 100 MB。';
+
+  @override
+  String get cloudBackupUnknownTime => '时间无法识别';
+
+  @override
+  String get cloudBackupSizeUnknown => '大小未知';
+
+  @override
+  String get cloudBackupDownloading => '正在下载';
+
+  @override
+  String get cloudBackupRestoreSection => '恢复方式';
+
+  @override
+  String get cloudBackupRestoreHint =>
+      '合并恢复只补充缺失的数据；快照恢复会完整替换本机数据，并先自动创建保护性备份。';
+
+  @override
+  String get cloudBackupRunningHint => '关闭此窗口不会中断备份，重新打开可查看进度。';
 }

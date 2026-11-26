@@ -5,13 +5,29 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/providers.dart';
+import '../../app/theme.dart';
+import '../../core/time_utils.dart';
+import '../../l10n/backup_labels.dart';
+import '../../l10n/error_labels.dart';
 import '../../l10n/l10n.dart';
+import '../../shared/widgets/classic_select.dart';
 import '../../shared/widgets/common.dart';
 import '../../services/backup_files.dart';
 import '../../services/cloud_backup/cloud_backup_coordinator.dart';
 import '../../services/cloud_backup/cloud_backup_provider.dart';
 import '../../services/cloud_backup/cloud_backup_repository.dart';
 import '../sync/sync_settings_page.dart';
+
+String _stageLabel(AppLocalizations l10n, CloudBackupStage stage) =>
+    switch (stage) {
+      CloudBackupStage.uploading => l10n.cloudBackupUploadProgress,
+      CloudBackupStage.verifying => l10n.cloudBackupVerifyProgress,
+      CloudBackupStage.downloading => l10n.cloudBackupDownloadProgress,
+      CloudBackupStage.listing => l10n.cloudBackupListing,
+      CloudBackupStage.validating => l10n.cloudBackupValidating,
+      CloudBackupStage.exporting => l10n.cloudBackupPreparing,
+      _ => l10n.cloudBackupPreparing,
+    };
 
 class CloudBackupDialog extends ConsumerStatefulWidget {
   const CloudBackupDialog({super.key});
@@ -24,6 +40,14 @@ class _CloudBackupDialogState extends ConsumerState<CloudBackupDialog> {
   String? selected;
   Map<String, dynamic>? last;
   String? error;
+
+  /// Monotonic token for the "last successful backup" lookup.
+  ///
+  /// Switching S3 → WebDAV → S3 fires three overlapping queries; without this
+  /// a slow answer for the first one could land last and show the wrong
+  /// target's history under the current one.
+  int _generation = 0;
+
   @override
   void initState() {
     super.initState();
@@ -46,24 +70,41 @@ class _CloudBackupDialogState extends ConsumerState<CloudBackupDialog> {
     await _last();
   }
 
-  Future<void> _last() async {
-    final config = configs?.where((c) => c.providerId == selected).firstOrNull;
+  Future<void> _last({int? generation}) async {
+    final int token = generation ?? ++_generation;
+    final String? id = selected;
+    final config = configs?.where((c) => c.providerId == id).firstOrNull;
     final value = config == null
         ? null
         : await ref.read(cloudBackupRepositoryProvider).lastSuccess(config);
-    if (mounted && config?.providerId == selected) {
-      setState(() => last = value);
-    }
+    if (!mounted || token != _generation || id != selected) return;
+    setState(() => last = value);
+  }
+
+  Future<void> _selectTarget(String value) async {
+    final int token = ++_generation;
+    setState(() {
+      selected = value;
+      last = null;
+      error = null;
+    });
+    // The preference is per device and independent of the sync configuration.
+    await ref.read(cloudBackupRepositoryProvider).setPreferred(value);
+    if (!mounted || token != _generation) return;
+    await _last(generation: token);
   }
 
   Future<void> _upload() async {
     final id = selected;
     if (id == null) return;
+    setState(() => error = null);
     try {
       await ref.read(cloudBackupCoordinatorProvider).upload(id);
       await _last();
     } catch (e) {
-      if (mounted) setState(() => error = e.toString());
+      if (mounted) {
+        setState(() => error = describeCloudBackupError(context.l10n, e));
+      }
     }
   }
 
@@ -74,131 +115,263 @@ class _CloudBackupDialogState extends ConsumerState<CloudBackupDialog> {
     _load();
   }
 
+  void _browse(CloudBackupConfig config) {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => CloudBackupBrowser(providerId: config.providerId),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final coordinator = ref.read(cloudBackupCoordinatorProvider);
     return AnimatedBuilder(
       animation: coordinator,
       builder: (context, _) {
-        final running = coordinator.isRunning;
-        final config = configs
+        final AppLocalizations l10n = context.l10n;
+        final bool running = coordinator.isRunning;
+        final CloudBackupConfig? config = configs
             ?.where((c) => c.providerId == selected)
             .firstOrNull;
-        final stage = coordinator.progress.stage;
+        final CloudBackupStage stage = coordinator.progress.stage;
+        final CloudBackupReceipt? receipt = coordinator.lastUploadReceipt;
+        // A success badge must belong to *this* target and *this* operation:
+        // an old receipt from the other provider is not this backup's result.
+        final bool succeeded =
+            !running &&
+            stage == CloudBackupStage.completed &&
+            receipt != null &&
+            receipt.operationId == coordinator.progress.operationId &&
+            receipt.providerId == selected;
+
         return AlertDialog(
-          title: Text(context.l10n.cloudBackupManual),
+          title: Text(l10n.cloudBackupManual),
+          scrollable: false,
+          // A 40dp inset leaves a 360dp phone with a 280dp dialog; 24dp keeps
+          // the form usable without turning the dialog into a sheet.
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 24,
+            vertical: 24,
+          ),
+          contentPadding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
+          actionsPadding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
           content: SizedBox(
             width: 390,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (configs == null)
-                  const LinearProgressIndicator()
-                else if (configs!.isEmpty) ...[
-                  Text(context.l10n.cloudBackupNotConfigured),
-                  const SizedBox(height: 8),
-                  Text(context.l10n.cloudBackupIndependentHint),
-                ] else ...[
-                  Text(context.l10n.cloudBackupTarget),
-                  DropdownButtonFormField<String>(
-                    initialValue: selected,
-                    items: [
-                      for (final c in configs!)
-                        DropdownMenuItem(
-                          value: c.providerId,
-                          child: Text(
-                            c.providerId == 's3'
-                                ? 'S3 · ${c.bucket}'
-                                : 'WebDAV · ${Uri.tryParse(c.endpoint)?.host ?? ''}',
-                          ),
-                        ),
-                    ],
-                    onChanged: running
-                        ? null
-                        : (value) async {
-                            if (value == null) return;
-                            setState(() {
-                              selected = value;
-                              last = null;
-                              error = null;
-                            });
-                            await ref
-                                .read(cloudBackupRepositoryProvider)
-                                .setPreferred(value);
-                            _last();
-                          },
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    '${context.l10n.cloudBackupLastSuccess}: '
-                    '${last?['completedAt'] ?? context.l10n.cloudBackupNever}',
-                  ),
-                  const SizedBox(height: 8),
-                  Text(context.l10n.cloudBackupIndependentHint),
-                  if (running) ...[
-                    const SizedBox(height: 12),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  if (configs == null) ...<Widget>[
                     const LinearProgressIndicator(),
-                    Text(switch (stage) {
-                      CloudBackupStage.uploading =>
-                        context.l10n.cloudBackupUploadProgress,
-                      CloudBackupStage.verifying =>
-                        context.l10n.cloudBackupVerifyProgress,
-                      CloudBackupStage.downloading =>
-                        context.l10n.cloudBackupDownloadProgress,
-                      CloudBackupStage.listing =>
-                        context.l10n.cloudBackupListing,
-                      CloudBackupStage.validating =>
-                        context.l10n.cloudBackupValidating,
-                      _ => context.l10n.cloudBackupPreparing,
-                    }),
-                  ],
-                  if (!running &&
-                      stage == CloudBackupStage.completed &&
-                      coordinator.lastUploadReceipt?.operationId ==
-                          coordinator.progress.operationId &&
-                      coordinator.lastUploadReceipt?.providerId == selected)
-                    Text(context.l10n.cloudBackupSucceeded),
-                ],
-                if (error != null)
-                  Text(
-                    error!,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
+                    AppSpacing.h8,
+                    Text(l10n.cloudBackupListing),
+                  ] else if (configs!.isEmpty) ...<Widget>[
+                    Text(
+                      l10n.cloudBackupNotConfigured,
+                      style: Theme.of(context).textTheme.bodyLarge,
                     ),
-                  ),
-              ],
+                    AppSpacing.h12,
+                    NoticeBanner(message: l10n.cloudBackupIndependentHint),
+                  ] else ...<Widget>[
+                    ClassicSelect<String>(
+                      label: l10n.cloudBackupTarget,
+                      value: selected ?? '',
+                      enabled: !running,
+                      options: <ClassicOption<String>>[
+                        for (final CloudBackupConfig value in configs!)
+                          ClassicOption<String>(
+                            value: value.providerId,
+                            label: cloudBackupTargetLabel(value),
+                          ),
+                      ],
+                      onChanged: running ? null : _selectTarget,
+                    ),
+                    AppSpacing.h16,
+                    Text(
+                      l10n.cloudBackupLastSuccess,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    AppSpacing.h4,
+                    if (last == null)
+                      Text(
+                        l10n.cloudBackupNever,
+                        style: Theme.of(context).textTheme.bodyLarge,
+                      )
+                    else
+                      Row(
+                        children: <Widget>[
+                          const Icon(
+                            Icons.check_circle,
+                            size: AppDimens.iconSizeSmall,
+                            color: AppColors.known,
+                          ),
+                          AppSpacing.w8,
+                          Expanded(
+                            child: Text(
+                              cloudBackupTime(l10n, last?['completedAt']),
+                              style: Theme.of(context).textTheme.bodyLarge,
+                            ),
+                          ),
+                        ],
+                      ),
+                    if (running) ...<Widget>[
+                      AppSpacing.h16,
+                      const LinearProgressIndicator(),
+                      AppSpacing.h8,
+                      Text(_stageLabel(l10n, stage)),
+                      AppSpacing.h4,
+                      Text(
+                        l10n.cloudBackupRunningHint,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                    if (succeeded) ...<Widget>[
+                      AppSpacing.h16,
+                      Row(
+                        children: <Widget>[
+                          const Icon(
+                            Icons.check_circle,
+                            size: AppDimens.iconSizeSmall,
+                            color: AppColors.known,
+                          ),
+                          AppSpacing.w8,
+                          Expanded(
+                            child: Text(
+                              l10n.cloudBackupSucceeded,
+                              style: Theme.of(context).textTheme.bodyMedium
+                                  ?.copyWith(color: AppColors.known),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    AppSpacing.h16,
+                    Text(
+                      l10n.cloudBackupIndependentHint,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                  if (error != null) ...<Widget>[
+                    AppSpacing.h12,
+                    ErrorBanner(message: error!),
+                  ],
+                ],
+              ),
             ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text(context.l10n.commonClose),
-            ),
-            TextButton(
-              onPressed: running ? null : _configure,
-              child: Text(context.l10n.cloudBackupConfigure),
-            ),
-            if (config != null) ...[
-              TextButton(
-                onPressed: running
-                    ? null
-                    : () => Navigator.of(context).push<void>(
-                        MaterialPageRoute(
-                          builder: (_) =>
-                              CloudBackupBrowser(providerId: config.providerId),
-                        ),
-                      ),
-                child: Text(context.l10n.cloudBackupDownload),
-              ),
-              FilledButton(
-                onPressed: running ? null : _upload,
-                child: Text(context.l10n.cloudBackupUpload),
-              ),
-            ],
-          ],
+          actions: <Widget>[_buildActions(running: running, config: config)],
         );
       },
+    );
+  }
+
+  /// Primary actions on their own area, auxiliary actions on a quieter line.
+  ///
+  /// Four `TextButton`s in `AlertDialog.actions` were laid out by the
+  /// `OverflowBar` into a right-aligned column once the labels did not fit on
+  /// one run, which is what made the dialog tall and the hierarchy unclear.
+  Widget _buildActions({
+    required bool running,
+    required CloudBackupConfig? config,
+  }) {
+    final AppLocalizations l10n = context.l10n;
+    final Widget close = TextButton(
+      onPressed: () => Navigator.pop(context),
+      child: Text(l10n.commonClose),
+    );
+    final Widget configure = TextButton(
+      onPressed: running ? null : _configure,
+      child: Text(l10n.cloudBackupConfigure),
+    );
+
+    if (configs == null) {
+      return SizedBox(
+        width: double.infinity,
+        child: Align(alignment: Alignment.centerRight, child: close),
+      );
+    }
+
+    if (configs!.isEmpty) {
+      return SizedBox(
+        width: double.infinity,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            ElevatedButton(
+              onPressed: running ? null : _configure,
+              child: Text(l10n.cloudBackupConfigure),
+            ),
+            AppSpacing.h4,
+            Align(alignment: Alignment.centerRight, child: close),
+          ],
+        ),
+      );
+    }
+
+    return SizedBox(
+      width: double.infinity,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          _primaryActions(running: running, config: config),
+          AppSpacing.h4,
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            runSpacing: 4,
+            children: <Widget>[configure, close],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _primaryActions({
+    required bool running,
+    required CloudBackupConfig? config,
+  }) {
+    final AppLocalizations l10n = context.l10n;
+    final Widget download = OutlinedButton(
+      onPressed: running || config == null ? null : () => _browse(config),
+      child: Text(
+        l10n.cloudBackupDownload,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+    );
+    final Widget upload = ElevatedButton(
+      onPressed: running || config == null ? null : _upload,
+      child: Text(
+        l10n.cloudBackupUpload,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+    );
+
+    // Two columns need ~150dp each plus the gap; below a 400dp window (a 360dp
+    // phone, a large font, a narrow macOS window) the pair stacks full width
+    // instead of shrinking the labels to nothing. The width comes from the
+    // window rather than a `LayoutBuilder`: `AlertDialog` measures its actions
+    // with intrinsics, which a layout builder cannot answer.
+    final bool stack = MediaQuery.sizeOf(context).width < 400;
+    if (stack) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[download, AppSpacing.h8, upload],
+      );
+    }
+    return Row(
+      children: <Widget>[
+        Expanded(child: download),
+        AppSpacing.w8,
+        Expanded(child: upload),
+      ],
     );
   }
 }
@@ -215,7 +388,13 @@ class _CloudBackupBrowserState extends ConsumerState<CloudBackupBrowser> {
   final tokens = <String>{};
   String? next;
   String? error;
+
+  /// The object currently being downloaded, so a second tap on the same (or
+  /// another) row cannot start an overlapping transfer or open a second
+  /// "downloaded" dialog.
+  String? downloading;
   bool loading = false;
+
   @override
   void initState() {
     super.initState();
@@ -253,13 +432,20 @@ class _CloudBackupBrowserState extends ConsumerState<CloudBackupBrowser> {
         next = page.continuationToken;
       });
     } catch (e) {
-      if (mounted) setState(() => error = e.toString());
+      if (mounted) {
+        setState(() => error = describeCloudBackupError(context.l10n, e));
+      }
     } finally {
       if (mounted) setState(() => loading = false);
     }
   }
 
   Future<void> _download(CloudBackupEntry entry) async {
+    if (downloading != null) return;
+    setState(() {
+      downloading = entry.objectName;
+      error = null;
+    });
     try {
       final result = await ref
           .read(cloudBackupCoordinatorProvider)
@@ -270,59 +456,102 @@ class _CloudBackupBrowserState extends ConsumerState<CloudBackupBrowser> {
         builder: (_) => _DownloadedBackupDialog(download: result),
       );
     } catch (e) {
-      if (mounted) setState(() => error = e.toString());
+      if (mounted) {
+        setState(() => error = describeCloudBackupError(context.l10n, e));
+      }
+    } finally {
+      if (mounted) setState(() => downloading = null);
     }
   }
 
+  /// The timestamp a backup is known by, or the raw object name when the
+  /// listing carried no usable date. Nothing here changes which object is
+  /// downloaded: the entry is passed through untouched.
+  String _entryTitle(CloudBackupEntry entry) {
+    final DateTime? when = entry.createdAt ?? entry.lastModified;
+    return when == null ? entry.objectName : formatDateTime(when);
+  }
+
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      title: Text(context.l10n.cloudBackupBrowse),
-      actions: [
-        IconButton(
-          onPressed: loading ? null : () => _load(reset: true),
-          icon: const Icon(Icons.refresh),
-          tooltip: context.l10n.commonRefresh,
-        ),
-      ],
-    ),
-    body: ContentColumn(
-      child: ListView(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Text(context.l10n.cloudBackupSelectFile),
+  Widget build(BuildContext context) {
+    final AppLocalizations l10n = context.l10n;
+    final ThemeData theme = Theme.of(context);
+    return Scaffold(
+      appBar: ClassicAppBar(
+        title: Text(l10n.cloudBackupBrowse),
+        actions: <Widget>[
+          IconButton(
+            onPressed: loading ? null : () => _load(reset: true),
+            icon: const Icon(Icons.refresh),
+            tooltip: l10n.commonRefresh,
           ),
-          if (loading) const LinearProgressIndicator(),
-          if (error != null)
-            ListTile(
-              title: Text(error!),
-              trailing: TextButton(
-                onPressed: () => _load(),
-                child: Text(context.l10n.commonRetry),
-              ),
-            ),
-          if (!loading && error == null && entries.isEmpty)
-            ListTile(title: Text(context.l10n.cloudBackupNoFiles)),
-          for (final entry in entries)
-            ListTile(
-              title: Text(entry.objectName),
-              subtitle: Text(
-                '${entry.createdAt?.toLocal() ?? entry.lastModified?.toLocal() ?? ''}'
-                ' · ${entry.byteLength ?? '?'} B',
-              ),
-              trailing: const Icon(Icons.download),
-              onTap: loading ? null : () => _download(entry),
-            ),
-          if (next != null)
-            TextButton(
-              onPressed: loading ? null : _load,
-              child: Text(context.l10n.commonContinue),
-            ),
         ],
       ),
-    ),
-  );
+      body: ContentColumn(
+        child: ListView(
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.all(AppDimens.gutter),
+              child: Text(l10n.cloudBackupSelectFile),
+            ),
+            if (loading) const LinearProgressIndicator(),
+            if (error != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppDimens.gutter,
+                ),
+                child: ErrorBanner(
+                  message: error!,
+                  onRetry: () => _load(reset: true),
+                ),
+              ),
+            if (!loading && error == null && entries.isEmpty)
+              ListTile(title: Text(l10n.cloudBackupNoFiles)),
+            for (final CloudBackupEntry entry in entries)
+              ListTile(
+                // The object name is a timestamp plus a UUID; as a title it was
+                // both unreadable and unbounded. The readable time leads, the
+                // size and provider follow, and the exact name stays available
+                // as a tooltip.
+                title: Tooltip(
+                  message: entry.objectName,
+                  child: Text(
+                    _entryTitle(entry),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                subtitle: Text(
+                  '${cloudBackupFileSize(l10n, entry.byteLength)} · '
+                  '${entry.providerId == 's3' ? 'S3' : 'WebDAV'}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall,
+                ),
+                trailing: downloading == entry.objectName
+                    ? const SizedBox(
+                        width: AppDimens.iconSize,
+                        height: AppDimens.iconSize,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.download),
+                onTap: loading || downloading != null
+                    ? null
+                    : () => _download(entry),
+              ),
+            if (next != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: TextButton(
+                  onPressed: loading ? null : _load,
+                  child: Text(l10n.commonContinue),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _DownloadedBackupDialog extends ConsumerStatefulWidget {
@@ -337,6 +566,7 @@ class _DownloadedBackupDialogState
     extends ConsumerState<_DownloadedBackupDialog> {
   bool busy = false;
   String? error;
+
   Future<void> _save() async {
     setState(() => busy = true);
     try {
@@ -346,7 +576,9 @@ class _DownloadedBackupDialogState
       );
       if (mounted) Navigator.pop(context);
     } catch (e) {
-      if (mounted) setState(() => error = e.toString());
+      if (mounted) {
+        setState(() => error = describeCloudBackupError(context.l10n, e));
+      }
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -371,10 +603,13 @@ class _DownloadedBackupDialogState
           snapshot
               ? context.l10n.restoreSnapshotConfirm(
                   '${context.l10n.cloudBackupWords}: '
-                      '${(widget.download.dataset['words'] as List?)?.length ?? 0}, '
-                      '${context.l10n.cloudBackupBooks}: '
-                      '${(widget.download.dataset['wordBooks'] as List?)?.length ?? 0}',
-                  '${widget.download.dataset['exportedAt'] ?? context.l10n.createdUnknown}',
+                  '${(widget.download.dataset['words'] as List?)?.length ?? 0}, '
+                  '${context.l10n.cloudBackupBooks}: '
+                  '${(widget.download.dataset['wordBooks'] as List?)?.length ?? 0}',
+                  cloudBackupTime(
+                    context.l10n,
+                    widget.download.dataset['exportedAt'],
+                  ),
                 )
               : context.l10n.mergeRestoreConfirm(
                   '${context.l10n.cloudBackupWords}: '
@@ -430,7 +665,9 @@ class _DownloadedBackupDialogState
       }
       if (mounted) Navigator.pop(context);
     } catch (e) {
-      if (mounted) setState(() => error = e.toString());
+      if (mounted) {
+        setState(() => error = describeCloudBackupError(context.l10n, e));
+      }
     } finally {
       if (file != null) {
         try {
@@ -441,52 +678,135 @@ class _DownloadedBackupDialogState
     }
   }
 
+  String _downloadedTitle(AppLocalizations l10n) {
+    final CloudBackupEntry entry = widget.download.entry;
+    final DateTime? when = entry.createdAt ?? entry.lastModified;
+    return when == null ? entry.objectName : formatDateTime(when);
+  }
+
   @override
   Widget build(BuildContext context) {
-    final d = widget.download.dataset;
+    final AppLocalizations l10n = context.l10n;
+    final ThemeData theme = Theme.of(context);
+    final Map<String, Object?> d = widget.download.dataset;
     return AlertDialog(
-      title: Text(context.l10n.cloudBackupDownloaded),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(widget.download.entry.objectName),
-          Text(
-            context.l10n.backupInfoSummary(
-              (d['words'] as List?)?.length ?? 0,
-              (d['wordBooks'] as List?)?.length ?? 0,
-              (d['entries'] as List?)?.length ?? 0,
-              (d['reviewEvents'] as List?)?.length ?? 0,
-            ),
+      title: Text(l10n.cloudBackupDownloaded),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      contentPadding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
+      actionsPadding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      content: SizedBox(
+        width: 390,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(_downloadedTitle(l10n), style: theme.textTheme.titleMedium),
+              AppSpacing.h4,
+              Text(
+                '${cloudBackupFileSize(l10n, widget.download.entry.byteLength)} · '
+                '${widget.download.entry.providerId == 's3' ? 'S3' : 'WebDAV'}',
+                style: theme.textTheme.bodySmall,
+              ),
+              AppSpacing.h4,
+              Tooltip(
+                message: widget.download.entry.objectName,
+                child: Text(
+                  widget.download.entry.objectName,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall,
+                ),
+              ),
+              AppSpacing.h12,
+              const Divider(height: 1),
+              AppSpacing.h12,
+              Text(
+                l10n.backupInfoSummary(
+                  (d['words'] as List?)?.length ?? 0,
+                  (d['wordBooks'] as List?)?.length ?? 0,
+                  (d['entries'] as List?)?.length ?? 0,
+                  (d['reviewEvents'] as List?)?.length ?? 0,
+                ),
+                style: theme.textTheme.bodyMedium,
+              ),
+              AppSpacing.h4,
+              Text(
+                l10n.schemaVersionLine((d['schemaVersion'] as int?) ?? 0),
+                style: theme.textTheme.bodySmall,
+              ),
+              AppSpacing.h4,
+              Text(
+                l10n.createdAtLine(cloudBackupTime(l10n, d['exportedAt'])),
+                style: theme.textTheme.bodySmall,
+              ),
+              AppSpacing.h12,
+              Text(
+                l10n.cloudBackupRestoreHint,
+                style: theme.textTheme.bodySmall,
+              ),
+              if (busy) ...<Widget>[
+                AppSpacing.h12,
+                const LinearProgressIndicator(),
+              ],
+              if (error != null) ...<Widget>[
+                AppSpacing.h12,
+                ErrorBanner(message: error!),
+              ],
+            ],
           ),
-          Text(
-            context.l10n.schemaVersionLine((d['schemaVersion'] as int?) ?? 0),
-          ),
-          Text(
-            context.l10n.createdAtLine(
-              '${d['exportedAt'] ?? context.l10n.createdUnknown}',
-            ),
-          ),
-          if (error != null) Text(error!),
-          if (busy) const LinearProgressIndicator(),
-        ],
+        ),
       ),
-      actions: [
-        TextButton(
-          onPressed: busy ? null : () => Navigator.pop(context),
-          child: Text(context.l10n.commonClose),
-        ),
-        TextButton(
-          onPressed: busy ? null : _save,
-          child: Text(context.l10n.cloudBackupSaveFile),
-        ),
-        TextButton(
-          onPressed: busy ? null : () => _restore(snapshot: false),
-          child: Text(context.l10n.cloudBackupMergeRestore),
-        ),
-        TextButton(
-          onPressed: busy ? null : () => _restore(snapshot: true),
-          child: Text(context.l10n.cloudBackupSnapshotRestore),
+      actions: <Widget>[
+        SizedBox(
+          width: double.infinity,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              OutlinedButton.icon(
+                onPressed: busy ? null : _save,
+                icon: const Icon(Icons.save_alt, size: AppDimens.iconSizeSmall),
+                label: Text(
+                  l10n.cloudBackupSaveFile,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              AppSpacing.h8,
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  l10n.cloudBackupRestoreSection,
+                  style: theme.textTheme.bodySmall,
+                ),
+              ),
+              Wrap(
+                spacing: 4,
+                runSpacing: 0,
+                children: <Widget>[
+                  TextButton(
+                    onPressed: busy ? null : () => _restore(snapshot: false),
+                    child: Text(l10n.cloudBackupMergeRestore),
+                  ),
+                  TextButton(
+                    onPressed: busy ? null : () => _restore(snapshot: true),
+                    style: TextButton.styleFrom(
+                      foregroundColor: theme.colorScheme.error,
+                    ),
+                    child: Text(l10n.cloudBackupSnapshotRestore),
+                  ),
+                ],
+              ),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: busy ? null : () => Navigator.pop(context),
+                  child: Text(l10n.commonClose),
+                ),
+              ),
+            ],
+          ),
         ),
       ],
     );

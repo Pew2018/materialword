@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../app/theme.dart';
@@ -11,15 +13,29 @@ class ClassicOption<T> {
   final String label;
 }
 
+/// Height of one menu row. Also the value the layout maths assumes when it
+/// decides whether the menu fits below the trigger.
+const double _kMenuItemHeight = 48;
+
+/// Vertical padding `PopupMenu` adds above the first row and below the last.
+const double _kMenuPadding = 8;
+
 /// Opens a classic Material menu anchored to the widget that calls it.
 ///
 /// `DropdownButton` sizes its menu to the *button*, so an `isExpanded` field
 /// inside a wide row produced a menu as wide as the page, glued to the window
 /// edge. This helper instead:
-///  * keeps a readable menu width (112–320dp by default, never the page width);
-///  * keeps a 16dp margin to the window edge on every side;
-///  * anchors the menu under the trigger, left-aligned, flipping up only when
-///    there is genuinely no room below.
+///  * keeps a readable menu width (160–320dp by default, never the page width);
+///  * keeps a 16dp margin to the visible edge on every side;
+///  * left-aligns the menu with the trigger and opens it below, flipping above
+///    only when there is genuinely no room underneath;
+///  * caps the height to the space it actually has, leaving the menu scrollable
+///    instead of letting it run off-screen.
+///
+/// All geometry is measured against the **overlay** that will host the menu,
+/// not against the window: inside an `AlertDialog`, under a nested `Navigator`
+/// or in a resized macOS window the overlay is the coordinate space that
+/// `showMenu` positions within, and `MediaQuery.sizeOf` is not.
 Future<T?> showClassicMenu<T>({
   required BuildContext context,
   required BuildContext anchorContext,
@@ -29,50 +45,73 @@ Future<T?> showClassicMenu<T>({
   double maxWidth = 320,
 }) async {
   final ThemeData theme = Theme.of(context);
-  final Size window = MediaQuery.sizeOf(context);
-  const double margin = 16;
+  const double edge = 16;
+  const double gap = 4;
 
-  Offset topLeft = Offset.zero;
-  double anchorWidth = minWidth;
-  double anchorHeight = 0;
-  final RenderObject? render = anchorContext.findRenderObject();
-  if (render is RenderBox && render.hasSize) {
-    topLeft = render.localToGlobal(Offset.zero);
-    anchorWidth = render.size.width;
-    anchorHeight = render.size.height;
-  }
+  final Rect anchor = _anchorRect(context, anchorContext);
+  final Size surface = _menuSurfaceSize(context);
 
-  final double available = (window.width - margin * 2).clamp(
-    minWidth,
-    window.width,
+  // Defensive arithmetic: every clamp below must have a valid (low <= high)
+  // range even in a 200dp-wide window, and no length may go negative.
+  final double availableWidth = math.max(0, surface.width - edge * 2);
+  final double width = math.max(
+    0,
+    math.min(
+      math.min(math.max(anchor.width, minWidth), maxWidth),
+      availableWidth,
+    ),
   );
-  final double width = anchorWidth
-      .clamp(minWidth, maxWidth)
-      .clamp(minWidth, available);
-  final double maxLeft = (window.width - margin - width).clamp(
-    margin,
-    window.width,
+  final double maxLeft = math.max(edge, surface.width - edge - width);
+  final double left = math.min(math.max(anchor.left, edge), maxLeft);
+
+  final double contentHeight =
+      options.length * _kMenuItemHeight + _kMenuPadding * 2;
+  final double belowTop = anchor.bottom + gap;
+  final double spaceBelow = math.max(0, surface.height - edge - belowTop);
+  final double spaceAbove = math.max(0, anchor.top - gap - edge);
+
+  final bool fitsBelow = contentHeight <= spaceBelow;
+  final bool fitsAbove = contentHeight <= spaceAbove;
+  final bool opensBelow = fitsBelow || (!fitsAbove && spaceBelow >= spaceAbove);
+
+  final double top = opensBelow
+      ? belowTop
+      : math.max(edge, anchor.top - gap - contentHeight);
+  final double maxHeight = math.max(
+    0,
+    math.min(contentHeight, opensBelow ? spaceBelow : anchor.top - gap - top),
   );
-  final double left = topLeft.dx.clamp(margin, maxLeft);
-  final double top = topLeft.dy + anchorHeight + 4;
 
   final T? result = await showMenu<T>(
     context: context,
-    position: RelativeRect.fromLTRB(left, top, window.width - left - width, 0),
-    constraints: BoxConstraints(minWidth: width, maxWidth: width),
+    // `showMenu` reads `left`/`top` from this rect and then nudges the menu
+    // back inside the safe area; `bottom` only feeds the "which edge is the
+    // trigger closer to" heuristic, so an already-clamped `right` keeps the
+    // menu left-aligned in both branches.
+    position: RelativeRect.fromLTRB(left, top, surface.width - left - width, 0),
+    constraints: BoxConstraints(
+      minWidth: width,
+      maxWidth: width,
+      maxHeight: maxHeight,
+    ),
     items: <PopupMenuEntry<T>>[
       for (final ClassicOption<T> option in options)
         PopupMenuItem<T>(
           value: option.value,
-          height: 48,
+          height: _kMenuItemHeight,
           child: Row(
             children: <Widget>[
+              // Expanded + ellipsis: a long label can never push the check mark
+              // out of the menu, and the full text stays available as a tooltip.
               Expanded(
-                child: Text(
-                  option.label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodyMedium,
+                child: Tooltip(
+                  message: option.label,
+                  child: Text(
+                    option.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium,
+                  ),
                 ),
               ),
               if (option.value == current) ...<Widget>[
@@ -89,6 +128,38 @@ Future<T?> showClassicMenu<T>({
     ],
   );
   return result;
+}
+
+/// The trigger's rectangle in the coordinate space the menu is laid out in.
+Rect _anchorRect(BuildContext context, BuildContext anchorContext) {
+  final RenderObject? render = anchorContext.findRenderObject();
+  final RenderObject? overlay = Overlay.maybeOf(
+    context,
+    rootOverlay: false,
+  )?.context.findRenderObject();
+  if (render is RenderBox &&
+      render.hasSize &&
+      overlay is RenderBox &&
+      overlay.hasSize) {
+    final Matrix4 transform = render.getTransformTo(overlay);
+    return MatrixUtils.transformRect(transform, Offset.zero & render.size);
+  }
+  // Fallback for a widget pumped without an overlay (a unit test of a single
+  // field): the window coordinates are the best available approximation.
+  if (render is RenderBox && render.hasSize) {
+    return render.localToGlobal(Offset.zero) & render.size;
+  }
+  return Rect.zero;
+}
+
+/// The usable size of the surface the menu will be drawn on.
+Size _menuSurfaceSize(BuildContext context) {
+  final RenderObject? overlay = Overlay.maybeOf(
+    context,
+    rootOverlay: false,
+  )?.context.findRenderObject();
+  if (overlay is RenderBox && overlay.hasSize) return overlay.size;
+  return MediaQuery.sizeOf(context);
 }
 
 /// Classic select field: outlined box, label, current value, drop-down arrow.
@@ -133,7 +204,9 @@ class ClassicSelect<T> extends StatelessWidget {
                   options: options,
                   current: value,
                 );
-                if (picked != null) onChanged!(picked);
+                // The menu may outlive the field (a dialog closed while it was
+                // open); a change callback on a disposed widget is a crash.
+                if (picked != null && context.mounted) onChanged!(picked);
               },
         child: InputDecorator(
           isEmpty: selected == null,
@@ -208,7 +281,7 @@ class ClassicSelectChip<T> extends StatelessWidget {
                     current: value,
                     minWidth: 200,
                   );
-                  if (picked != null) onChanged!(picked);
+                  if (picked != null && context.mounted) onChanged!(picked);
                 },
           child: Container(
             height: 36,

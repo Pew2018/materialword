@@ -15,13 +15,15 @@ MaterialWord 的最终视觉目标是“统一、克制、清晰、稳定的经�
 
 | 元素 | 圆角 |
 | --- | --- |
-| 按钮（Elevated / Outlined / Text / 作答按钮） | 2dp |
+| 按钮（Elevated / Filled / Outlined / Text / 作答按钮） | 2dp |
 | 输入框、Select、菜单、Dialog、Snackbar | 4dp |
 | Card、Chip、标签、侧栏选中块 | 2dp |
 | 底栏项 | 0dp（纯矩形） |
 | 头像 / FAB / 色板圆点 | 圆形（唯一允许的圆形） |
 
-不允许出现 8 / 10 / 12 / 16dp 的普通按钮或“胶囊”控件。
+不允许出现 8 / 10 / 12 / 16dp 的普通按钮或“胶囊”控件。`FilledButton` 与
+`ElevatedButton` 共用 `AppTheme.solidButtonStyle()`：同一背景、同一白色前景、
+同一禁用色、同一 2dp 圆角与 88×40 最小尺寸，只有 elevation 不同。
 
 ## 响应式
 
@@ -73,15 +75,40 @@ MaterialWord 的最终视觉目标是“统一、克制、清晰、稳定的经�
 ## 菜单 / Select
 
 - 统一使用 `ClassicSelect` / `ClassicSelectChip` / `showClassicMenu`。
-- 菜单宽度 160–320dp，距窗口边缘 ≥16dp，锚点下方展开，空间不足才上翻。
-- 菜单项高 48dp、左侧 16dp、整行 Ripple，选中项带勾。
-- 禁止 `isExpanded` 下拉把菜单拉到整页宽度。
+  语言、学习模式、词书、S3 寻址方式、备份目标都是同一套控件。
+- 菜单宽度 160–320dp，距窗口边缘 ≥16dp，锚点下方展开（间隙 4dp），空间不足才上翻，
+  上下都放不下时限制高度并允许滚动。
+- 菜单项高 48dp、左侧 16dp、整行 Ripple，选中项带勾；长文本省略并带 Tooltip，
+  勾号永远留在菜单内。
+- 几何量一律以**承载菜单的 Overlay** 为准（`anchor.getTransformTo(overlay)`），
+  不用 `MediaQuery.sizeOf`：弹窗、嵌套 Navigator、缩放后的 macOS 窗口里三者不同。
+- 极窄窗口优先保证不越界，再缩小宽度；任何 `clamp` 都必须有 `low <= high`。
+- 菜单关闭后再回调，且回调前检查 `context.mounted`。
+- 禁止 `isExpanded` 下拉把菜单拉到整页宽度；三点菜单、长按菜单、确认弹窗不属于
+  Select，不要被这条规则改造。
 
 ## 按钮层级
 
 一个区域一个 Primary（`ElevatedButton`）；Secondary 用 `OutlinedButton`；
 Tertiary 用 `TextButton`；破坏性操作使用红色 `TextButton`。
-不再出现“7 个不同权重的按钮抢注意力”。
+不再出现“7 个不同权重的按钮抢注意力”，也不要让 `AlertDialog.actions` 把四个按钮
+自动折成右对齐的一列：弹窗里主要操作自己成行（宽 ≥400dp 两列，否则纵向铺满），
+辅助操作放单独一行。
+
+## 实心控件的前景
+
+- 强调色实心控件（实心按钮、FAB、顶栏标题与图标）**永远白色前景**，
+  不再用 `AppTheme.onColor()` 按亮度二选一。
+- 强调色太亮时用 `AppTheme.whiteForegroundSurface()` 降低**填充**亮度，
+  保证白色文字 ≥4.5:1；用户保存的强调色、色板圆点、语义色都不改。
+- 描边按钮、文字按钮、正文、菜单项仍用强调色或主题正文色；不得全局强制白字。
+
+## 用户可见时间
+
+- 所有用户可见日期时间必须经过展示层格式化（`formatDateTime` /
+  `lib/l10n/backup_labels.dart` 的 `cloudBackupTime`）。
+- 不显示 ISO 的 `T` / `Z` / 微秒，不显示 1970：解析失败显示本地化回退文案。
+- 持久化的 UTC 时间、文件名里的时间、`exportedAt` 与校验逻辑都不因格式化而改变。
 
 ## 页面转场
 
@@ -117,10 +144,26 @@ Tertiary 用 `TextButton`；破坏性操作使用红色 `TextButton`。
 - `Slider` 不使用 `divisions`：连续跟手，数值显示取整，只在松手时写库。
 - 不把 `PointerDeviceKind.mouse` 加进全局 drag devices（会破坏文本选择）。
 
+## 新增页面检查表
+
+1. 普通按钮用 2dp 圆角；实心按钮白字白图标。
+2. 强调色实心面用 `whiteForegroundSurface()` 保可读性。
+3. 普通数据选择器用 `ClassicSelect`，紧凑筛选器用 `ClassicSelectChip`。
+4. 菜单只走 `showClassicMenu`，不自己算位置。
+5. 页面顶栏用 `ClassicAppBar`。
+6. 设置页复用 `SectionHeader` / `SettingsGroup` / `SettingsTile`。
+7. 用户可见时间必须格式化。
+8. 新增文案进 ARB（中英齐备），不写死中文字面量。
+9. 320 / 360 / 411 / 720 / 1024 与 1.6 倍字号下无溢出。
+10. 不引入未经规范约束的药丸形按钮。
+
 ## 测试
 
 - `test/phase6_classic_ui_test.dart`：形状标尺、底栏矩形与无着色、学习页操作区、
-  菜单宽度约束、Dashboard 控件减法。
+  菜单宽度约束、Dashboard 控件减法、实心按钮白色前景与 23 种强调色对比度、
+  语言选择器、菜单定位（下方 / 上翻 / 极窄窗口 / 弹窗内 / 缩放后 / 长文本）。
+- `test/cloud_backup_ui_test.dart`：手动备份弹窗在 360dp 与大字号下不溢出、
+  下载描边 + 上传实心、未配置状态、S3 寻址选择器、凭证状态、时间与文件大小格式。
 - `test/phase6_1_polish_test.dart`：两态导航、设置页图标/开关/滑杆、macOS 滚动物理、
   作答构成行样式、词典搜索入口、同步页统一、顶栏 ripple。
 - `test/phase3_golden_test.dart`：按钮/输入框/开关的浅色与深色基准图（逐像素）。

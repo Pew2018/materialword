@@ -14,6 +14,7 @@ import 'package:materialword/core/repositories/study_repository.dart';
 import 'package:materialword/features/study/study_page.dart';
 import 'package:materialword/services/study_session.dart';
 
+import 'helpers/l10n_fixture.dart';
 import 'helpers/test_env.dart';
 
 void main() {
@@ -229,13 +230,14 @@ void main() {
       await tester.tap(find.widgetWithText(ElevatedButton, '认识'));
       await settle();
       expect(find.text('1 个单词 · 2 次作答'), findsOneWidget);
-      expect(find.text('正确率：50.0%'), findsOneWidget);
+      expect(find.text(zhText.accuracyValue('50.0%')), findsOneWidget);
       final practice = find.text('复习本轮错词');
       await tester.ensureVisible(practice);
       await settle();
       await tester.tap(practice.hitTestable());
       await settle();
-      expect(find.text('本轮错词复练'), findsWidgets);
+      // The drill opens its own session, titled with the same entry name.
+      expect(find.text(zhText.specialSessionMistakes), findsWidgets);
       await tester.tap(find.text('显示释义'));
       await settle();
       await tester.tap(find.widgetWithText(ElevatedButton, '认识'));

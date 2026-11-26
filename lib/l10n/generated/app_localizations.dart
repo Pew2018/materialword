@@ -6151,6 +6151,126 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'History available; uploading is unavailable'**
   String get cloudBackupReadOnly;
+
+  /// No description provided for @cloudBackupUploadOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'Uploading works; history is unavailable'**
+  String get cloudBackupUploadOnly;
+
+  /// No description provided for @cloudBackupAddressingAuto.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto'**
+  String get cloudBackupAddressingAuto;
+
+  /// No description provided for @cloudBackupAddressingPath.
+  ///
+  /// In en, this message translates to:
+  /// **'Path-style'**
+  String get cloudBackupAddressingPath;
+
+  /// No description provided for @cloudBackupAddressingVirtual.
+  ///
+  /// In en, this message translates to:
+  /// **'Virtual-hosted'**
+  String get cloudBackupAddressingVirtual;
+
+  /// No description provided for @cloudBackupAccessKeyId.
+  ///
+  /// In en, this message translates to:
+  /// **'Access key ID'**
+  String get cloudBackupAccessKeyId;
+
+  /// No description provided for @cloudBackupSecretAccessKey.
+  ///
+  /// In en, this message translates to:
+  /// **'Secret access key'**
+  String get cloudBackupSecretAccessKey;
+
+  /// No description provided for @cloudBackupCredentialsSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Credentials saved. Leave blank to keep them.'**
+  String get cloudBackupCredentialsSaved;
+
+  /// No description provided for @cloudBackupSectionServer.
+  ///
+  /// In en, this message translates to:
+  /// **'Server'**
+  String get cloudBackupSectionServer;
+
+  /// No description provided for @cloudBackupSectionAuth.
+  ///
+  /// In en, this message translates to:
+  /// **'Credentials'**
+  String get cloudBackupSectionAuth;
+
+  /// No description provided for @cloudBackupSectionActions.
+  ///
+  /// In en, this message translates to:
+  /// **'Configuration'**
+  String get cloudBackupSectionActions;
+
+  /// No description provided for @cloudBackupSectionDanger.
+  ///
+  /// In en, this message translates to:
+  /// **'Danger zone'**
+  String get cloudBackupSectionDanger;
+
+  /// No description provided for @cloudBackupDeleteHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Removes the configuration and credentials on this device only. Backups already in the cloud are kept.'**
+  String get cloudBackupDeleteHint;
+
+  /// No description provided for @cloudBackupBusy.
+  ///
+  /// In en, this message translates to:
+  /// **'A backup is already running. Try again in a moment.'**
+  String get cloudBackupBusy;
+
+  /// No description provided for @cloudBackupTooLarge.
+  ///
+  /// In en, this message translates to:
+  /// **'The backup is larger than 100 MB.'**
+  String get cloudBackupTooLarge;
+
+  /// No description provided for @cloudBackupUnknownTime.
+  ///
+  /// In en, this message translates to:
+  /// **'Unrecognised time'**
+  String get cloudBackupUnknownTime;
+
+  /// No description provided for @cloudBackupSizeUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Size unknown'**
+  String get cloudBackupSizeUnknown;
+
+  /// No description provided for @cloudBackupDownloading.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloading'**
+  String get cloudBackupDownloading;
+
+  /// No description provided for @cloudBackupRestoreSection.
+  ///
+  /// In en, this message translates to:
+  /// **'Restore'**
+  String get cloudBackupRestoreSection;
+
+  /// No description provided for @cloudBackupRestoreHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Merge restore only adds missing data; snapshot restore replaces all local data and creates a protective backup first.'**
+  String get cloudBackupRestoreHint;
+
+  /// No description provided for @cloudBackupRunningHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Closing this window does not stop the backup. Reopen it to follow the progress.'**
+  String get cloudBackupRunningHint;
 }
 
 class _AppLocalizationsDelegate

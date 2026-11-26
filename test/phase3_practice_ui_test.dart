@@ -8,6 +8,7 @@ import 'package:materialword/core/models/enums.dart';
 import 'package:materialword/features/study/practice_page.dart';
 import 'package:materialword/services/tts_service.dart';
 
+import 'helpers/l10n_fixture.dart';
 import 'helpers/test_env.dart';
 
 class _SilentTts extends TtsService {
@@ -152,7 +153,7 @@ void main() {
     await settle(tester);
     expect(tts.spoken, greaterThan(0));
     expect(find.text('听发音，输入单词'), findsOneWidget);
-    expect(find.byTooltip('显示中文提示'), findsOneWidget);
+    expect(find.byTooltip(zhText.showHint), findsOneWidget);
     expect(tester.takeException(), isNull);
     await clean(tester);
   });

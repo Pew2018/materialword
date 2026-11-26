@@ -9,6 +9,7 @@ import 'package:materialword/core/models/sprint_plan.dart';
 import 'package:materialword/features/study/sprint_page.dart';
 import 'package:materialword/features/study/study_page.dart';
 
+import 'helpers/l10n_fixture.dart';
 import 'helpers/test_env.dart';
 
 void main() {
@@ -101,10 +102,12 @@ void main() {
         await e.study.todayCount(now: e.clock.now(), type: ReviewType.study),
         0,
       );
-      await tester.pageBack();
+      // `pageBack()` only recognises an English "Back" tooltip or a Cupertino
+      // button; this app runs in Chinese on the classic Material app bar.
+      await tester.tap(find.byType(BackButton));
       await settle(tester);
-      expect(find.text('继续冲刺'), findsOneWidget);
-      final exit = find.text('退出冲刺，保留普通计划');
+      expect(find.text(zhText.continueSprint), findsOneWidget);
+      final exit = find.text(zhText.endSprint);
       await tester.ensureVisible(exit);
       await settle(tester);
       await tester.tap(exit.hitTestable());
@@ -135,20 +138,20 @@ void main() {
       );
       await mount(tester, e);
       final prior = await e.settings.sharedVersion();
-      await tester.tap(find.byTooltip('设置冲刺计划'));
+      await tester.tap(find.byTooltip(zhText.setSprintPlan));
       await settle(tester);
-      final size = find.widgetWithText(TextField, '每轮单词数量（1–500）');
+      final size = find.widgetWithText(TextField, zhText.roundSizeRange);
       await tester.ensureVisible(size);
       await tester.enterText(size, '99');
-      await tester.tap(find.text('取消').hitTestable());
+      await tester.tap(find.text(zhText.commonCancel).hitTestable());
       await settle(tester);
       expect((await e.settings.loadSprintPlan()).roundSize, 2);
       expect(await e.settings.sharedVersion(), prior);
-      await tester.tap(find.byTooltip('设置冲刺计划'));
+      await tester.tap(find.byTooltip(zhText.setSprintPlan));
       await settle(tester);
       await tester.ensureVisible(size);
       await tester.enterText(size, '3');
-      await tester.tap(find.text('保存计划').hitTestable());
+      await tester.tap(find.text(zhText.commonSave).hitTestable());
       await settle(tester);
       expect((await e.settings.loadSprintPlan()).roundSize, 3);
       expect(tester.takeException(), isNull);

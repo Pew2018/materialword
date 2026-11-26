@@ -820,8 +820,8 @@ class _RandomOrderSettingState extends ConsumerState<_RandomOrderSetting> {
 /// Language picker row.
 ///
 /// Lives inside the Appearance group, directly after the accent colours, and
-/// opens a classic radio dialog. The list is short enough that a material-3
-/// sheet or a separate page would be extra chrome, not extra clarity.
+/// uses the same [ClassicSelect] field and menu as Study Mode and Word List: a
+/// language is one more enumerated preference, not a reason for its own dialog.
 class _LanguageSetting extends ConsumerWidget {
   const _LanguageSetting();
 
@@ -829,48 +829,24 @@ class _LanguageSetting extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final AppLocalizations l10n = context.l10n;
     final AppLanguage language = ref.watch(languageProvider);
-    return SettingsTile(
-      leading: const Icon(Icons.language),
-      title: l10n.appLanguage,
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Text(
-            language.label(l10n),
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-          AppSpacing.w4,
-          const Icon(Icons.chevron_right),
-        ],
-      ),
-      onTap: () => _pick(context, ref),
-    );
-  }
-
-  Future<void> _pick(BuildContext context, WidgetRef ref) async {
-    final AppLocalizations l10n = context.l10n;
-    final AppLanguage current = ref.read(languageProvider);
-    final AppLanguage? picked = await showDialog<AppLanguage>(
-      context: context,
-      builder: (BuildContext context) => SimpleDialog(
-        title: Text(l10n.appLanguage),
-        children: <Widget>[
+    // The same field + menu as Study Mode and Word List, instead of a separate
+    // centred radio dialog that looked like a different app.
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      child: ClassicSelect<AppLanguage>(
+        label: l10n.appLanguage,
+        value: language,
+        options: <ClassicOption<AppLanguage>>[
           for (final AppLanguage value in AppLanguage.values)
-            RadioListTile<AppLanguage>(
-              dense: true,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-              value: value,
-              groupValue: current,
-              onChanged: (AppLanguage? choice) =>
-                  Navigator.of(context).pop(choice),
-              title: Text(value.label(l10n)),
-            ),
+            ClassicOption<AppLanguage>(value: value, label: value.label(l10n)),
         ],
+        // Applies immediately: only MaterialApp.locale changes, so the current
+        // route, the running study session, the scroll positions and every
+        // other setting survive the switch.
+        onChanged: (AppLanguage value) async {
+          await ref.read(languageProvider.notifier).select(value);
+        },
       ),
     );
-    if (picked == null) return;
-    // Applies immediately: only MaterialApp.locale changes, so the current
-    // route, the study session and every scroll position survive the switch.
-    await ref.read(languageProvider.notifier).select(picked);
   }
 }
