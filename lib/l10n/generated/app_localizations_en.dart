@@ -2958,7 +2958,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String hasDeviceSettingsLine(String value) {
-    return 'Device settings included: $value';
+    return 'Legacy device preferences: $value (ignored on restore)';
   }
 
   @override
@@ -3091,7 +3091,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get exportToHint =>
-      'Saves anywhere through the system file picker (includes device settings).';
+      'Saves shared learning data through the system file picker; device preferences stay on this device.';
 
   @override
   String get saveBackupNow => 'Save Backup Now';
@@ -3109,7 +3109,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get backupContentsNote =>
-      'A backup contains words, word lists, links (including delete marks), answer history, favorites, tags, study goals and device settings. It never contains accounts, passwords or sync credentials.';
+      'A backup contains words, word lists, links (including delete marks), answer history, learning progress, favorites, tags and study goals. Device appearance, voice and screen preferences are excluded. It never contains accounts, passwords or sync credentials.';
 
   @override
   String get localBackups => 'Local Backups';

@@ -1,11 +1,11 @@
 import 'dart:io';
+import 'dart:convert';
 
 import 'package:drift/drift.dart' show QueryRow, Value;
 import 'package:file_picker/file_picker.dart';
 
 import '../core/database/app_database.dart';
 import '../core/errors/app_error.dart';
-import '../core/models/enums.dart';
 import '../core/repositories/settings_repository.dart';
 import '../core/repositories/study_repository.dart';
 import '../core/time_utils.dart';
@@ -267,9 +267,11 @@ class BackupManager {
   }
 
   Future<bool> exportCopy(File file) async {
+    final data = await backup.readDataset(file.path);
+    data.remove('deviceSettings');
     final Uri? saved = await FilePicker.saveFile(
       fileName: file.uri.pathSegments.last,
-      bytes: await file.readAsBytes(),
+      bytes: utf8.encode(await encodeDatasetJson(data)),
       mimeType: 'application/json',
       dialogTitle: '导出恢复副本',
     );
@@ -364,9 +366,7 @@ class BackupManager {
         );
       });
 
-      if (applyDeviceSettings) {
-        await _applyDeviceSettings(dataset['deviceSettings']);
-      }
+      // Legacy deviceSettings are intentionally ignored on every restore.
       return RestoreOutcome(
         report: report,
         protectiveBackup: protective,
@@ -495,40 +495,5 @@ class BackupManager {
     for (final AppMetaRow row in rows) {
       if (row.key.startsWith(prefix)) await db.deleteMeta(row.key);
     }
-  }
-
-  Future<void> _applyDeviceSettings(Object? raw) async {
-    if (raw is! Map) return;
-    final Map<String, Object?> values = Map<String, Object?>.from(raw);
-    await settings.save(
-      theme: _themeFrom(values['themeMode']),
-      accentColor: values['accentColor'] is String
-          ? values['accentColor'] as String
-          : null,
-      ttsVoice: values['ttsVoice'] is String
-          ? values['ttsVoice'] as String
-          : null,
-      ttsLocale: values['ttsLocale'] is String
-          ? values['ttsLocale'] as String
-          : null,
-      ttsRate: values['ttsRate'] is int ? values['ttsRate'] as int : null,
-      ttsAutoSpeak: values['ttsAutoSpeak'] is bool
-          ? values['ttsAutoSpeak'] as bool
-          : null,
-    );
-    if (values['keepScreenOn'] is bool) {
-      await db.writeMeta(
-        'keep_screen_on',
-        (values['keepScreenOn'] as bool) ? '1' : '0',
-      );
-    }
-  }
-
-  ThemePreference? _themeFrom(Object? value) {
-    if (value is! String) return null;
-    for (final ThemePreference preference in ThemePreference.values) {
-      if (preference.code == value) return preference;
-    }
-    return null;
   }
 }

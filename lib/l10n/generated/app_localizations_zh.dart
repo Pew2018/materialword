@@ -2685,7 +2685,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String hasDeviceSettingsLine(String value) {
-    return '包含设备设置：$value';
+    return '旧设备偏好：$value（恢复时忽略）';
   }
 
   @override
@@ -2811,7 +2811,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get exportTo => '导出备份…';
 
   @override
-  String get exportToHint => '通过系统文件选择器保存到任意位置（含设备设置）';
+  String get exportToHint => '通过系统文件选择器保存学习数据；外观、发音和常亮设置保留在本机';
 
   @override
   String get saveBackupNow => '立即备份';
@@ -2827,7 +2827,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get backupContentsNote =>
-      '备份包含单词、词书、关联（含删除标记）、作答历史、收藏、标签、学习目标与设备设置。不包含账号、密码或任何同步凭据。';
+      '备份包含单词、词书、关联（含删除标记）、作答历史、学习进度、收藏、标签与学习目标。不包含设备外观、发音或常亮偏好。不包含账号、密码或任何同步凭据。';
 
   @override
   String get localBackups => '本机备份';

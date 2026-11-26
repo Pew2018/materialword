@@ -57,7 +57,7 @@ void main() {
       expect(info.entries, 3, reason: '删除标记也要保留');
       expect(info.events, 1);
       expect(info.schemaVersion, backupSchemaVersion);
-      expect(info.hasDeviceSettings, isTrue);
+      expect(info.hasDeviceSettings, isFalse);
 
       final Map<String, Object?> dataset = await env.backup.readDataset(
         file.path,
@@ -407,7 +407,7 @@ void main() {
       expect(await env.db.readMeta('last_sync_local_hash'), isNull);
     });
 
-    test('BAK19 设备设置只在备份中迁移，不进入共享同步', () async {
+    test('BAK19 所有新备份与同步均排除设备偏好', () async {
       await env.settings.save(
         theme: ThemePreference.dark,
         accentColor: '#FF0000',
@@ -423,7 +423,7 @@ void main() {
         includeDeviceSettings: true,
       );
       expect(backup['schemaVersion'], backupSchemaVersion);
-      expect(backup['deviceSettings'], isA<Map<String, Object?>>());
+      expect(backup.containsKey('deviceSettings'), isFalse);
 
       // Merging a backup into another device must not change its theme.
       final TestEnv other = await TestEnv.create();

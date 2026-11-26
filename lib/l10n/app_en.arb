@@ -1749,7 +1749,7 @@
       }
     }
   },
-  "hasDeviceSettingsLine": "Device settings included: {value}",
+  "hasDeviceSettingsLine": "Legacy device preferences: {value} (ignored on restore)",
   "@hasDeviceSettingsLine": {
     "placeholders": {
       "value": {
@@ -1822,12 +1822,12 @@
   "noAutoBackupYet": "No automatic backup yet",
   "manualBackupJson": "Manual Backup (JSON)",
   "exportTo": "Export Backup…",
-  "exportToHint": "Saves anywhere through the system file picker (includes device settings).",
+  "exportToHint": "Saves shared learning data through the system file picker; device preferences stay on this device.",
   "saveBackupNow": "Save Backup Now",
   "saveBackupNowHint": "Saved on this device and restorable from the list below.",
   "importAndMerge": "Import and Merge",
   "importAndMergeHint": "Never overwrites local data: merges after de-duplicating words and answers.",
-  "backupContentsNote": "A backup contains words, word lists, links (including delete marks), answer history, favorites, tags, study goals and device settings. It never contains accounts, passwords or sync credentials.",
+  "backupContentsNote": "A backup contains words, word lists, links (including delete marks), answer history, learning progress, favorites, tags and study goals. Device appearance, voice and screen preferences are excluded. It never contains accounts, passwords or sync credentials.",
   "localBackups": "Local Backups",
   "noLocalBackups": "No backups yet. An automatic backup or Save Backup Now will appear here.",
   "backupActions": "Backup Actions",

@@ -220,25 +220,12 @@ class BackupService {
         'sprintPlan': (await settings.loadSprintPlan()).toJson(),
         'version': await settings.sharedVersion(),
       },
-      // Device migration data. Never part of a sync dataset: theme, accent and
-      // TTS voice describe *this* device, and applying them from a remote
-      // device would undo the user's local choice on every sync.
-      if (includeDeviceSettings)
-        'deviceSettings': <String, Object?>{
-          'themeMode': current.themeMode,
-          'accentColor': current.accentColor,
-          'ttsVoice': current.ttsVoice,
-          'ttsLocale': current.ttsLocale,
-          'ttsRate': current.ttsRate,
-          'ttsAutoSpeak': current.ttsAutoSpeak,
-          'keepScreenOn': await db.readMeta('keep_screen_on') == '1',
-        },
+
     };
   });
 
-  /// Serialises a **backup** (not a sync payload): device migration settings are
-  /// included by default, so restoring on a new phone also brings the theme and
-  /// TTS preferences. `buildDataset` stays at the sync protocol version.
+  /// Exports shared learning data. The legacy includeDeviceSettings argument
+  /// remains source-compatible but device preferences are always excluded.
   Future<String> exportToJson({
     required DateTime now,
     bool pretty = true,

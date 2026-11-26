@@ -4895,7 +4895,7 @@ abstract class AppLocalizations {
   /// No description provided for @hasDeviceSettingsLine.
   ///
   /// In en, this message translates to:
-  /// **'Device settings included: {value}'**
+  /// **'Legacy device preferences: {value} (ignored on restore)'**
   String hasDeviceSettingsLine(String value);
 
   /// No description provided for @yes.
@@ -5123,7 +5123,7 @@ abstract class AppLocalizations {
   /// No description provided for @exportToHint.
   ///
   /// In en, this message translates to:
-  /// **'Saves anywhere through the system file picker (includes device settings).'**
+  /// **'Saves shared learning data through the system file picker; device preferences stay on this device.'**
   String get exportToHint;
 
   /// No description provided for @saveBackupNow.
@@ -5153,7 +5153,7 @@ abstract class AppLocalizations {
   /// No description provided for @backupContentsNote.
   ///
   /// In en, this message translates to:
-  /// **'A backup contains words, word lists, links (including delete marks), answer history, favorites, tags, study goals and device settings. It never contains accounts, passwords or sync credentials.'**
+  /// **'A backup contains words, word lists, links (including delete marks), answer history, learning progress, favorites, tags and study goals. Device appearance, voice and screen preferences are excluded. It never contains accounts, passwords or sync credentials.'**
   String get backupContentsNote;
 
   /// No description provided for @localBackups.
