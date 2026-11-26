@@ -36,6 +36,35 @@ Phase 2 历史结果（当前 Phase 3 结果见 phase3-verification.md）：
   （`usesDataProtectionKeychain: false`），不需要任何 entitlement。
 - **iOS**：HTTPS 默认允许；Keychain 由 `flutter_secure_storage` 管理；
   未配置签名，CI 只做 `--no-codesign` 编译验证。
+
+## iOS 产物与安装
+
+CI 的 `ios` job 上传 `ios-unsigned`，里面有两个等价的东西：
+
+| 文件 | 内容 | 用途 |
+| --- | --- | --- |
+| `MaterialWord-<sha>-unsigned.ipa` | `Payload/Runner.app`（arm64） | 交给重签名工具（Sideloadly / AltStore） |
+| `MaterialWord-<sha>-ios-unsigned.zip` | 同一个 `Runner.app` | 拖进 Xcode → Window → Devices |
+
+两者都是**未签名**的：iOS 只安装“有开发者签名 + 与设备匹配的 provisioning
+profile”的包，所以它们不能直接双击/拖拽安装，这是签名缺失，不是打包缺陷。
+`build-info-ios.txt` 里也写明了这一点，CI 会在上传前校验 IPA 内确实有
+`Payload/Runner.app/Info.plist` 与可执行文件。
+
+要得到可安装的包，必须在一台装了完整 Xcode 的机器上自备 Apple 团队：
+
+```bash
+# 1) Xcode 打开 ios/Runner.xcworkspace → Runner → Signing & Capabilities
+#    勾选 Automatically manage signing，Team 选自己的 Apple ID（免费账号 7 天）
+#    Bundle Identifier 改成唯一值，如 cn.<yourname>.materialword
+# 2) 然后二选一：
+open ios/Runner.xcworkspace            # 直接 Run 到已连接的设备
+flutter build ipa --export-method development   # 产出 build/ios/ipa/*.ipa
+```
+
+没有付费开发者账号时，免费账号签名的应用 7 天后失效，且同时最多 3 个；
+首次安装后需在「设置 → 通用 → VPN与设备管理」里信任该开发者证书。
+长期分发（TestFlight / App Store / Ad Hoc）必须使用付费的 Apple Developer Program。
 - 没有为了联网而放宽 TLS 校验；WebDAV 只接受 HTTPS，跨域重定向拒绝携带凭据。
 
 ## 凭据与数据隐私

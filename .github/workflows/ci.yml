@@ -305,20 +305,47 @@ jobs:
       - name: Build iOS without code signing
         run: flutter build ios --release --no-codesign --dart-define=GIT_COMMIT="$GITHUB_SHA"
 
-      - name: Collect build report
+      - name: Collect build report and package the unsigned IPA
         run: |
+          # An IPA is just `Payload/Runner.app` zipped — no signing material is
+          # added here. It is NOT installable by itself: iOS refuses a bundle
+          # without a signature and a matching provisioning profile. What it is
+          # good for is the standard input of a re-signing tool (Sideloadly,
+          # AltStore) or of `flutter build ipa` on a machine that has a team.
+          ROOT="$PWD"
           mkdir -p dist
           {
             echo "commit: $GITHUB_SHA"
             echo "flutter: ${FLUTTER_VERSION}"
             echo "result: flutter build ios --release --no-codesign succeeded"
-            echo "note: an unsigned build is NOT installable on iPhone/iPad."
-            echo "note: a signed IPA requires an Apple Developer team + provisioning profile."
+            echo "artifact: Payload/Runner.app inside MaterialWord-${GITHUB_SHA::7}-unsigned.ipa"
+            echo "note: this IPA is UNSIGNED. iOS will refuse it until it is signed with a"
+            echo "note: developer certificate and a provisioning profile that lists the device."
+            echo "note: install it through a re-signing tool, or build a signed IPA locally"
+            echo "note: with an Apple Developer team (see docs/build-guide.md)."
           } > dist/build-info-ios.txt
-          if [ -d build/ios/iphoneos/Runner.app ]; then
-            ditto -c -k --sequesterRsrc --keepParent build/ios/iphoneos/Runner.app \
-              "dist/MaterialWord-${GITHUB_SHA::7}-ios-unsigned.zip"
+
+          if [ ! -d build/ios/iphoneos/Runner.app ]; then
+            echo "::error::build/ios/iphoneos/Runner.app is missing"
+            exit 1
           fi
+
+          # Keep the raw bundle too: it is what Xcode's Devices window wants.
+          ditto -c -k --sequesterRsrc --keepParent build/ios/iphoneos/Runner.app \
+            "dist/MaterialWord-${GITHUB_SHA::7}-ios-unsigned.zip"
+
+          rm -rf build/ios-ipa
+          mkdir -p build/ios-ipa/Payload
+          cp -R build/ios/iphoneos/Runner.app build/ios-ipa/Payload/
+          ( cd build/ios-ipa && zip -qry "$ROOT/dist/MaterialWord-${GITHUB_SHA::7}-unsigned.ipa" Payload )
+
+          # Prove the archive really has the layout iTunes/Xcode expect instead
+          # of shipping a zip that only looks like an IPA.
+          unzip -l "dist/MaterialWord-${GITHUB_SHA::7}-unsigned.ipa" \
+            | grep -q "Payload/Runner.app/Info.plist"
+          unzip -l "dist/MaterialWord-${GITHUB_SHA::7}-unsigned.ipa" \
+            | grep -q "Payload/Runner.app/Runner"
+          ls -lh dist
 
       - uses: actions/upload-artifact@v7
         with:
