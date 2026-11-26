@@ -99,6 +99,7 @@ class S3Server {
 
   /// Fail the next N reads with a 500.
   int failNextReads = 0;
+  bool corruptNextExistingRead = false;
 
   /// Run before a write is applied (used to interleave two devices).
   Future<void> Function()? beforeWrite;
@@ -261,6 +262,43 @@ class S3Server {
 
     // `HEAD /bucket` — bucket existence only.
     if (path == '/$bucket' || path == '/$bucket/') {
+      if (request.method == 'GET' &&
+          request.uri.queryParameters['list-type'] == '2') {
+        final prefix = request.uri.queryParameters['prefix'] ?? '';
+        final all =
+            objects.entries
+                .where((entry) => entry.key.startsWith('/$bucket/$prefix'))
+                .toList()
+              ..sort((a, b) => a.key.compareTo(b.key));
+        final token = request.uri.queryParameters['continuation-token'];
+        final start = token == null ? 0 : (int.tryParse(token) ?? 0);
+        final max =
+            int.tryParse(request.uri.queryParameters['max-keys'] ?? '') ?? 1000;
+        final end = (start + max).clamp(0, all.length);
+        final xml = StringBuffer(
+          '<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">',
+        )..write('<IsTruncated>${end < all.length}</IsTruncated>');
+        for (final entry in all.skip(start).take(end - start)) {
+          xml.write(
+            '<Contents><Key>${const HtmlEscape().convert(entry.key.substring(bucket.length + 2))}</Key>'
+            '<LastModified>2026-11-26T02:31:00Z</LastModified>'
+            '<Size>${entry.value.body.length}</Size></Contents>',
+          );
+        }
+        if (end < all.length) {
+          xml.write('<NextContinuationToken>$end</NextContinuationToken>');
+        }
+        xml.write('</ListBucketResult>');
+        request.response.statusCode = 200;
+        request.response.headers.contentType = ContentType(
+          'application',
+          'xml',
+        );
+        request.response.write(xml.toString());
+        traffic.add('${request.method} $path -> 200');
+        await request.response.close();
+        return;
+      }
       return finish(
         request.method == 'HEAD' || request.method == 'GET' ? 200 : 405,
       );
@@ -335,8 +373,12 @@ class S3Server {
     if (!options.omitGetEtag) {
       response.headers.set('etag', _etag(entry.revision));
     }
-    response.headers.set('content-length', '${entry.body.length}');
-    response.add(entry.body);
+    final body = corruptNextExistingRead
+        ? List<int>.filled(entry.body.length, 0)
+        : entry.body;
+    corruptNextExistingRead = false;
+    response.headers.set('content-length', '${body.length}');
+    response.add(body);
     traffic.add('GET $path -> 200');
     await response.close();
   }

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../features/dashboard/dashboard_page.dart';
+import '../features/backup/cloud_backup_dialog.dart';
 import '../features/dictionary/dictionary_page.dart';
 import '../features/settings/settings_page.dart';
 import '../features/statistics/statistics_page.dart';
@@ -124,6 +125,7 @@ class _AppShellState extends ConsumerState<AppShell>
   bool _autoSyncStarted = false;
   Timer? _autoBackupTimer;
   bool _autoBackupRunning = false;
+  bool _cloudBackupDialogOpen = false;
 
   @override
   void initState() {
@@ -357,6 +359,19 @@ class _AppShellState extends ConsumerState<AppShell>
     });
   }
 
+  Future<void> _openCloudBackupDialog() async {
+    if (!mounted || _hasModalRoute || _cloudBackupDialogOpen) return;
+    _cloudBackupDialogOpen = true;
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (_) => const CloudBackupDialog(),
+      );
+    } finally {
+      _cloudBackupDialogOpen = false;
+    }
+  }
+
   Future<void> _quickAdd() async {
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
@@ -430,6 +445,12 @@ class _AppShellState extends ConsumerState<AppShell>
               icon: const Icon(Icons.table_rows_outlined),
               onPressed: _openWordManagement,
             ),
+          IconButton(
+            key: const ValueKey('manual-cloud-backup'),
+            tooltip: context.l10n.cloudBackupManual,
+            icon: const Icon(Icons.backup_outlined, color: Colors.white),
+            onPressed: _openCloudBackupDialog,
+          ),
         ],
       ),
       body: SafeArea(

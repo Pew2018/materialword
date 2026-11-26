@@ -224,12 +224,26 @@ class AwsV4Signer {
     return path.isEmpty ? '/' : path;
   }
 
-  /// No query parameters are used today; kept explicit so a future
-  /// `?versionId=` is sorted and encoded rather than silently dropped from the
-  /// signature.
+  /// Canonicalise each raw query component exactly once. `Uri.queryParameters`
+  /// loses duplicate keys and treats `+` as a space, both of which invalidate
+  /// ListObjectsV2 signatures with opaque continuation tokens.
   static String canonicalQuery(Uri url) {
     if (!url.hasQuery || url.query.isEmpty) return '';
-    return (url.query.split('&')..sort()).join('&');
+    final pairs = <(String, String)>[];
+    for (final part in url.query.split('&')) {
+      final separator = part.indexOf('=');
+      final rawName = separator < 0 ? part : part.substring(0, separator);
+      final rawValue = separator < 0 ? '' : part.substring(separator + 1);
+      pairs.add((
+        encodeComponent(Uri.decodeComponent(rawName)),
+        encodeComponent(Uri.decodeComponent(rawValue)),
+      ));
+    }
+    pairs.sort((a, b) {
+      final byName = a.$1.compareTo(b.$1);
+      return byName != 0 ? byName : a.$2.compareTo(b.$2);
+    });
+    return pairs.map((pair) => '${pair.$1}=${pair.$2}').join('&');
   }
 
   static Uri withoutDefaultPort(Uri url) {

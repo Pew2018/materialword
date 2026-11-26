@@ -5881,6 +5881,276 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Permission denied. Check the access key permissions and the bucket policy.'**
   String get syncCapabilityPermissionDenied;
+
+  /// No description provided for @cloudBackupManual.
+  ///
+  /// In en, this message translates to:
+  /// **'Manual backup'**
+  String get cloudBackupManual;
+
+  /// No description provided for @cloudBackupTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'S3 and WebDAV backups'**
+  String get cloudBackupTitle;
+
+  /// No description provided for @cloudBackupIndependentHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Independent backups do not replace your bidirectional sync service.'**
+  String get cloudBackupIndependentHint;
+
+  /// No description provided for @cloudBackupConfigure.
+  ///
+  /// In en, this message translates to:
+  /// **'Configure backup'**
+  String get cloudBackupConfigure;
+
+  /// No description provided for @cloudBackupNotConfigured.
+  ///
+  /// In en, this message translates to:
+  /// **'Cloud backup is not configured.'**
+  String get cloudBackupNotConfigured;
+
+  /// No description provided for @cloudBackupTarget.
+  ///
+  /// In en, this message translates to:
+  /// **'Backup target'**
+  String get cloudBackupTarget;
+
+  /// No description provided for @cloudBackupLastSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Last successful backup'**
+  String get cloudBackupLastSuccess;
+
+  /// No description provided for @cloudBackupNever.
+  ///
+  /// In en, this message translates to:
+  /// **'Never'**
+  String get cloudBackupNever;
+
+  /// No description provided for @cloudBackupUpload.
+  ///
+  /// In en, this message translates to:
+  /// **'Upload backup'**
+  String get cloudBackupUpload;
+
+  /// No description provided for @cloudBackupDownload.
+  ///
+  /// In en, this message translates to:
+  /// **'Download backup'**
+  String get cloudBackupDownload;
+
+  /// No description provided for @cloudBackupBrowse.
+  ///
+  /// In en, this message translates to:
+  /// **'Browse cloud backups'**
+  String get cloudBackupBrowse;
+
+  /// No description provided for @cloudBackupSucceeded.
+  ///
+  /// In en, this message translates to:
+  /// **'Backup succeeded'**
+  String get cloudBackupSucceeded;
+
+  /// No description provided for @cloudBackupUploadProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'Uploading backup'**
+  String get cloudBackupUploadProgress;
+
+  /// No description provided for @cloudBackupVerifyProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'Verifying backup'**
+  String get cloudBackupVerifyProgress;
+
+  /// No description provided for @cloudBackupDownloadProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloading backup'**
+  String get cloudBackupDownloadProgress;
+
+  /// No description provided for @cloudBackupSaveFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Save file'**
+  String get cloudBackupSaveFile;
+
+  /// No description provided for @cloudBackupEndpoint.
+  ///
+  /// In en, this message translates to:
+  /// **'Server address'**
+  String get cloudBackupEndpoint;
+
+  /// No description provided for @cloudBackupRegion.
+  ///
+  /// In en, this message translates to:
+  /// **'Region'**
+  String get cloudBackupRegion;
+
+  /// No description provided for @cloudBackupBucket.
+  ///
+  /// In en, this message translates to:
+  /// **'Bucket'**
+  String get cloudBackupBucket;
+
+  /// No description provided for @cloudBackupDirectory.
+  ///
+  /// In en, this message translates to:
+  /// **'Backup directory'**
+  String get cloudBackupDirectory;
+
+  /// No description provided for @cloudBackupAddressing.
+  ///
+  /// In en, this message translates to:
+  /// **'Addressing style'**
+  String get cloudBackupAddressing;
+
+  /// No description provided for @cloudBackupUsername.
+  ///
+  /// In en, this message translates to:
+  /// **'Username'**
+  String get cloudBackupUsername;
+
+  /// No description provided for @cloudBackupPassword.
+  ///
+  /// In en, this message translates to:
+  /// **'Password or app password'**
+  String get cloudBackupPassword;
+
+  /// No description provided for @cloudBackupCopySync.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy from sync settings'**
+  String get cloudBackupCopySync;
+
+  /// No description provided for @cloudBackupTest.
+  ///
+  /// In en, this message translates to:
+  /// **'Test connection'**
+  String get cloudBackupTest;
+
+  /// No description provided for @cloudBackupConfigured.
+  ///
+  /// In en, this message translates to:
+  /// **'Configured'**
+  String get cloudBackupConfigured;
+
+  /// No description provided for @cloudBackupNotConfiguredShort.
+  ///
+  /// In en, this message translates to:
+  /// **'Not configured'**
+  String get cloudBackupNotConfiguredShort;
+
+  /// No description provided for @cloudBackupReady.
+  ///
+  /// In en, this message translates to:
+  /// **'Upload and readback verified'**
+  String get cloudBackupReady;
+
+  /// No description provided for @cloudBackupNoFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'No cloud backups found'**
+  String get cloudBackupNoFiles;
+
+  /// No description provided for @cloudBackupSelectFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Select a backup to download'**
+  String get cloudBackupSelectFile;
+
+  /// No description provided for @cloudBackupMergeRestore.
+  ///
+  /// In en, this message translates to:
+  /// **'Merge restore'**
+  String get cloudBackupMergeRestore;
+
+  /// No description provided for @cloudBackupSnapshotRestore.
+  ///
+  /// In en, this message translates to:
+  /// **'Snapshot restore'**
+  String get cloudBackupSnapshotRestore;
+
+  /// No description provided for @cloudBackupConfirmDelete.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove this backup configuration? Cloud files will remain.'**
+  String get cloudBackupConfirmDelete;
+
+  /// No description provided for @cloudBackupDownloaded.
+  ///
+  /// In en, this message translates to:
+  /// **'Backup downloaded and validated'**
+  String get cloudBackupDownloaded;
+
+  /// No description provided for @cloudBackupNoSyncConfig.
+  ///
+  /// In en, this message translates to:
+  /// **'No matching sync configuration'**
+  String get cloudBackupNoSyncConfig;
+
+  /// No description provided for @cloudBackupWords.
+  ///
+  /// In en, this message translates to:
+  /// **'Words'**
+  String get cloudBackupWords;
+
+  /// No description provided for @cloudBackupBooks.
+  ///
+  /// In en, this message translates to:
+  /// **'Word books'**
+  String get cloudBackupBooks;
+
+  /// No description provided for @cloudBackupSyncRunning.
+  ///
+  /// In en, this message translates to:
+  /// **'Sync is running. Try again after it finishes.'**
+  String get cloudBackupSyncRunning;
+
+  /// No description provided for @cloudBackupPreparing.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing backup'**
+  String get cloudBackupPreparing;
+
+  /// No description provided for @cloudBackupListing.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading backup history'**
+  String get cloudBackupListing;
+
+  /// No description provided for @cloudBackupValidating.
+  ///
+  /// In en, this message translates to:
+  /// **'Validating backup'**
+  String get cloudBackupValidating;
+
+  /// No description provided for @cloudBackupCopied.
+  ///
+  /// In en, this message translates to:
+  /// **'Backup configuration copied'**
+  String get cloudBackupCopied;
+
+  /// No description provided for @cloudBackupS3.
+  ///
+  /// In en, this message translates to:
+  /// **'S3 backup'**
+  String get cloudBackupS3;
+
+  /// No description provided for @cloudBackupWebDav.
+  ///
+  /// In en, this message translates to:
+  /// **'WebDAV backup'**
+  String get cloudBackupWebDav;
+
+  /// No description provided for @cloudBackupReadOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'History available; uploading is unavailable'**
+  String get cloudBackupReadOnly;
 }
 
 class _AppLocalizationsDelegate

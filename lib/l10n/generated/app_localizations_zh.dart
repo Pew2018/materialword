@@ -3264,4 +3264,139 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String get syncCapabilityPermissionDenied =>
       '权限不足：请检查 Access Key 的权限与 Bucket 策略';
+
+  @override
+  String get cloudBackupManual => '手动备份';
+
+  @override
+  String get cloudBackupTitle => 'S3 和 WebDAV 备份';
+
+  @override
+  String get cloudBackupIndependentHint => '独立备份不会替换当前双向同步服务。';
+
+  @override
+  String get cloudBackupConfigure => '配置备份';
+
+  @override
+  String get cloudBackupNotConfigured => '尚未配置云端备份。';
+
+  @override
+  String get cloudBackupTarget => '备份目标';
+
+  @override
+  String get cloudBackupLastSuccess => '上次成功备份';
+
+  @override
+  String get cloudBackupNever => '暂无';
+
+  @override
+  String get cloudBackupUpload => '上传备份';
+
+  @override
+  String get cloudBackupDownload => '拉取备份';
+
+  @override
+  String get cloudBackupBrowse => '浏览云端备份';
+
+  @override
+  String get cloudBackupSucceeded => '备份成功';
+
+  @override
+  String get cloudBackupUploadProgress => '正在上传备份';
+
+  @override
+  String get cloudBackupVerifyProgress => '正在校验备份';
+
+  @override
+  String get cloudBackupDownloadProgress => '正在下载备份';
+
+  @override
+  String get cloudBackupSaveFile => '保存文件';
+
+  @override
+  String get cloudBackupEndpoint => '服务端地址';
+
+  @override
+  String get cloudBackupRegion => '区域';
+
+  @override
+  String get cloudBackupBucket => '存储桶';
+
+  @override
+  String get cloudBackupDirectory => '备份目录';
+
+  @override
+  String get cloudBackupAddressing => '寻址方式';
+
+  @override
+  String get cloudBackupUsername => '用户名';
+
+  @override
+  String get cloudBackupPassword => '密码或应用密码';
+
+  @override
+  String get cloudBackupCopySync => '从现有同步配置复制';
+
+  @override
+  String get cloudBackupTest => '测试连接';
+
+  @override
+  String get cloudBackupConfigured => '已配置';
+
+  @override
+  String get cloudBackupNotConfiguredShort => '尚未配置';
+
+  @override
+  String get cloudBackupReady => '上传与读回校验通过';
+
+  @override
+  String get cloudBackupNoFiles => '没有找到云端备份';
+
+  @override
+  String get cloudBackupSelectFile => '选择具体备份文件下载';
+
+  @override
+  String get cloudBackupMergeRestore => '合并恢复';
+
+  @override
+  String get cloudBackupSnapshotRestore => '快照恢复';
+
+  @override
+  String get cloudBackupConfirmDelete => '删除此备份配置？云端历史文件会保留。';
+
+  @override
+  String get cloudBackupDownloaded => '备份已下载并验证';
+
+  @override
+  String get cloudBackupNoSyncConfig => '没有对应的同步配置';
+
+  @override
+  String get cloudBackupWords => '单词';
+
+  @override
+  String get cloudBackupBooks => '词书';
+
+  @override
+  String get cloudBackupSyncRunning => '双向同步正在进行，请稍后重试。';
+
+  @override
+  String get cloudBackupPreparing => '正在准备备份';
+
+  @override
+  String get cloudBackupListing => '正在加载备份历史';
+
+  @override
+  String get cloudBackupValidating => '正在验证备份';
+
+  @override
+  String get cloudBackupCopied => '备份配置已复制';
+
+  @override
+  String get cloudBackupS3 => 'S3 备份';
+
+  @override
+  String get cloudBackupWebDav => 'WebDAV 备份';
+
+  @override
+  String get cloudBackupReadOnly => '可浏览历史备份，但无法上传';
 }

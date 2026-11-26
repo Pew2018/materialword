@@ -195,4 +195,8 @@ class CredentialKeys {
   /// or diagnostic export of it) never contains a credential.
   static const String s3AccessKeyId = 'sync.s3.accessKeyId';
   static const String s3SecretAccessKey = 'sync.s3.secretAccessKey';
+  static const String backupS3AccessKeyId = 'backup.s3.accessKeyId';
+  static const String backupS3SecretAccessKey = 'backup.s3.secretAccessKey';
+  static const String backupWebdavUsername = 'backup.webdav.username';
+  static const String backupWebdavPassword = 'backup.webdav.password';
 }

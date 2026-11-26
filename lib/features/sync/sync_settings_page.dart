@@ -20,6 +20,7 @@ import '../../l10n/sync_labels.dart';
 import '../../shared/widgets/common.dart';
 import '../settings/diagnostics_page.dart';
 import 'webdav_directory_picker.dart';
+import '../backup/cloud_backup_settings.dart';
 
 /// One place for every sync option: pick exactly one provider, fill in its
 /// connection data, test it, sync manually, and see what happened last time.
@@ -1306,6 +1307,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
                 ),
               ),
             ],
+            const CloudBackupSettingsSection(),
           ],
         ),
       ),

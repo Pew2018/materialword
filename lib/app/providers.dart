@@ -19,6 +19,8 @@ import '../core/repositories/wordbook_repository.dart';
 import '../core/repositories/word_metadata_repository.dart';
 import '../core/time_utils.dart';
 import '../services/backup_service.dart';
+import '../services/cloud_backup/cloud_backup_repository.dart';
+import '../services/cloud_backup/cloud_backup_coordinator.dart';
 import '../services/backup_files.dart';
 import '../services/backup_manager.dart';
 import '../services/dictionary_service.dart';
@@ -276,6 +278,24 @@ final autoSyncServiceProvider = Provider<AutoSyncService>((ref) {
 
 final Provider<CredentialStore> credentialStoreProvider =
     Provider<CredentialStore>((Ref ref) => SecureCredentialStore());
+
+final cloudBackupRepositoryProvider = Provider<CloudBackupRepository>(
+  (ref) => CloudBackupRepository(
+    ref.watch(settingsRepositoryProvider),
+    ref.watch(credentialStoreProvider),
+  ),
+);
+
+final cloudBackupCoordinatorProvider = Provider<CloudBackupCoordinator>((ref) {
+  final coordinator = CloudBackupCoordinator(
+    repository: ref.watch(cloudBackupRepositoryProvider),
+    backup: ref.watch(backupServiceProvider),
+    clock: ref.watch(clockProvider),
+    client: ref.watch(syncHttpClientProvider),
+  );
+  ref.onDispose(coordinator.dispose);
+  return coordinator;
+});
 
 /// All sync providers that can be configured. Only one is active at a time.
 final Provider<SyncCoordinator> syncCoordinatorProvider =

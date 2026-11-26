@@ -10,6 +10,7 @@ import '../../core/repositories/study_repository.dart';
 import '../../core/time_utils.dart';
 import '../backup_service.dart';
 import '../diagnostics_service.dart';
+import '../data_operation_gate.dart';
 import 'conflict_store.dart';
 import 'credential_store.dart';
 import 'github_sync_provider.dart';
@@ -194,6 +195,9 @@ class SyncCoordinator {
       throw SyncException(
         '同步已暂停：${await settings.syncPausedReason() ?? '恢复历史备份后需要先确认如何处理远端数据'}',
       );
+    }
+    if (!DataOperationGate.tryEnter(db)) {
+      throw const SyncException('数据恢复正在进行，请稍后再同步');
     }
     _running = true;
     _activeTarget = targetKey(provider);
@@ -479,6 +483,7 @@ class SyncCoordinator {
         provider.close();
       }
       _running = false;
+      DataOperationGate.leave(db);
       _activeTarget = null;
       _activeConfigRevision = null;
     }

@@ -32,6 +32,14 @@ class SettingsRepository {
   static const String lastSyncResultKey = 'last_sync_result';
   static const String syncConfigKey = 'sync_config';
   static const String syncConfigRevisionKey = 'sync_config_revision';
+  static const String cloudBackupS3ConfigKey = 'cloud_backup_s3_config';
+  static const String cloudBackupWebDavConfigKey = 'cloud_backup_webdav_config';
+  static const String cloudBackupPreferredTargetKey =
+      'cloud_backup_preferred_target';
+  static const String cloudBackupLastSuccessKey = 'cloud_backup_last_success';
+  static const String cloudBackupLastDownloadKey = 'cloud_backup_last_download';
+  static const String cloudBackupConfigRevisionKey =
+      'cloud_backup_config_revision';
   static const String pendingRebuildKey = 'pending_rebuild_words';
 
   // ---- phase 5: backup preferences and post-restore sync isolation ----------

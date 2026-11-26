@@ -3558,4 +3558,143 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get syncCapabilityPermissionDenied =>
       'Permission denied. Check the access key permissions and the bucket policy.';
+
+  @override
+  String get cloudBackupManual => 'Manual backup';
+
+  @override
+  String get cloudBackupTitle => 'S3 and WebDAV backups';
+
+  @override
+  String get cloudBackupIndependentHint =>
+      'Independent backups do not replace your bidirectional sync service.';
+
+  @override
+  String get cloudBackupConfigure => 'Configure backup';
+
+  @override
+  String get cloudBackupNotConfigured => 'Cloud backup is not configured.';
+
+  @override
+  String get cloudBackupTarget => 'Backup target';
+
+  @override
+  String get cloudBackupLastSuccess => 'Last successful backup';
+
+  @override
+  String get cloudBackupNever => 'Never';
+
+  @override
+  String get cloudBackupUpload => 'Upload backup';
+
+  @override
+  String get cloudBackupDownload => 'Download backup';
+
+  @override
+  String get cloudBackupBrowse => 'Browse cloud backups';
+
+  @override
+  String get cloudBackupSucceeded => 'Backup succeeded';
+
+  @override
+  String get cloudBackupUploadProgress => 'Uploading backup';
+
+  @override
+  String get cloudBackupVerifyProgress => 'Verifying backup';
+
+  @override
+  String get cloudBackupDownloadProgress => 'Downloading backup';
+
+  @override
+  String get cloudBackupSaveFile => 'Save file';
+
+  @override
+  String get cloudBackupEndpoint => 'Server address';
+
+  @override
+  String get cloudBackupRegion => 'Region';
+
+  @override
+  String get cloudBackupBucket => 'Bucket';
+
+  @override
+  String get cloudBackupDirectory => 'Backup directory';
+
+  @override
+  String get cloudBackupAddressing => 'Addressing style';
+
+  @override
+  String get cloudBackupUsername => 'Username';
+
+  @override
+  String get cloudBackupPassword => 'Password or app password';
+
+  @override
+  String get cloudBackupCopySync => 'Copy from sync settings';
+
+  @override
+  String get cloudBackupTest => 'Test connection';
+
+  @override
+  String get cloudBackupConfigured => 'Configured';
+
+  @override
+  String get cloudBackupNotConfiguredShort => 'Not configured';
+
+  @override
+  String get cloudBackupReady => 'Upload and readback verified';
+
+  @override
+  String get cloudBackupNoFiles => 'No cloud backups found';
+
+  @override
+  String get cloudBackupSelectFile => 'Select a backup to download';
+
+  @override
+  String get cloudBackupMergeRestore => 'Merge restore';
+
+  @override
+  String get cloudBackupSnapshotRestore => 'Snapshot restore';
+
+  @override
+  String get cloudBackupConfirmDelete =>
+      'Remove this backup configuration? Cloud files will remain.';
+
+  @override
+  String get cloudBackupDownloaded => 'Backup downloaded and validated';
+
+  @override
+  String get cloudBackupNoSyncConfig => 'No matching sync configuration';
+
+  @override
+  String get cloudBackupWords => 'Words';
+
+  @override
+  String get cloudBackupBooks => 'Word books';
+
+  @override
+  String get cloudBackupSyncRunning =>
+      'Sync is running. Try again after it finishes.';
+
+  @override
+  String get cloudBackupPreparing => 'Preparing backup';
+
+  @override
+  String get cloudBackupListing => 'Loading backup history';
+
+  @override
+  String get cloudBackupValidating => 'Validating backup';
+
+  @override
+  String get cloudBackupCopied => 'Backup configuration copied';
+
+  @override
+  String get cloudBackupS3 => 'S3 backup';
+
+  @override
+  String get cloudBackupWebDav => 'WebDAV backup';
+
+  @override
+  String get cloudBackupReadOnly =>
+      'History available; uploading is unavailable';
 }

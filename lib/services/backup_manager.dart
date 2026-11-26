@@ -9,6 +9,7 @@ import '../core/models/enums.dart';
 import '../core/repositories/settings_repository.dart';
 import '../core/repositories/study_repository.dart';
 import '../core/time_utils.dart';
+import 'data_operation_gate.dart';
 import 'backup_service.dart';
 import 'diagnostics_service.dart';
 import 'practice_session.dart';
@@ -277,8 +278,15 @@ class BackupManager {
 
   /// Non-destructive merge: keeps everything already on this device.
   Future<MergeReport> restoreMerge(File file) async {
-    final Map<String, Object?> dataset = await backup.readDataset(file.path);
-    return backup.mergeDataset(dataset, now: clock.now());
+    if (!DataOperationGate.tryEnter(db)) {
+      throw const BackupException('同步或恢复正在进行，请稍后重试');
+    }
+    try {
+      final Map<String, Object?> dataset = await backup.readDataset(file.path);
+      return await backup.mergeDataset(dataset, now: clock.now());
+    } finally {
+      DataOperationGate.leave(db);
+    }
   }
 
   /// Point-in-time restore. **Destructive by design**, therefore:
@@ -299,58 +307,65 @@ class BackupManager {
     Future<void> Function()? afterClear,
     Future<void> Function()? afterMerge,
   }) async {
-    final Map<String, Object?> dataset = await backup.readDataset(file.path);
-    final File protective = await createBackup(kind: BackupKind.protective);
-
-    int clearedWords = 0;
-    int clearedEvents = 0;
-    bool currentBookCleared = false;
-    late MergeReport report;
-    await db.transaction(() async {
-      clearedWords = await _count(db.words.actualTableName);
-      clearedEvents = await _count(db.reviewEvents.actualTableName);
-      await _clearAll();
-      // Test-only seam: lets a crash be injected *after* the destructive part
-      // started, to prove the transaction rolls back to the previous state.
-      if (afterClear != null) await afterClear();
-      report = await backup.mergeValidatedInTransaction(
-        dataset,
-        now: clock.now(),
-        forceSharedSettings: true,
-      );
-      // The restored snapshot may not contain the book this device had
-      // selected. A dangling `currentWordBookId` would silently filter the
-      // whole app against a book that no longer exists.
-      currentBookCleared = await _clearDanglingCurrentBook();
-      // Test-only seam: a crash here happens *after* the snapshot's settings
-      // were written and must still roll both data and settings back.
-      if (afterMerge != null) await afterMerge();
-      await db.deleteMeta(StudySession.persistenceKey);
-      await db.deleteMeta(PracticeSession.persistenceKey);
-      await db.deleteMeta(SettingsRepository.pendingRebuildKey);
-      await db.deleteMeta('last_sync_at');
-      await db.deleteMeta('last_sync_result');
-      await db.deleteMeta('last_sync_local_hash');
-      await db.deleteMeta('last_sync_remote_revision');
-      await _deleteMetaWithPrefix('sync_target:');
-      await _deleteMetaWithPrefix('sync_auto:');
-      await settings.setSyncPaused(
-        true,
-        reason: '已恢复到 ${dataset['exportedAt'] ?? '历史备份'}，请确认如何处理远端数据',
-      );
-    });
-
-    if (applyDeviceSettings) {
-      await _applyDeviceSettings(dataset['deviceSettings']);
+    if (!DataOperationGate.tryEnter(db)) {
+      throw const BackupException('同步或恢复正在进行，请稍后重试');
     }
-    return RestoreOutcome(
-      report: report,
-      protectiveBackup: protective,
-      clearedWords: clearedWords,
-      clearedEvents: clearedEvents,
-      syncPaused: true,
-      currentBookCleared: currentBookCleared,
-    );
+    try {
+      final Map<String, Object?> dataset = await backup.readDataset(file.path);
+      final File protective = await createBackup(kind: BackupKind.protective);
+
+      int clearedWords = 0;
+      int clearedEvents = 0;
+      bool currentBookCleared = false;
+      late MergeReport report;
+      await db.transaction(() async {
+        clearedWords = await _count(db.words.actualTableName);
+        clearedEvents = await _count(db.reviewEvents.actualTableName);
+        await _clearAll();
+        // Test-only seam: lets a crash be injected *after* the destructive part
+        // started, to prove the transaction rolls back to the previous state.
+        if (afterClear != null) await afterClear();
+        report = await backup.mergeValidatedInTransaction(
+          dataset,
+          now: clock.now(),
+          forceSharedSettings: true,
+        );
+        // The restored snapshot may not contain the book this device had
+        // selected. A dangling `currentWordBookId` would silently filter the
+        // whole app against a book that no longer exists.
+        currentBookCleared = await _clearDanglingCurrentBook();
+        // Test-only seam: a crash here happens *after* the snapshot's settings
+        // were written and must still roll both data and settings back.
+        if (afterMerge != null) await afterMerge();
+        await db.deleteMeta(StudySession.persistenceKey);
+        await db.deleteMeta(PracticeSession.persistenceKey);
+        await db.deleteMeta(SettingsRepository.pendingRebuildKey);
+        await db.deleteMeta('last_sync_at');
+        await db.deleteMeta('last_sync_result');
+        await db.deleteMeta('last_sync_local_hash');
+        await db.deleteMeta('last_sync_remote_revision');
+        await _deleteMetaWithPrefix('sync_target:');
+        await _deleteMetaWithPrefix('sync_auto:');
+        await settings.setSyncPaused(
+          true,
+          reason: '已恢复到 ${dataset['exportedAt'] ?? '历史备份'}，请确认如何处理远端数据',
+        );
+      });
+
+      if (applyDeviceSettings) {
+        await _applyDeviceSettings(dataset['deviceSettings']);
+      }
+      return RestoreOutcome(
+        report: report,
+        protectiveBackup: protective,
+        clearedWords: clearedWords,
+        clearedEvents: clearedEvents,
+        syncPaused: true,
+        currentBookCleared: currentBookCleared,
+      );
+    } finally {
+      DataOperationGate.leave(db);
+    }
   }
 
   /// Clears the device-local book selection when it does not resolve to a live
