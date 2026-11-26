@@ -28,7 +28,7 @@ HTTPS 链接和本地选择器共用同一解析入口。
 | CSV | 电子表格 / 通用交换 | 词条**内容**（9 列），公式注入已中和 | 学习历史、收藏、标签，且带前导单引号时不是逐字无损 |
 | JSON | MaterialWord 原生词书交换 | 全部词条内容 + 词书名称/描述，逐字无损 | 学习记录、状态、收藏、标签、同步凭据 |
 
-完整学习数据只能通过**备份 JSON**（`kind = materialword-backup`）迁移，见
+完整学习数据可通过全量备份或默认学习 ZIP 迁移，见
 `docs/backup-and-recovery.md`。词书 JSON 与备份 JSON 是两种文档，导入器会明确拒绝
 把备份当作词书导入。
 
@@ -63,7 +63,7 @@ HTTPS 链接和本地选择器共用同一解析入口。
   "exportedAt": "2026-11-25T06:00:00.000Z",
   "name": "CET-6 核心词",
   "description": "可选",
-  "wordCount": 2,
+  "wordCount": 1,
   "words": [
     {
       "word": "abandon",
@@ -89,8 +89,8 @@ HTTPS 链接和本地选择器共用同一解析入口。
   "kind": "materialword-wordbook",
   "schemaVersion": 2,
   "books": [
-    {"name": "书一", "description": "", "wordCount": 1, "words": [ ... ]},
-    {"name": "书二", "description": "", "wordCount": 2, "words": [ ... ]}
+    {"name": "书一", "description": "", "wordCount": 1, "words": [{"word": "alpha"}]},
+    {"name": "书二", "description": "", "wordCount": 2, "words": [{"word": "alpha"}, {"word": "beta"}]}
   ]
 }
 ```

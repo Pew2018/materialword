@@ -1,0 +1,25 @@
+{
+  "kind": "materialword-wordbook",
+  "schemaVersion": 2,
+  "name": "Everyday",
+  "description": "UTF-8 示例词书",
+  "wordCount": 2,
+  "words": [
+    {
+      "word": "alpha",
+      "phonetic": "ˈælfə",
+      "partOfSpeech": "n.",
+      "translation": "开端；第一",
+      "definition": "the first letter",
+      "example": "He said \"alpha\", then left.\nTry again.",
+      "phrase": "alpha test",
+      "note": "我的笔记",
+      "examTags": "cet4 ielts"
+    },
+    {
+      "word": "beta",
+      "translation": "测试版",
+      "examTags": "toefl"
+    }
+  ]
+}

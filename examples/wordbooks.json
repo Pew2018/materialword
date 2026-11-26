@@ -1,0 +1,46 @@
+{
+  "kind": "materialword-wordbook",
+  "schemaVersion": 2,
+  "books": [
+    {
+      "name": "Everyday",
+      "description": "日常",
+      "words": [
+        {
+          "word": "alpha",
+          "phonetic": "ˈælfə",
+          "partOfSpeech": "n.",
+          "translation": "开端；第一",
+          "definition": "the first letter",
+          "example": "He said \"alpha\", then left.\nTry again.",
+          "phrase": "alpha test",
+          "note": "我的笔记",
+          "examTags": "cet4 ielts"
+        },
+        {
+          "word": "beta",
+          "translation": "测试版",
+          "examTags": "toefl"
+        }
+      ]
+    },
+    {
+      "name": "Travel",
+      "description": "旅行",
+      "words": [
+        {
+          "word": "alpha",
+          "translation": "开端；第一"
+        },
+        {
+          "word": "journey",
+          "translation": "旅程",
+          "examTags": [
+            "ielts",
+            "toefl"
+          ]
+        }
+      ]
+    }
+  ]
+}
