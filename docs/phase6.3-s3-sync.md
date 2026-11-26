@@ -99,3 +99,26 @@ WebDAV 的 `safeSnapshotWrite` 快照通道逻辑未改动。真实验收通过�
 4. 两端各自离线编辑后上线，确认合并而不是覆盖，冲突列表符合预期。
 5. 在控制台删除对象，确认设备停止自动同步并提示，而不是静默重建。
 6. 记录服务商、Region、探测结果与两端收敛结果，回填本节。
+
+## 7. 交付记录（提交 `9d4c6d4`）
+
+| 项目 | 结果 |
+|---|---|
+| 提交 | [`9d4c6d4`](https://github.com/Pew2018/materialword/commit/9d4c6d46161c7ded0be2644b9bd1260d9d281154) `feat(sync): add S3 bidirectional sync with proven conditional writes` |
+| Actions | [Build · 45738753552](https://github.com/Pew2018/materialword/actions/runs/45738753552) |
+| Validate（格式/分析/测试） | 格式与分析通过；测试 `+633 ~2 -9`，9 个失败与基线 [45726956125](https://github.com/Pew2018/materialword/actions/runs/45726956125) 完全一致（见下），本次新增 36 个用例全部通过（基线 `+597` → 本次 `+633`） |
+| Android | `MaterialWord-9d4c6d4-android-arm64.apk`（26.6 MB 解压 / 14.0 MB 产物包，arm64，debug keystore 签名，不可用于正式更新） |
+| macOS | `MaterialWord-9d4c6d4-macos.zip`（26.6 MB，universal x86_64+arm64；bundle 结构 15 项校验通过，`codesign --verify --deep --strict` 通过，LaunchServices 真实启动并写入数据库，20 项全 PASS） |
+| iOS | `MaterialWord-9d4c6d4-ios-unsigned.zip`（13.0 MB，`flutter build ios --release --no-codesign` 成功；无签名产物不可安装到真机） |
+
+基线遗留的 9 个失败（本次未修复，断言与门槛保持原样）：
+
+1. `phase3_export_and_forms_test` 词形候选列表上限与去重
+2. `phase3_golden_test` Classic 深色 golden（Linux 光栅化差异）
+3. `phase3_metadata_ui_test` 收藏筛选与批量移除
+4. `phase3_study_actions_test` 同名语音与已移除语种刷新
+5. `phase3_study_actions_test` 快速编辑返回同一卡片
+6. `phase3_practice_ui_test` 听写只朗读不显示
+7. `phase3_sprint_ui_test` 冲刺作答与普通目标隔离
+8. `phase3_round_summary_test` 本轮小结统计
+9. `phase3_sprint_ui_test` 计划对话框取消与确认
