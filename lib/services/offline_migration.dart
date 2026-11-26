@@ -18,6 +18,14 @@ class OfflineMigration {
     DateTime now,
   ) async {
     final data = await backup.buildDataset(now: now);
+    for (final row in data['dictionaryPackages'] as List) {
+      if (row['enabled'] == true &&
+          (row['id'] != DictionaryPackages.id ||
+              row['version'] != DictionaryPackages.revision ||
+              row['sha256'] != DictionaryPackages.digest)) {
+        throw const FormatException('所选词典版本不可用，无法创建完整离线迁移包');
+      }
+    }
     if ((await packages.missing()).isNotEmpty) {
       throw const FormatException('词典资源缺失，无法创建完整离线迁移包');
     }

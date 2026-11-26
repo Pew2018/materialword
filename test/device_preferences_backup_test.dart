@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:materialword/core/models/enums.dart';
+import 'package:materialword/services/backup_service.dart';
 
 import 'helpers/test_env.dart';
 
@@ -53,6 +54,12 @@ void main() {
         'ttsAutoSpeak': false,
         'keepScreenOn': false,
       };
+      (legacy['settings'] as Map)['ttsVoice'] = 'old-private-voice';
+      legacy['token'] = 'must-not-travel';
+      final portable = BackupService.portableCopy(legacy);
+      expect(jsonEncode(portable), isNot(contains('old-private-voice')));
+      expect(portable.containsKey('deviceSettings'), isFalse);
+      expect(portable.containsKey('token'), isFalse);
       final file = File('${env.backupDirectory.path}/legacy.json');
       await file.writeAsString(jsonEncode(legacy));
       await env.backups.restoreMerge(file);

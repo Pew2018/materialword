@@ -546,11 +546,14 @@ class CloudBackupCoordinator extends ChangeNotifier {
         }
       }
       return CloudBackupDeletionResult(removed, failed, []);
-    } catch (_) {
+    } catch (error) {
       return CloudBackupDeletionResult(
         [],
         errors,
         entries.map((e) => e.objectName).toList(),
+        targetChanged:
+            error is CloudBackupException &&
+            error.message.contains('target changed'),
       );
     }
   }

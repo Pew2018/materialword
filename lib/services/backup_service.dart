@@ -28,6 +28,7 @@ const Uuid _uuid = Uuid();
 ///   settings split, and a stable `contentHash` used to skip no-op uploads.
 /// * v3 — phase 3: event day anchors/provenance, favourites, tags, retained
 ///   identities and per-field versions.
+/// * v6 — shared dictionary-package selections; device preferences excluded.
 /// * v5 — complete, event-validated learningStates for backups and sync.
 /// * v4 — phase 5: **backup files only** may carry `deviceSettings` (theme,
 ///   accent, TTS, keep-screen-on) for device migration. The sync dataset stays
@@ -237,6 +238,50 @@ class BackupService {
       includeDeviceSettings: includeDeviceSettings,
     );
     return encodeDatasetJson(dataset, pretty: pretty);
+  }
+
+  /// Re-exporting a historical document must not reintroduce local preferences
+  /// or unknown connection fields. Retain only the supported learning protocol.
+  static Map<String, Object?> portableCopy(Map<String, Object?> data) {
+    const keys = {
+      'schemaVersion',
+      'kind',
+      'datasetId',
+      'deviceId',
+      'exportedAt',
+      'appVersion',
+      'words',
+      'wordBooks',
+      'entries',
+      'reviewEvents',
+      'favorites',
+      'tags',
+      'wordTags',
+      'settings',
+      'learningStates',
+      'progressAlgorithmVersion',
+      'progressEventDigest',
+      'dictionaryPackages',
+    };
+    final result = {
+      for (final entry in data.entries)
+        if (keys.contains(entry.key)) entry.key: entry.value,
+    };
+    final shared = data['settings'];
+    if (shared is Map) {
+      const fields = {
+        'dailyNewTarget',
+        'dailyReviewLimit',
+        'studyMode',
+        'sprintPlan',
+        'version',
+      };
+      result['settings'] = {
+        for (final field in fields)
+          if (shared.containsKey(field)) field: shared[field],
+      };
+    }
+    return result;
   }
 
   /// Writes a recovery copy **atomically**.

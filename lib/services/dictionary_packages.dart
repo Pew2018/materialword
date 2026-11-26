@@ -47,9 +47,20 @@ class DictionaryPackages {
 
   static void validate(Object? raw) {
     if (raw is! List || raw.length > 20) throw const FormatException('词典清单无效');
+    const fields = {
+      'id',
+      'version',
+      'source',
+      'license',
+      'sha256',
+      'enabled',
+      'counter',
+      'deviceId',
+    };
     final seen = <String>{};
     for (final row in raw) {
       if (row is! Map ||
+          row.keys.any((key) => !fields.contains(key)) ||
           row['id'] is! String ||
           !seen.add(row['id'] as String) ||
           row['version'] is! String ||
@@ -117,8 +128,13 @@ class DictionaryPackages {
         sha256.convert(await resource.readAsBytes()).toString() == digest;
   }
 
-  Future<bool> enabled() async =>
-      (await snapshot(db)).any((r) => r['id'] == id && r['enabled'] == true);
+  Future<bool> enabled() async => (await snapshot(db)).any(
+    (r) =>
+        r['id'] == id &&
+        r['enabled'] == true &&
+        r['version'] == revision &&
+        r['sha256'] == digest,
+  );
   Future<List<String>> missing() async {
     final result = <String>[];
     for (final row in await snapshot(db)) {

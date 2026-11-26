@@ -55,7 +55,14 @@ class LearningPackage {
       data[key] = rows(key).where((r) => ids.contains(r['wordId'])).toList();
     }
     final tagIds = rows('wordTags').map((r) => r['tagId']).toSet();
-    data['tags'] = rows('tags').where((r) => tagIds.contains(r['id'])).toList();
+    final tags = rows('tags')
+        .where((r) => tagIds.contains(r['id']) && r['deletedAt'] == null)
+        .toList();
+    data['tags'] = tags;
+    final liveTagIds = tags.map((r) => r['id']).toSet();
+    data['wordTags'] = rows('wordTags')
+        .where((r) => liveTagIds.contains(r['tagId']))
+        .toList();
     data.remove('settings');
     data['dictionaryPackages'] = <Object?>[];
     data['progressEventDigest'] = BackupService.eventDigest(
@@ -208,6 +215,16 @@ class LearningPackage {
           data.containsKey('deviceSettings') ||
           !{5, 6}.contains(data['schemaVersion'])) {
         throw const FormatException('学习包数据范围无效');
+      }
+      // A learning package is an additive selected-book exchange. Never accept
+      // library deletion records disguised as progress from a full backup.
+      for (final key in ['words', 'wordBooks', 'entries', 'tags']) {
+        if ((data[key] as List).any((row) => row['deletedAt'] != null)) {
+          throw const FormatException('学习包不能包含词条、词书或标签删除指令');
+        }
+      }
+      if (((data['dictionaryPackages'] as List?) ?? []).isNotEmpty) {
+        throw const FormatException('学习包不能改变全局词典选择');
       }
       final bookIds = (data['wordBooks'] as List).map((b) => b['id']).toSet();
       final declared = (manifest['bookIds'] as List).toSet();

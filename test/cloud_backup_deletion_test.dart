@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -8,79 +9,7 @@ import 'package:materialword/services/cloud_backup/cloud_backup_provider.dart';
 import 'package:materialword/services/cloud_backup/cloud_backup_repository.dart';
 
 import 'helpers/test_env.dart';
-
-class History implements CloudBackupProvider {
-  History(this.config, this.content);
-  final CloudBackupConfig config;
-  final List<int> content;
-  final files = <String, List<int>>{};
-  final denied = <String>{};
-  bool failListing = false;
-  bool repeatToken = false;
-  bool failUpload = false;
-  bool loseDeleteResponse = false;
-  int pages = 0;
-  void Function()? afterDelete;
-  String name(int n) =>
-      'materialword-backup-20261126T120000000Z-00000000-0000-4000-8000-${n.toString().padLeft(12, '0')}.json';
-  void seed(int n) {
-    for (var i = 0; i < n; i++) {
-      files[name(i)] = content;
-    }
-  }
-
-  CloudBackupEntry entry(String name) => CloudBackupEntry(
-    providerId: config.providerId,
-    objectName: name,
-    targetFingerprint: config.fingerprint,
-    createdAt: name.startsWith('materialword-backup-20261127')
-        ? DateTime.utc(2026, 11, 27)
-        : DateTime.utc(2026, 11, 26, 12),
-    byteLength: files[name]?.length,
-  );
-  @override
-  Future<CloudBackupPage> listBackups({String? continuationToken}) async {
-    pages++;
-    if (failListing) throw const CloudBackupException('connection failed');
-    final all = files.keys.where(cloudBackupName.hasMatch).toList()..sort();
-    final start = int.parse(continuationToken ?? '0');
-    final end = (start + 2).clamp(0, all.length);
-    return CloudBackupPage(
-      all.sublist(start, end).map(entry).toList(),
-      continuationToken: repeatToken ? '0' : (end < all.length ? '$end' : null),
-    );
-  }
-
-  @override
-  Future<void> deleteBackup(String name) async {
-    if (denied.contains(name)) {
-      throw const CloudBackupException('permission denied', status: 403);
-    }
-    files.remove(name);
-    afterDelete?.call();
-    if (loseDeleteResponse) throw const CloudBackupException('outcome unknown');
-  }
-
-  @override
-  Future<List<int>> downloadBackup(String name) async => files[name]!;
-  @override
-  Future<CloudBackupObjectState> inspectObject(String name) async =>
-      files.containsKey(name)
-      ? CloudBackupObjectState.exists
-      : CloudBackupObjectState.missing;
-  @override
-  Future<void> uploadBackup(String name, List<int> bytes) async {
-    files[name] = failUpload ? [0] : bytes;
-    if (failUpload) throw const CloudBackupException('outcome unknown');
-  }
-
-  @override
-  Future<void> ensureDirectory() async {}
-  @override
-  Future<void> deleteProbe(String name) async {}
-  @override
-  void close() {}
-}
+import 'helpers/cloud_backup_history.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -103,7 +32,7 @@ void main() {
           firstSecret: 'x',
           secondSecret: 'y',
         );
-        final history = History(
+        final history = TestBackupHistory(
           config,
           utf8.encode(await env.backup.exportToJson(now: env.clock.now())),
         )..seed(7);
@@ -160,7 +89,7 @@ void main() {
       firstSecret: 'x',
       secondSecret: 'y',
     );
-    final history = History(
+    final history = TestBackupHistory(
       config,
       utf8.encode(await env.backup.exportToJson(now: env.clock.now())),
     )..seed(5);
@@ -179,7 +108,9 @@ void main() {
     history.loseDeleteResponse = true;
     result = await c.deleteOne(history.entry(history.name(1)));
     expect(result.removed, [history.name(1)]);
-    history.afterDelete = () => history.failListing = true;
+    history.afterDelete = () async {
+      history.failListing = true;
+    };
     result = await c.deleteOne(history.entry(history.name(4)));
     expect(result.unknown, [history.name(4)]);
     expect(c.progress.stage, CloudBackupStage.outcomeUnknown);
@@ -201,7 +132,7 @@ void main() {
       firstSecret: 'x',
       secondSecret: 'y',
     );
-    final h = History(
+    final h = TestBackupHistory(
       config,
       utf8.encode(await env.backup.exportToJson(now: env.clock.now())),
     )..seed(4);
@@ -236,6 +167,49 @@ void main() {
       c.deleteOne(h.entry(h.name(0))),
       throwsA(isA<CloudBackupException>()),
     );
+  });
+
+  test('upload/delete mutual exclusion and target change during delete are explicit', () async {
+    final env = await TestEnv.create();
+    addTearDown(env.dispose);
+    final repo = CloudBackupRepository(env.settings, env.credentials);
+    final config = await repo.save(
+      const CloudBackupConfig(
+        providerId: 's3',
+        endpoint: 'https://example.test',
+        directory: 'backups/',
+        region: 'us-east-1',
+        bucket: 'test-bucket',
+        credentialEpoch: '',
+      ),
+      firstSecret: 'x',
+      secondSecret: 'y',
+    );
+    final history = TestBackupHistory(
+      config,
+      utf8.encode(await env.backup.exportToJson(now: env.clock.now())),
+    )..seed(3);
+    final c = CloudBackupCoordinator(
+      repository: repo,
+      backup: env.backup,
+      clock: env.clock,
+      factory: (_, _, _) => history,
+    );
+    final entered = Completer<void>();
+    final resume = Completer<void>();
+    history.afterDelete = () async {
+      entered.complete();
+      await resume.future;
+    };
+    final deletion = c.deleteOne(history.entry(history.name(0)));
+    await entered.future;
+    await expectLater(c.upload('s3'), throwsA(isA<CloudBackupException>()));
+    await repo.remove('s3');
+    resume.complete();
+    final result = await deletion;
+    expect(result.targetChanged, isTrue);
+    expect(result.unknown, [history.name(0)]);
+    expect(history.files.keys, containsAll([history.name(1), history.name(2)]));
   });
 
   test('providers issue scoped DELETE with no S3 versionId and reject unrelated paths', () async {

@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:archive/archive.dart';
+import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:materialword/core/models/enums.dart';
 import 'package:materialword/services/learning_package.dart';
@@ -38,6 +41,8 @@ void main() {
         final service = b.importService();
         final preview = service.parseBytes(bytes, name: 'book.zip');
         expect(preview.sectionCount, 2);
+        expect(preview.validCount, 3);
+        expect((await service.analyze(preview)).newWords, 3);
         expect(preview.progress!['learningStates'], hasLength(1));
         expect(preview.progress!['words'], hasLength(3));
         for (var i = 0; i < 2; i++) {
@@ -66,6 +71,52 @@ void main() {
       },
     );
   }
+
+  test(
+    'a checksummed package cannot carry library deletion commands',
+    () async {
+      final env = await TestEnv.create();
+      addTearDown(env.dispose);
+      final book = await env.seedBook();
+      final bytes = await LearningPackage.export(
+        env.backup,
+        {book.id},
+        WordBookExportFormat.json,
+        env.clock.now(),
+      );
+      final archive = ZipDecoder().decodeBytes(bytes);
+      final files = {
+        for (final file in archive)
+          file.name: List<int>.from(file.content as List<int>),
+      };
+      final progress = jsonDecode(utf8.decode(files['progress.json']!)) as Map;
+      (progress['words'] as List).first['deletedAt'] =
+          '2026-11-26T00:00:00.000Z';
+      files['progress.json'] = utf8.encode(jsonEncode(progress));
+      final manifest = jsonDecode(utf8.decode(files['manifest.json']!)) as Map;
+      manifest['files']['progress.json'] = {
+        'bytes': files['progress.json']!.length,
+        'sha256': sha256.convert(files['progress.json']!).toString(),
+      };
+      files['manifest.json'] = utf8.encode(jsonEncode(manifest));
+      final altered = Archive();
+      for (final entry in files.entries) {
+        altered.addFile(
+          ArchiveFile.noCompress(entry.key, entry.value.length, entry.value),
+        );
+      }
+      expect(
+        () => LearningPackage.decode(ZipEncoder().encode(altered)!),
+        throwsA(
+          isA<FormatException>().having(
+            (e) => e.message,
+            'scope',
+            contains('删除指令'),
+          ),
+        ),
+      );
+    },
+  );
 
   test(
     'reject path traversal, compressed entries and excessive file counts',

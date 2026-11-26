@@ -267,8 +267,9 @@ class BackupManager {
   }
 
   Future<bool> exportCopy(File file) async {
-    final data = await backup.readDataset(file.path);
-    data.remove('deviceSettings');
+    final data = BackupService.portableCopy(
+      await backup.readDataset(file.path),
+    );
     final Uri? saved = await FilePicker.saveFile(
       fileName: file.uri.pathSegments.last,
       bytes: utf8.encode(await encodeDatasetJson(data)),

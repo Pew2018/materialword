@@ -225,7 +225,7 @@ class ImportPreview {
     for (final ImportSection section in sections) ...section.entries,
   ];
 
-  int get validCount => entries.length;
+  int get validCount => entries.map((entry) => entry.key).toSet().length;
 
   int get sectionCount => sections.length;
 
@@ -1101,9 +1101,9 @@ class ImportService {
     ImportPreview preview, {
     String? bookId,
   }) async {
-    final List<String> keys = <String>[
+    final List<String> keys = <String>{
       for (final ParsedEntry entry in preview.entries) entry.key,
-    ];
+    }.toList();
     int existing = 0;
     int restorable = 0;
     int newWords = 0;

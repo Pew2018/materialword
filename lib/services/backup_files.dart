@@ -35,9 +35,10 @@ class BackupFiles {
     String json, {
     String fileName = 'materialword-backup.json',
   }) async {
+    final portable = BackupService.portableCopy(backup.decodeDataset(json));
     final result = await FilePicker.saveFile(
       fileName: fileName,
-      bytes: utf8.encode(json),
+      bytes: utf8.encode(await encodeDatasetJson(portable)),
       mimeType: 'application/json',
       dialogTitle: '保存备份文件',
     );
