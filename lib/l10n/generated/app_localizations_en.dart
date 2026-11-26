@@ -2219,7 +2219,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get formatHelp => 'Format';
 
   @override
-  String get downloadLink => 'Word List Link (TXT / CSV / JSON)';
+  String get downloadLink => 'Word list link (TXT / CSV / JSON / ZIP)';
 
   @override
   String get download => 'Download';
@@ -2304,7 +2304,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get formatSummary =>
-      'TXT: one word per line. CSV: a word column is required. JSON: a words array is required.';
+      'TXT: one word per line. CSV: a word column. JSON: one or more word lists. Learning ZIP packages can include progress.';
 
   @override
   String get supportedFormats => 'Supported Formats';
@@ -2337,7 +2337,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get formatHelpJson =>
-      'JSON\nA schemaVersion, an optional name, and a words array. Each entry is an object with word, plus optional translation, phonetic, pos, definition, example and note.';
+      'JSON\nSupports one list with words, multiple lists with books, and legacy bare arrays. Entries require word; meaning, phonetics, part of speech, examples, phrases, tags and notes are optional.';
 
   @override
   String formatHelpFooter(int entries, int megabytes) {
@@ -3772,7 +3772,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get packageScopeNote =>
-      'Off: import word lists only. On: merge the package’s lists and progress without replacing the library.';
+      'Only this package is merged. Other lists and study data are kept.';
 
   @override
   String packageProgressSummary(int count) {
@@ -3887,4 +3887,35 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get cloudBackupDeleteUnknown =>
       'The network outcome or post-delete list is unconfirmed. Refresh and verify before retrying.';
+
+  @override
+  String get examPostgraduate => 'Postgraduate entrance';
+
+  @override
+  String get examJunior => 'Junior school exam';
+
+  @override
+  String get examSenior => 'College entrance';
+
+  @override
+  String get packageProgressChoiceNote =>
+      'Off: lists only. On: lists and progress.';
+
+  @override
+  String get learningPackageTooLarge =>
+      'The learning package exceeds 8 MiB. Select fewer lists or split them before exporting.';
+
+  @override
+  String get dictionaryInstalled => 'Installed';
+
+  @override
+  String get dictionaryNotInstalled => 'Not installed';
+
+  @override
+  String get formatHelpZip =>
+      'Learning ZIP\nUse a package exported by the app, containing content, a manifest, sources and progress. Choose lists only or also merge progress after preview. The full library is retained.';
+
+  @override
+  String get dictionaryPackageSize =>
+      'Download: 37.71 MiB. Installed: 92.20 MiB.';
 }

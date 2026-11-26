@@ -1993,7 +1993,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get formatHelp => '格式说明';
 
   @override
-  String get downloadLink => '词书下载链接';
+  String get downloadLink => '词书链接（TXT / CSV / JSON / ZIP）';
 
   @override
   String get download => '下载';
@@ -2070,7 +2070,8 @@ class AppLocalizationsZh extends AppLocalizations {
   String get noFileChosen => '尚未选择文件';
 
   @override
-  String get formatSummary => 'TXT 每行一个单词；CSV 需包含 word 列；JSON 需包含 words 数组。';
+  String get formatSummary =>
+      'TXT 每行一词；CSV 必须有 word 列；JSON 可包含单词书或多词书。学习 ZIP 可携带进度。';
 
   @override
   String get supportedFormats => '支持的格式';
@@ -2103,7 +2104,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get formatHelpJson =>
-      'JSON\n包含 schemaVersion、可选的 name 和 words 数组。每个词条是一个对象，必须有 word，可选 translation、phonetic、pos、definition、example、note。';
+      'JSON\n支持 words 数组的单词书、books 数组的多词书，以及历史裸数组。词条需要 word，可选释义、音标、词性、例句、短语、标签和笔记。';
 
   @override
   String formatHelpFooter(int entries, int megabytes) {
@@ -3467,7 +3468,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get mergePackageProgress => '同时合并学习进度';
 
   @override
-  String get packageScopeNote => '关闭时仅导入词书；开启时按包内词书归属合并，不覆盖全库。';
+  String get packageScopeNote => '仅合并包内词书，其他词书和学习数据会保留。';
 
   @override
   String packageProgressSummary(int count) {
@@ -3571,4 +3572,32 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get cloudBackupDeleteUnknown => '网络结果或删除后的列表无法确认。请刷新云端列表，核实后再重试。';
+
+  @override
+  String get examPostgraduate => '考研';
+
+  @override
+  String get examJunior => '中考';
+
+  @override
+  String get examSenior => '高考';
+
+  @override
+  String get packageProgressChoiceNote => '关闭：仅词书。开启：词书及进度。';
+
+  @override
+  String get learningPackageTooLarge => '学习包超过 8 MiB，请减少所选词书或拆分后导出。';
+
+  @override
+  String get dictionaryInstalled => '已安装';
+
+  @override
+  String get dictionaryNotInstalled => '尚未安装';
+
+  @override
+  String get formatHelpZip =>
+      '学习 ZIP\n使用应用导出的学习包，包含内容文件、清单、来源和进度。预览后可选择仅导入词书，或同时合并进度；不会替换整个学习库。';
+
+  @override
+  String get dictionaryPackageSize => '下载 37.71 MiB，安装后 92.20 MiB。';
 }

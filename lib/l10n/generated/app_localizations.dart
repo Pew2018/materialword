@@ -3623,7 +3623,7 @@ abstract class AppLocalizations {
   /// No description provided for @downloadLink.
   ///
   /// In en, this message translates to:
-  /// **'Word List Link (TXT / CSV / JSON)'**
+  /// **'Word list link (TXT / CSV / JSON / ZIP)'**
   String get downloadLink;
 
   /// No description provided for @download.
@@ -3761,7 +3761,7 @@ abstract class AppLocalizations {
   /// No description provided for @formatSummary.
   ///
   /// In en, this message translates to:
-  /// **'TXT: one word per line. CSV: a word column is required. JSON: a words array is required.'**
+  /// **'TXT: one word per line. CSV: a word column. JSON: one or more word lists. Learning ZIP packages can include progress.'**
   String get formatSummary;
 
   /// No description provided for @supportedFormats.
@@ -3821,7 +3821,7 @@ abstract class AppLocalizations {
   /// No description provided for @formatHelpJson.
   ///
   /// In en, this message translates to:
-  /// **'JSON\nA schemaVersion, an optional name, and a words array. Each entry is an object with word, plus optional translation, phonetic, pos, definition, example and note.'**
+  /// **'JSON\nSupports one list with words, multiple lists with books, and legacy bare arrays. Entries require word; meaning, phonetics, part of speech, examples, phrases, tags and notes are optional.'**
   String get formatHelpJson;
 
   /// No description provided for @formatHelpFooter.
@@ -6287,7 +6287,7 @@ abstract class AppLocalizations {
   /// No description provided for @packageScopeNote.
   ///
   /// In en, this message translates to:
-  /// **'Off: import word lists only. On: merge the package’s lists and progress without replacing the library.'**
+  /// **'Only this package is merged. Other lists and study data are kept.'**
   String get packageScopeNote;
 
   /// No description provided for @packageProgressSummary.
@@ -6481,6 +6481,60 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'The network outcome or post-delete list is unconfirmed. Refresh and verify before retrying.'**
   String get cloudBackupDeleteUnknown;
+
+  /// No description provided for @examPostgraduate.
+  ///
+  /// In en, this message translates to:
+  /// **'Postgraduate entrance'**
+  String get examPostgraduate;
+
+  /// No description provided for @examJunior.
+  ///
+  /// In en, this message translates to:
+  /// **'Junior school exam'**
+  String get examJunior;
+
+  /// No description provided for @examSenior.
+  ///
+  /// In en, this message translates to:
+  /// **'College entrance'**
+  String get examSenior;
+
+  /// No description provided for @packageProgressChoiceNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Off: lists only. On: lists and progress.'**
+  String get packageProgressChoiceNote;
+
+  /// No description provided for @learningPackageTooLarge.
+  ///
+  /// In en, this message translates to:
+  /// **'The learning package exceeds 8 MiB. Select fewer lists or split them before exporting.'**
+  String get learningPackageTooLarge;
+
+  /// No description provided for @dictionaryInstalled.
+  ///
+  /// In en, this message translates to:
+  /// **'Installed'**
+  String get dictionaryInstalled;
+
+  /// No description provided for @dictionaryNotInstalled.
+  ///
+  /// In en, this message translates to:
+  /// **'Not installed'**
+  String get dictionaryNotInstalled;
+
+  /// No description provided for @formatHelpZip.
+  ///
+  /// In en, this message translates to:
+  /// **'Learning ZIP\nUse a package exported by the app, containing content, a manifest, sources and progress. Choose lists only or also merge progress after preview. The full library is retained.'**
+  String get formatHelpZip;
+
+  /// No description provided for @dictionaryPackageSize.
+  ///
+  /// In en, this message translates to:
+  /// **'Download: 37.71 MiB. Installed: 92.20 MiB.'**
+  String get dictionaryPackageSize;
 }
 
 class _AppLocalizationsDelegate

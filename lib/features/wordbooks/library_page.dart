@@ -38,13 +38,22 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
     'gk',
   ];
 
+  String _tagTitle(String tag) => switch (tag) {
+    'cet4' => 'CET-4',
+    'cet6' => 'CET-6',
+    'ky' => context.l10n.examPostgraduate,
+    'zk' => context.l10n.examJunior,
+    'gk' => context.l10n.examSenior,
+    _ => tag.toUpperCase(),
+  };
+
   @override
   void initState() {
     super.initState();
     _load();
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool preserveProblem = false}) async {
     try {
       final packages = ref.read(dictionaryPackagesProvider);
       final dictionary = await ref.read(dictionaryProvider.future);
@@ -60,7 +69,9 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
           _counts.addAll(counts);
           _installed = installed;
           _enabled = enabled;
-          _problem = missing.isEmpty
+          _problem = preserveProblem && _problem != null
+              ? _problem
+              : missing.isEmpty
               ? null
               : '${context.l10n.dictionaryMissing}: ${missing.join(', ')}';
         });
@@ -92,7 +103,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
         });
       }
     }
-    await _load();
+    await _load(preserveProblem: true);
   }
 
   Future<void> _preview(String tag) async {
@@ -102,7 +113,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(tag.toUpperCase()),
+        title: Text(_tagTitle(tag)),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -257,10 +268,13 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
               ),
             ),
             SectionHeader(title: l.defaultDictionary),
-            SettingsTile(
-              title: 'ECDICT',
-              subtitle:
-                  '${l.offlineDictionaryNote}\n57,835 · MIT · ${DictionaryPackages.revision.substring(0, 8)}',
+            SettingsTile(title: 'ECDICT', subtitle: l.offlineDictionaryNote),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                '57,835 · MIT · ${DictionaryPackages.revision.substring(0, 8)}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
             ),
             SectionHeader(title: l.optionalStudyBooks),
             Padding(
@@ -269,7 +283,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
             ),
             for (final tag in tags)
               SettingsTile(
-                title: tag.toUpperCase(),
+                title: _tagTitle(tag),
                 subtitle: 'ECDICT · MIT · ${_counts[tag] ?? "…"}',
                 trailing: const Icon(Icons.chevron_right),
                 onTap: _busy ? null : () => _preview(tag),
@@ -277,8 +291,23 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
             SectionHeader(title: l.extensionDictionary),
             SettingsTile(
               title: 'ECDICT Extended',
-              subtitle:
-                  '722,442 · MIT · ${DictionaryPackages.revision.substring(0, 8)}\n37.71 MiB → 92.20 MiB',
+              subtitle: _installed
+                  ? l.dictionaryInstalled
+                  : l.dictionaryNotInstalled,
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                '722,442 · MIT · ${DictionaryPackages.revision.substring(0, 8)}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+              child: Text(
+                l.dictionaryPackageSize,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
             ),
             if (_problem != null)
               Padding(

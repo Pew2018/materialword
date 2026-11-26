@@ -637,7 +637,9 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
         },
       );
       ref.invalidate(todayProgressProvider);
-      if (mounted) { await showMissingDictionaryNotice(context, ref); }
+      if (mounted) {
+        await showMissingDictionaryNotice(context, ref);
+      }
       ref.invalidate(bookSummariesProvider);
       ref.invalidate(statisticsProvider);
       if (!mounted) return;
@@ -733,7 +735,9 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
           .read(syncCoordinatorProvider)
           .sync(provider, resumeAfterRestore: true);
       ref.invalidate(todayProgressProvider);
-      if (mounted) { await showMissingDictionaryNotice(context, ref); }
+      if (mounted) {
+        await showMissingDictionaryNotice(context, ref);
+      }
       ref.invalidate(bookSummariesProvider);
       ref.invalidate(statisticsProvider);
       if (!mounted) return;
@@ -798,7 +802,9 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
           .read(syncConflictResolutionProvider)
           .restoreDiscardedValue(conflict, now: ref.read(clockProvider).now());
       ref.invalidate(todayProgressProvider);
-      if (mounted) { await showMissingDictionaryNotice(context, ref); }
+      if (mounted) {
+        await showMissingDictionaryNotice(context, ref);
+      }
       ref.invalidate(bookSummariesProvider);
       if (!mounted) return;
       setState(() {

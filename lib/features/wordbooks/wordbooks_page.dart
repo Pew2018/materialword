@@ -279,7 +279,13 @@ class WordBooksPage extends ConsumerWidget {
         );
       } catch (e) {
         if (!context.mounted) return;
-        showMessage(context, context.l10n.exportFailed, error: true);
+        showMessage(
+          context,
+          e is FormatException && e.message.contains('8 MB')
+              ? context.l10n.learningPackageTooLarge
+              : context.l10n.exportFailed,
+          error: true,
+        );
       }
     }
 

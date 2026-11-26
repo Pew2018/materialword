@@ -398,6 +398,7 @@ class _CloudBackupBrowserState extends ConsumerState<CloudBackupBrowser> {
   String? downloading;
   bool loading = false;
   bool deleting = false;
+  bool confirming = false;
   String? deletionStatus;
 
   @override
@@ -407,7 +408,7 @@ class _CloudBackupBrowserState extends ConsumerState<CloudBackupBrowser> {
   }
 
   Future<void> _load({bool reset = false, bool preserveError = false}) async {
-    if (loading || deleting) return;
+    if (loading || deleting || confirming) return;
     setState(() {
       loading = true;
       if (!preserveError) error = null;
@@ -470,7 +471,7 @@ class _CloudBackupBrowserState extends ConsumerState<CloudBackupBrowser> {
   }
 
   Future<void> _delete({CloudBackupEntry? entry}) async {
-    if (loading || deleting || downloading != null) return;
+    if (loading || deleting || confirming || downloading != null) return;
     final coordinator = ref.read(cloudBackupCoordinatorProvider);
     setState(() {
       deleting = true;
@@ -494,6 +495,10 @@ class _CloudBackupBrowserState extends ConsumerState<CloudBackupBrowser> {
           ? '${entry.objectName}\n${_entryTitle(entry)}\n${context.l10n.cloudBackupDeleteWarning}'
           : '${context.l10n.cloudBackupRetain}\n${plan!.keep.map((e) => '${_entryTitle(e)}\n${e.objectName}').join('\n\n')}\n\n'
                 '${context.l10n.cloudBackupCleanupCount(plan.remove.length, cloudBackupFileSize(context.l10n, plan.totalBytes))}';
+      setState(() {
+        deleting = false;
+        confirming = true;
+      });
       final ok = await confirmDialog(
         context,
         title: entry == null
@@ -504,6 +509,12 @@ class _CloudBackupBrowserState extends ConsumerState<CloudBackupBrowser> {
         destructive: true,
       );
       if (!ok) return;
+      if (mounted) {
+        setState(() {
+          confirming = false;
+          deleting = true;
+        });
+      }
       final result = entry != null
           ? await coordinator.deleteOne(entry)
           : await coordinator.executeCleanup(plan!);
@@ -531,7 +542,10 @@ class _CloudBackupBrowserState extends ConsumerState<CloudBackupBrowser> {
       }
     } finally {
       if (mounted) {
-        setState(() => deleting = false);
+        setState(() {
+          deleting = false;
+          confirming = false;
+        });
         await _load(reset: true, preserveError: true);
       }
     }
@@ -554,7 +568,9 @@ class _CloudBackupBrowserState extends ConsumerState<CloudBackupBrowser> {
         title: Text(l10n.cloudBackupBrowse),
         actions: <Widget>[
           IconButton(
-            onPressed: loading || deleting ? null : () => _load(reset: true),
+            onPressed: loading || deleting || confirming
+                ? null
+                : () => _load(reset: true),
             icon: const Icon(Icons.refresh),
             tooltip: l10n.commonRefresh,
           ),
@@ -575,7 +591,8 @@ class _CloudBackupBrowserState extends ConsumerState<CloudBackupBrowser> {
                   style: TextButton.styleFrom(
                     foregroundColor: theme.colorScheme.error,
                   ),
-                  onPressed: loading || deleting || downloading != null
+                  onPressed:
+                      loading || deleting || confirming || downloading != null
                       ? null
                       : () => _delete(),
                   icon: const Icon(Icons.delete_sweep_outlined),
@@ -635,7 +652,10 @@ class _CloudBackupBrowserState extends ConsumerState<CloudBackupBrowser> {
                             icon: const Icon(Icons.download),
                             tooltip: l10n.cloudBackupDownload,
                             onPressed:
-                                loading || deleting || downloading != null
+                                loading ||
+                                    deleting ||
+                                    confirming ||
+                                    downloading != null
                                 ? null
                                 : () => _download(entry),
                           ),
@@ -644,13 +664,16 @@ class _CloudBackupBrowserState extends ConsumerState<CloudBackupBrowser> {
                             tooltip: l10n.commonDelete,
                             color: theme.colorScheme.error,
                             onPressed:
-                                loading || deleting || downloading != null
+                                loading ||
+                                    deleting ||
+                                    confirming ||
+                                    downloading != null
                                 ? null
                                 : () => _delete(entry: entry),
                           ),
                         ],
                       ),
-                onTap: loading || deleting || downloading != null
+                onTap: loading || deleting || confirming || downloading != null
                     ? null
                     : () => _download(entry),
               ),
@@ -658,7 +681,7 @@ class _CloudBackupBrowserState extends ConsumerState<CloudBackupBrowser> {
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 child: TextButton(
-                  onPressed: loading || deleting ? null : _load,
+                  onPressed: loading || deleting || confirming ? null : _load,
                   child: Text(l10n.commonContinue),
                 ),
               ),

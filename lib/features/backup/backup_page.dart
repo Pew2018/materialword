@@ -132,7 +132,9 @@ class _BackupPageState extends ConsumerState<BackupPage> {
       now: ref.read(clockProvider).now(),
     );
     _refreshData();
-    if (mounted) { await showMissingDictionaryNotice(context, ref); }
+    if (mounted) {
+      await showMissingDictionaryNotice(context, ref);
+    }
     if (!mounted) return;
     setState(() => _status = mergeSummary(context.l10n, report));
   });
@@ -227,7 +229,9 @@ class _BackupPageState extends ConsumerState<BackupPage> {
         .read(backupManagerProvider)
         .restoreMerge(entry.file);
     _refreshData();
-    if (mounted) { await showMissingDictionaryNotice(context, ref); }
+    if (mounted) {
+      await showMissingDictionaryNotice(context, ref);
+    }
     if (!mounted) return;
     setState(
       () => _status = context.l10n.mergeCompleteWith(
@@ -264,7 +268,9 @@ class _BackupPageState extends ConsumerState<BackupPage> {
     if (!ok || !mounted) return;
     final RestoreOutcome outcome = await manager.restoreSnapshot(entry.file);
     _refreshData();
-    if (mounted) { await showMissingDictionaryNotice(context, ref); }
+    if (mounted) {
+      await showMissingDictionaryNotice(context, ref);
+    }
     await _reload();
     if (!mounted) return;
     setState(
@@ -332,7 +338,9 @@ class _BackupPageState extends ConsumerState<BackupPage> {
           .read(syncCoordinatorProvider)
           .sync(provider, resumeAfterRestore: true);
       _refreshData();
-      if (mounted) { await showMissingDictionaryNotice(context, ref); }
+      if (mounted) {
+        await showMissingDictionaryNotice(context, ref);
+      }
       if (!mounted) return;
       setState(() => _status = describeSyncReport(context.l10n, report));
       await _reload();

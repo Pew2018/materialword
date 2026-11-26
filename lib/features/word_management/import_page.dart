@@ -370,10 +370,15 @@ class _ImportPageState extends ConsumerState<ImportPage> {
                         if (_preview!.progress != null)
                           SettingsSwitchTile(
                             title: context.l10n.mergePackageProgress,
-                            subtitle: context.l10n.packageScopeNote,
+                            subtitle: context.l10n.packageProgressChoiceNote,
                             value: _mergeProgress,
                             onChanged: (value) =>
                                 setState(() => _mergeProgress = value),
+                          ),
+                        if (_preview!.progress != null)
+                          Text(
+                            context.l10n.packageScopeNote,
+                            style: theme.textTheme.bodySmall,
                           ),
                         if (_preview!.droppedRows > 0) ...<Widget>[
                           AppSpacing.h12,
@@ -579,6 +584,7 @@ class _ImportPageState extends ConsumerState<ImportPage> {
               context.l10n.formatHelpTxt,
               context.l10n.formatHelpCsv,
               context.l10n.formatHelpJson,
+              context.l10n.formatHelpZip,
               context.l10n.formatHelpFooter(
                 ImportService.maxEntries,
                 ImportService.maxFileBytes ~/ (1024 * 1024),
