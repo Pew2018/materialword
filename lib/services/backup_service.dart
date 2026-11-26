@@ -27,12 +27,13 @@ const Uuid _uuid = Uuid();
 ///   settings split, and a stable `contentHash` used to skip no-op uploads.
 /// * v3 — phase 3: event day anchors/provenance, favourites, tags, retained
 ///   identities and per-field versions.
+/// * v5 — complete, event-validated learningStates for backups and sync.
 /// * v4 — phase 5: **backup files only** may carry `deviceSettings` (theme,
 ///   accent, TTS, keep-screen-on) for device migration. The sync dataset stays
 ///   at v3 so an older client never receives a version it cannot read, and the
 ///   device block never travels between devices.
-const int backupSchemaVersion = 4;
-const int syncSchemaVersion = 3;
+const int backupSchemaVersion = 5;
+const int syncSchemaVersion = 5;
 const String backupKind = 'materialword-backup';
 
 /// Summary of what an import/merge actually changed.
@@ -161,6 +162,9 @@ class BackupService {
                 ]))
               .get()
         : const <ReviewEvent>[];
+    final stateRows = includeEvents
+        ? await db.select(db.learningStates).get()
+        : const <LearningState>[];
     final stampRows = await db.select(db.contentVersions).get();
     final aliasRows = await db.select(db.syncAliases).get();
     final stamps = <String, Map<String, Object?>>{};
@@ -201,6 +205,11 @@ class BackupService {
           .toList(growable: false),
       'entries': entryRows.map(_entryToJson).toList(growable: false),
       'reviewEvents': eventRows.map(_eventToJson).toList(growable: false),
+      'learningStates': stateRows
+          .map((s) => s.toJson())
+          .toList(growable: false),
+      'progressAlgorithmVersion': StudyScheduler.algorithmVersion,
+      'progressEventDigest': eventDigest(eventRows.map(_eventToJson).toList()),
       ...await WordMetadataSync(db).snapshot(),
       // Only *shared* settings travel. Theme, accent, TTS and the active book
       // describe this device and must not jump between devices.
@@ -432,6 +441,7 @@ class BackupService {
       }
     }
     _validateRecords(dataset, version);
+    if (version >= 5) _validateProgress(dataset);
     return dataset;
   }
 
@@ -689,6 +699,55 @@ class BackupService {
     }
   }
 
+  /// Event identity is stable across canonical word-ID remapping.
+  static String eventDigest(List events) {
+    final canonical =
+        events.map((raw) {
+            final row = Map<String, Object?>.from(raw as Map)..remove('wordId');
+            final keys = row.keys.toList()..sort();
+            return {for (final key in keys) key: row[key]};
+          }).toList()
+          ..sort((a, b) => (a['id'] as String).compareTo(b['id'] as String));
+    return 'sha256:${sha256.convert(utf8.encode(jsonEncode(canonical)))}';
+  }
+
+  static void _validateProgress(Map<String, Object?> data) {
+    Never invalid() => throw const BackupException('学习进度与记录不一致或已损坏，未恢复数据');
+    if (data['progressAlgorithmVersion'] != StudyScheduler.algorithmVersion) {
+      throw const BackupException('不支持的学习进度算法版本，请升级应用');
+    }
+    final events = data['reviewEvents'] as List;
+    if (data['progressEventDigest'] != eventDigest(events)) invalid();
+    final rawStates = data['learningStates'];
+    if (rawStates is! List) invalid();
+    final grouped = <String, List<ReviewEvent>>{};
+    for (final raw in events) {
+      final row = Map<String, dynamic>.from(raw as Map);
+      final event = _eventFromJson(row, row['wordId'] as String)!;
+      (grouped[event.wordId] ??= []).add(event);
+    }
+    final expected = <String, Map<String, Object?>>{};
+    for (final entry in grouped.entries) {
+      final state = StudyRepository.replayState(entry.key, entry.value);
+      if (state != null) expected[entry.key] = state;
+    }
+    final seen = <String>{};
+    for (final raw in rawStates) {
+      if (raw is! Map) invalid();
+      final id = raw['wordId'];
+      if (id is! String || !seen.add(id) || !expected.containsKey(id))
+        invalid();
+      for (final entry in expected[id]!.entries) {
+        if (entry.key == 'updatedAt') {
+          if (raw[entry.key] is! int || (raw[entry.key] as int) < 0) invalid();
+        } else if (raw[entry.key] != entry.value) {
+          invalid();
+        }
+      }
+    }
+    if (seen.length != expected.length) invalid();
+  }
+
   /// Stable hash of the *content* of a dataset. Volatile metadata (`exportedAt`,
   /// `deviceId`, `appVersion`) is excluded, so two exports of the same data
   /// produce the same hash and a no-op sync does not upload anything.
@@ -719,6 +778,10 @@ class BackupService {
     }
     final entries = rows('entries');
     final events = rows('reviewEvents');
+    final states = rows('learningStates');
+    for (final state in states) {
+      state['wordId'] = wordKeys[state['wordId']] ?? state['wordId'];
+    }
     final tags = rows('tags');
     final tagKeys = <String, String>{
       for (final tag in tags)
@@ -779,6 +842,8 @@ class BackupService {
       'wordBooks': books,
       'entries': entries,
       'reviewEvents': events,
+      'learningStates': states,
+      'progressAlgorithmVersion': dataset['progressAlgorithmVersion'],
       'favorites': favorites,
       'tags': tags,
       'wordTags': wordTags,
@@ -1705,7 +1770,7 @@ class BackupService {
     ),
   };
 
-  ReviewEvent? _eventFromJson(Map<String, dynamic> node, String wordId) {
+  static ReviewEvent? _eventFromJson(Map<String, dynamic> node, String wordId) {
     final String? id = node['id'] as String?;
     final DateTime? answeredAt = _parseTime(node['answeredAt']);
     if (id == null || answeredAt == null) return null;
@@ -1763,10 +1828,10 @@ class BackupService {
     return null;
   }
 
-  String _str(Object? value, {String fallback = ''}) =>
+  static String _str(Object? value, {String fallback = ''}) =>
       value is String ? value : fallback;
 
-  int _int(Object? value, {int fallback = 0}) {
+  static int _int(Object? value, {int fallback = 0}) {
     if (value is int) return value;
     if (value is String) return int.tryParse(value) ?? fallback;
     return fallback;

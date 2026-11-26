@@ -1,3 +1,21 @@
+# v5 学习进度协议（本节优先于下方历史阶段记录）
+
+同步和备份均写 v5，旧客户端会拒绝该版本，不能忽略状态后覆盖。
+v1–v4 继续读取；缺少状态时从事件重建。v5 必须包含 learningStates、
+progressAlgorithmVersion=2 和 progressEventDigest。状态保存 wordId、stage、
+correctCount、hazyCount、wrongCount、streak、intervalDays、lastStudiedAt、
+nextReviewAt、updatedAt；时间为 UTC 毫秒。事件与状态在同一事务读取。
+
+摘要按事件 ID 排序、字段键排序，排除可重映射的 wordId 后使用 SHA-256。
+完整引用校验先行；摘要、算法版本、状态数量和状态字段必须与同一事件集的
+确定性重放一致（updatedAt 为非负整数记账时间，不参与调度校验）。
+损坏或不支持的数据整包拒绝，不采用未经验证的状态。
+
+合并仍按身份映射、事件 ID 去重及现有因果顺序重放，不按状态更新时间覆盖。
+重置事件继续传播。快照恢复在保护性备份后同事务恢复事件和验证后的原始状态，
+保留实际时间及 updatedAt；失败回滚，成功后暂停同步。
+内容哈希包含状态，将 wordId 映射为稳定词面身份并递归稳定排序。
+
 # 数据交换协议（同步 v3 / 备份 v4；数据库 Schema 独立为 3）
 
 ## 格式与兼容

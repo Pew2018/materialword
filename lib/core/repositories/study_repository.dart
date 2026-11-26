@@ -658,6 +658,7 @@ SELECT COUNT(*) AS c
       final LearningSnapshot snapshot = _snapshotOf(state);
 
       final ScheduleOutcome outcome = _scheduleEvent(
+        scheduler: scheduler,
         current: snapshot,
         result: result,
         now: now,
@@ -811,7 +812,7 @@ SELECT COUNT(*) AS c
   /// could produce different results on each device.
   Future<void> rebuildStateFromEvents(String wordId) async {
     final List<ReviewEvent> events = await _eventsFor(<String>[wordId]);
-    await _applyReplay(wordId, _replay(events));
+    await _applyReplay(wordId, _replay(events, scheduler: scheduler));
   }
 
   /// Batched version of [rebuildStateFromEvents] for a merge that touched many
@@ -840,7 +841,10 @@ SELECT COUNT(*) AS c
         (grouped[event.wordId] ??= <ReviewEvent>[]).add(event);
       }
       for (final String id in slice) {
-        await _applyReplay(id, _replay(grouped[id] ?? const <ReviewEvent>[]));
+        await _applyReplay(
+          id,
+          _replay(grouped[id] ?? const <ReviewEvent>[], scheduler: scheduler),
+        );
         rebuilt++;
       }
     }
@@ -878,7 +882,43 @@ SELECT COUNT(*) AS c
 
   /// Pure replay of one word's history. No database access, so the batched and
   /// single-word paths cannot drift apart.
-  _ReplayOutcome _replay(List<ReviewEvent> events) {
+  /// Pure projection shared by backup validation and database rebuilding.
+  static Map<String, Object?>? replayState(
+    String wordId,
+    List<ReviewEvent> events,
+  ) {
+    final ordered = events.toList()
+      ..sort((a, b) {
+        for (final comparison in [
+          a.causalOrder.compareTo(b.causalOrder),
+          a.answeredAt.compareTo(b.answeredAt),
+          a.deviceId.compareTo(b.deviceId),
+          a.id.compareTo(b.id),
+        ]) {
+          if (comparison != 0) return comparison;
+        }
+        return 0;
+      });
+    final outcome = _replay(ordered);
+    if (!outcome.hasProgress) return null;
+    return {
+      'wordId': wordId,
+      'stage': outcome.snapshot.stage.code,
+      'correctCount': outcome.snapshot.correctCount,
+      'hazyCount': outcome.snapshot.hazyCount,
+      'wrongCount': outcome.snapshot.wrongCount,
+      'streak': outcome.snapshot.streak,
+      'intervalDays': outcome.snapshot.intervalDays,
+      'lastStudiedAt': outcome.lastStudiedAt?.millisecondsSinceEpoch,
+      'nextReviewAt': outcome.nextReviewAt?.millisecondsSinceEpoch,
+      'updatedAt': outcome.lastEventAt!.millisecondsSinceEpoch,
+    };
+  }
+
+  static _ReplayOutcome _replay(
+    List<ReviewEvent> events, {
+    StudyScheduler scheduler = const StudyScheduler(),
+  }) {
     if (events.isEmpty) return const _ReplayOutcome.empty();
     LearningSnapshot snapshot = const LearningSnapshot.empty();
     DateTime? lastStudiedAt;
@@ -932,6 +972,7 @@ SELECT COUNT(*) AS c
         continue;
       }
       final ScheduleOutcome outcome = _scheduleEvent(
+        scheduler: scheduler,
         current: snapshot,
         result: AnswerResult.fromCode(event.result),
         now: DateTime.fromMillisecondsSinceEpoch(event.answeredAt, isUtc: true),
@@ -970,7 +1011,8 @@ SELECT COUNT(*) AS c
     );
   }
 
-  ScheduleOutcome _scheduleEvent({
+  static ScheduleOutcome _scheduleEvent({
+    StudyScheduler scheduler = const StudyScheduler(),
     required LearningSnapshot current,
     required AnswerResult result,
     required DateTime now,
@@ -1076,7 +1118,7 @@ SELECT COUNT(*) AS c
           intervalDays: state.intervalDays,
         );
 
-  LearningSnapshot _snapshotOfOutcome(ScheduleOutcome outcome) =>
+  static LearningSnapshot _snapshotOfOutcome(ScheduleOutcome outcome) =>
       LearningSnapshot(
         stage: outcome.stage,
         correctCount: outcome.correctCount,

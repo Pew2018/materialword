@@ -330,6 +330,18 @@ class BackupManager {
           now: clock.now(),
           forceSharedSettings: true,
         );
+        // v5 states have already been checked against their exact event snapshot.
+        // Restore the stored timestamps too; merge restores continue to replay.
+        if ((dataset['schemaVersion'] as int) >= 5) {
+          await db.delete(db.learningStates).go();
+          for (final raw in dataset['learningStates'] as List) {
+            await db
+                .into(db.learningStates)
+                .insert(
+                  LearningState.fromJson(Map<String, dynamic>.from(raw as Map)),
+                );
+          }
+        }
         // The restored snapshot may not contain the book this device had
         // selected. A dangling `currentWordBookId` would silently filter the
         // whole app against a book that no longer exists.
