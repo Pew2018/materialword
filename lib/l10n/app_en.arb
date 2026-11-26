@@ -2309,5 +2309,39 @@
   "offlineMigrationTitle": "Full offline migration",
   "exportOfflineMigration": "Export offline migration",
   "restoreOfflineMigration": "Restore offline migration",
-  "offlineMigrationWarning": "Restores the entire study snapshot and dictionary resources. A protective backup is created first and sync is paused afterward. Local appearance and voice preferences are retained."
+  "offlineMigrationWarning": "Restores the entire study snapshot and dictionary resources. A protective backup is created first and sync is paused afterward. Local appearance and voice preferences are retained.",
+  "cloudBackupDeleting": "Deleting and checking the remote list…",
+  "cloudBackupCleanup": "Clean old backups (keep latest two)",
+  "cloudBackupNothingToClean": "There are at most two backups; nothing to clean.",
+  "cloudBackupRetain": "Keep these two verified backups:",
+  "cloudBackupCleanupCount": "Delete {count} older backups. Total size: {size}.",
+  "cloudBackupDeleteWarning": "Delete this cloud backup? Local study data is retained.",
+  "s3DeleteMarkerNote": "With S3 versioning, deletion usually adds a delete marker; historical object versions are retained.",
+  "cloudBackupDeletionResult": "Confirmed deleted: {removed}. Failed: {failed}. Unconfirmed: {unknown}.",
+  "cloudBackupTargetChanged": "The target changed. The operation stopped; refresh the list and retry.",
+  "cloudBackupListUncertain": "The complete list, backup times or retained files could not be confirmed. Cleanup stopped; refresh and retry.",
+  "cloudBackupDeleteUnknown": "The network outcome or post-delete list is unconfirmed. Refresh and verify before retrying.",
+  "@cloudBackupCleanupCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "@cloudBackupDeletionResult": {
+    "placeholders": {
+      "removed": {
+        "type": "int"
+      },
+      "failed": {
+        "type": "int"
+      },
+      "unknown": {
+        "type": "int"
+      }
+    }
+  }
 }

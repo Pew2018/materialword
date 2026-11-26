@@ -3534,4 +3534,41 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String get offlineMigrationWarning =>
       '此操作恢复整个学习快照和词典资源。会先创建保护性备份，完成后暂停同步；本机外观和发音偏好保留。';
+
+  @override
+  String get cloudBackupDeleting => '正在删除并复查云端列表…';
+
+  @override
+  String get cloudBackupCleanup => '清理旧备份（保留最近两份）';
+
+  @override
+  String get cloudBackupNothingToClean => '备份不超过两份，没有需要清理的文件。';
+
+  @override
+  String get cloudBackupRetain => '将保留以下两份已校验备份：';
+
+  @override
+  String cloudBackupCleanupCount(int count, String size) {
+    return '将删除 $count 份旧备份，总大小：$size。';
+  }
+
+  @override
+  String get cloudBackupDeleteWarning => '确认删除这份云端备份？此操作不会删除本机学习数据。';
+
+  @override
+  String get s3DeleteMarkerNote => 'S3 开启版本控制时，此操作通常新增删除标记；不会清除历史对象版本。';
+
+  @override
+  String cloudBackupDeletionResult(int removed, int failed, int unknown) {
+    return '已确认删除 $removed 份，失败 $failed 份，结果待确认 $unknown 份。';
+  }
+
+  @override
+  String get cloudBackupTargetChanged => '目标配置已变化，操作已停止。请刷新列表后重试。';
+
+  @override
+  String get cloudBackupListUncertain => '无法确认完整列表、备份时间或保留项；已停止清理，请刷新后重试。';
+
+  @override
+  String get cloudBackupDeleteUnknown => '网络结果或删除后的列表无法确认。请刷新云端列表，核实后再重试。';
 }

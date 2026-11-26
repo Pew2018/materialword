@@ -6415,6 +6415,72 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Restores the entire study snapshot and dictionary resources. A protective backup is created first and sync is paused afterward. Local appearance and voice preferences are retained.'**
   String get offlineMigrationWarning;
+
+  /// No description provided for @cloudBackupDeleting.
+  ///
+  /// In en, this message translates to:
+  /// **'Deleting and checking the remote list…'**
+  String get cloudBackupDeleting;
+
+  /// No description provided for @cloudBackupCleanup.
+  ///
+  /// In en, this message translates to:
+  /// **'Clean old backups (keep latest two)'**
+  String get cloudBackupCleanup;
+
+  /// No description provided for @cloudBackupNothingToClean.
+  ///
+  /// In en, this message translates to:
+  /// **'There are at most two backups; nothing to clean.'**
+  String get cloudBackupNothingToClean;
+
+  /// No description provided for @cloudBackupRetain.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep these two verified backups:'**
+  String get cloudBackupRetain;
+
+  /// No description provided for @cloudBackupCleanupCount.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete {count} older backups. Total size: {size}.'**
+  String cloudBackupCleanupCount(int count, String size);
+
+  /// No description provided for @cloudBackupDeleteWarning.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete this cloud backup? Local study data is retained.'**
+  String get cloudBackupDeleteWarning;
+
+  /// No description provided for @s3DeleteMarkerNote.
+  ///
+  /// In en, this message translates to:
+  /// **'With S3 versioning, deletion usually adds a delete marker; historical object versions are retained.'**
+  String get s3DeleteMarkerNote;
+
+  /// No description provided for @cloudBackupDeletionResult.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirmed deleted: {removed}. Failed: {failed}. Unconfirmed: {unknown}.'**
+  String cloudBackupDeletionResult(int removed, int failed, int unknown);
+
+  /// No description provided for @cloudBackupTargetChanged.
+  ///
+  /// In en, this message translates to:
+  /// **'The target changed. The operation stopped; refresh the list and retry.'**
+  String get cloudBackupTargetChanged;
+
+  /// No description provided for @cloudBackupListUncertain.
+  ///
+  /// In en, this message translates to:
+  /// **'The complete list, backup times or retained files could not be confirmed. Cleanup stopped; refresh and retry.'**
+  String get cloudBackupListUncertain;
+
+  /// No description provided for @cloudBackupDeleteUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'The network outcome or post-delete list is unconfirmed. Refresh and verify before retrying.'**
+  String get cloudBackupDeleteUnknown;
 }
 
 class _AppLocalizationsDelegate

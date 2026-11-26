@@ -3844,4 +3844,47 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get offlineMigrationWarning =>
       'Restores the entire study snapshot and dictionary resources. A protective backup is created first and sync is paused afterward. Local appearance and voice preferences are retained.';
+
+  @override
+  String get cloudBackupDeleting => 'Deleting and checking the remote list…';
+
+  @override
+  String get cloudBackupCleanup => 'Clean old backups (keep latest two)';
+
+  @override
+  String get cloudBackupNothingToClean =>
+      'There are at most two backups; nothing to clean.';
+
+  @override
+  String get cloudBackupRetain => 'Keep these two verified backups:';
+
+  @override
+  String cloudBackupCleanupCount(int count, String size) {
+    return 'Delete $count older backups. Total size: $size.';
+  }
+
+  @override
+  String get cloudBackupDeleteWarning =>
+      'Delete this cloud backup? Local study data is retained.';
+
+  @override
+  String get s3DeleteMarkerNote =>
+      'With S3 versioning, deletion usually adds a delete marker; historical object versions are retained.';
+
+  @override
+  String cloudBackupDeletionResult(int removed, int failed, int unknown) {
+    return 'Confirmed deleted: $removed. Failed: $failed. Unconfirmed: $unknown.';
+  }
+
+  @override
+  String get cloudBackupTargetChanged =>
+      'The target changed. The operation stopped; refresh the list and retry.';
+
+  @override
+  String get cloudBackupListUncertain =>
+      'The complete list, backup times or retained files could not be confirmed. Cleanup stopped; refresh and retry.';
+
+  @override
+  String get cloudBackupDeleteUnknown =>
+      'The network outcome or post-delete list is unconfirmed. Refresh and verify before retrying.';
 }

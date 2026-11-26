@@ -18,10 +18,12 @@ enum CloudBackupStage {
   verifying,
   listing,
   downloading,
+  deleting,
   validating,
   completed,
   failed,
   outcomeUnknown,
+  partial,
 }
 
 class CloudBackupProgress {
@@ -61,6 +63,40 @@ class CloudBackupDownload {
   final CloudBackupEntry entry;
   final List<int> bytes;
   final Map<String, Object?> dataset;
+}
+
+class CloudBackupCleanupPlan {
+  CloudBackupCleanupPlan(
+    this.providerId,
+    this.fingerprint,
+    this.listToken,
+    this.keep,
+    this.remove,
+    this.checksums,
+  );
+  final String providerId;
+  final String fingerprint;
+  final String listToken;
+  final List<CloudBackupEntry> keep;
+  final List<CloudBackupEntry> remove;
+  final Map<String, String> checksums;
+  int? get totalBytes => remove.every((e) => e.byteLength != null)
+      ? remove.fold(0, (n, e) => n! + e.byteLength!)
+      : null;
+}
+
+class CloudBackupDeletionResult {
+  CloudBackupDeletionResult(
+    this.removed,
+    this.failed,
+    this.unknown, {
+    this.targetChanged = false,
+  });
+  final List<String> removed;
+  final Map<String, Object> failed;
+  final List<String> unknown;
+  final bool targetChanged;
+  bool get complete => failed.isEmpty && unknown.isEmpty && !targetChanged;
 }
 
 typedef CloudBackupProviderFactory = CloudBackupProvider Function(
@@ -129,7 +165,12 @@ class CloudBackupCoordinator extends ChangeNotifier {
       final (first, second) = await repository.readSecrets(config);
       provider = _factory(config, first, second);
       final result = await body(config, provider, op);
-      _set(CloudBackupStage.completed, id, op);
+      final stage = result is CloudBackupDeletionResult && !result.complete
+          ? (result.unknown.isNotEmpty
+                ? CloudBackupStage.outcomeUnknown
+                : CloudBackupStage.partial)
+          : CloudBackupStage.completed;
+      _set(stage, id, op);
       return result;
     } catch (error) {
       _set(
@@ -326,4 +367,189 @@ class CloudBackupCoordinator extends ChangeNotifier {
       return CloudBackupDownload(entry, bytes, dataset);
     },
   );
+  Future<void> _sameTarget(CloudBackupConfig config) async {
+    if ((await repository.load(config.providerId))?.fingerprint !=
+        config.fingerprint) {
+      throw const CloudBackupException('Cloud backup target changed');
+    }
+  }
+
+  Future<List<CloudBackupEntry>> _completeList(
+    CloudBackupConfig config,
+    CloudBackupProvider provider,
+  ) async {
+    final all = <String, CloudBackupEntry>{};
+    final tokens = <String>{};
+    String? next;
+    do {
+      await _sameTarget(config);
+      final page = await provider.listBackups(continuationToken: next);
+      for (final entry in page.entries) {
+        if (entry.targetFingerprint != config.fingerprint ||
+            entry.providerId != config.providerId ||
+            !cloudBackupName.hasMatch(entry.objectName) ||
+            all.containsKey(entry.objectName)) {
+          throw const CloudBackupException(
+            'Incomplete or inconsistent backup listing',
+          );
+        }
+        all[entry.objectName] = entry;
+      }
+      next = page.continuationToken;
+      if (next != null && (!tokens.add(next) || tokens.length > 10000)) {
+        throw const CloudBackupException('Incomplete backup pagination');
+      }
+    } while (next != null);
+    final sorted = all.values.toList()
+      ..sort((a, b) {
+        final order = (b.createdAt ?? DateTime(0)).compareTo(
+          a.createdAt ?? DateTime(0),
+        );
+        return order != 0 ? order : b.objectName.compareTo(a.objectName);
+      });
+    return sorted;
+  }
+
+  String _listToken(List<CloudBackupEntry> entries) => sha256
+      .convert(
+        utf8.encode(
+          jsonEncode([
+            for (final e in entries)
+              [e.objectName, e.createdAt?.toIso8601String(), e.byteLength],
+          ]),
+        ),
+      )
+      .toString();
+
+  Future<CloudBackupCleanupPlan> prepareCleanup(String id) => _operation(
+    id,
+    CloudBackupStage.listing,
+    (config, provider, op) async {
+      final all = await _completeList(config, provider);
+      if (all.any((e) => e.createdAt == null)) {
+        throw const CloudBackupException('Incomplete backup time information');
+      }
+      final keep = all.take(2).toList();
+      final checksums = <String, String>{};
+      // Verify both retained files before proposing a destructive operation.
+      // A failed/uncertain new upload must never replace a good retained copy.
+      if (all.length > 2) {
+        _set(CloudBackupStage.verifying, id, op);
+        for (final entry in keep) {
+          await _sameTarget(config);
+          final content = await provider.downloadBackup(entry.objectName);
+          await backup.decodeDatasetAsync(utf8.decode(content));
+          checksums[entry.objectName] = sha256.convert(content).toString();
+        }
+      }
+      return CloudBackupCleanupPlan(
+        id,
+        config.fingerprint,
+        _listToken(all),
+        List.unmodifiable(keep),
+        List.unmodifiable(all.skip(2)),
+        Map.unmodifiable(checksums),
+      );
+    },
+  );
+
+  Future<CloudBackupDeletionResult> deleteOne(CloudBackupEntry entry) =>
+      _operation(entry.providerId, CloudBackupStage.deleting, (
+        config,
+        provider,
+        op,
+      ) async {
+        if (entry.targetFingerprint != config.fingerprint ||
+            !cloudBackupName.hasMatch(entry.objectName)) {
+          throw const CloudBackupException('Cloud backup target changed');
+        }
+        return _deleteAndVerify(config, provider, [entry]);
+      });
+
+  Future<CloudBackupDeletionResult> executeCleanup(
+    CloudBackupCleanupPlan plan,
+  ) => _operation(plan.providerId, CloudBackupStage.deleting, (
+    config,
+    provider,
+    op,
+  ) async {
+    if (plan.fingerprint != config.fingerprint)
+      throw const CloudBackupException('Cloud backup target changed');
+    if (plan.remove.isEmpty) return CloudBackupDeletionResult([], {}, []);
+    final all = await _completeList(config, provider);
+    if (_listToken(all) != plan.listToken ||
+        plan.keep.length != 2 ||
+        plan.keep.map((e) => e.objectName).join() !=
+            all.take(2).map((e) => e.objectName).join() ||
+        plan.remove.map((e) => e.objectName).join() !=
+            all.skip(2).map((e) => e.objectName).join()) {
+      throw const CloudBackupException(
+        'Cloud backup list changed; refresh before cleanup',
+      );
+    }
+    for (final entry in plan.keep) {
+      await _sameTarget(config);
+      final bytes = await provider.downloadBackup(entry.objectName);
+      if (sha256.convert(bytes).toString() !=
+          plan.checksums[entry.objectName]) {
+        throw const CloudBackupException('Retained backup checksum changed');
+      }
+    }
+    return _deleteAndVerify(config, provider, plan.remove);
+  });
+
+  Future<CloudBackupDeletionResult> _deleteAndVerify(
+    CloudBackupConfig config,
+    CloudBackupProvider provider,
+    List<CloudBackupEntry> entries,
+  ) async {
+    final errors = <String, Object>{};
+    var changed = false;
+    for (final entry in entries) {
+      try {
+        await _sameTarget(config);
+      } catch (_) {
+        changed = true;
+        break;
+      }
+      try {
+        await provider.deleteBackup(entry.objectName);
+      } catch (e) {
+        errors[entry.objectName] = e;
+      }
+    }
+    if (changed)
+      return CloudBackupDeletionResult(
+        [],
+        {},
+        entries.map((e) => e.objectName).toList(),
+        targetChanged: true,
+      );
+    try {
+      final visible = (await _completeList(
+        config,
+        provider,
+      )).map((e) => e.objectName).toSet();
+      final removed = <String>[];
+      final failed = <String, Object>{};
+      for (final entry in entries) {
+        if (!visible.contains(entry.objectName)) {
+          removed.add(entry.objectName);
+        } else {
+          failed[entry.objectName] =
+              errors[entry.objectName] ??
+              const CloudBackupException(
+                'Backup remains visible after deletion',
+              );
+        }
+      }
+      return CloudBackupDeletionResult(removed, failed, []);
+    } catch (_) {
+      return CloudBackupDeletionResult(
+        [],
+        errors,
+        entries.map((e) => e.objectName).toList(),
+      );
+    }
+  }
 }

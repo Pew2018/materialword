@@ -57,6 +57,7 @@ abstract interface class CloudBackupProvider {
   Future<CloudBackupPage> listBackups({String? continuationToken});
   Future<void> ensureDirectory();
   Future<void> deleteProbe(String objectName);
+  Future<void> deleteBackup(String objectName);
   void close();
 }
 
@@ -152,11 +153,21 @@ abstract class _HttpBackupProvider implements CloudBackupProvider {
     if (match == null) return null;
     final day = match.group(1)!;
     final time = match.group(2)!;
-    return DateTime.tryParse(
+    final value = DateTime.tryParse(
       '${day.substring(0, 4)}-${day.substring(4, 6)}-'
       '${day.substring(6)}T${time.substring(0, 2)}:${time.substring(2, 4)}:'
       '${time.substring(4)}.${match.group(3)}Z',
     );
+    if (value == null ||
+        value.year != int.parse(day.substring(0, 4)) ||
+        value.month != int.parse(day.substring(4, 6)) ||
+        value.day != int.parse(day.substring(6)) ||
+        value.hour != int.parse(time.substring(0, 2)) ||
+        value.minute != int.parse(time.substring(2, 4)) ||
+        value.second != int.parse(time.substring(4))) {
+      return null;
+    }
+    return value;
   }
 }
 
@@ -288,6 +299,22 @@ class S3BackupProvider extends _HttpBackupProvider {
   }
 
   @override
+  Future<void> deleteBackup(String name) async {
+    if (!cloudBackupName.hasMatch(name))
+      throw const CloudBackupException('Invalid backup name');
+    final response = await _signed('DELETE', objectUri(name));
+    // No versionId: versioned buckets create a delete marker, retaining old versions.
+    if (response.statusCode != 200 &&
+        response.statusCode != 204 &&
+        response.statusCode != 404) {
+      throw CloudBackupException(
+        'S3 backup deletion failed',
+        status: response.statusCode,
+      );
+    }
+  }
+
+  @override
   Future<CloudBackupPage> listBackups({String? continuationToken}) async {
     final query = <String, String>{
       'list-type': '2',
@@ -338,6 +365,9 @@ class S3BackupProvider extends _HttpBackupProvider {
           byteLength: int.tryParse(child(item, 'Size') ?? ''),
         ),
       );
+    }
+    if (!{'true', 'false'}.contains(child(root, 'IsTruncated'))) {
+      throw const CloudBackupException('Incomplete S3 listing');
     }
     final truncated = child(root, 'IsTruncated') == 'true';
     final next = child(root, 'NextContinuationToken');
@@ -502,6 +532,21 @@ class WebDavBackupProvider extends _HttpBackupProvider {
   }
 
   @override
+  Future<void> deleteBackup(String name) async {
+    if (!cloudBackupName.hasMatch(name))
+      throw const CloudBackupException('Invalid backup name');
+    final response = await _send('DELETE', objectUri(name));
+    if (response.statusCode != 200 &&
+        response.statusCode != 204 &&
+        response.statusCode != 404) {
+      throw CloudBackupException(
+        'WebDAV backup deletion failed',
+        status: response.statusCode,
+      );
+    }
+  }
+
+  @override
   Future<CloudBackupPage> listBackups({String? continuationToken}) async {
     final response = await _send(
       'PROPFIND',
@@ -525,6 +570,31 @@ class WebDavBackupProvider extends _HttpBackupProvider {
     }
     if (root.name.local != 'multistatus') {
       throw const CloudBackupException('Invalid WebDAV listing');
+    }
+    if (response.headers.keys.any(
+          (key) => {
+            'x-next-page',
+            'x-next-marker',
+            'x-continuation-token',
+          }.contains(key),
+        ) ||
+        (response.headers['link'] ?? '').contains('rel="next"') ||
+        root.descendants.whereType<XmlElement>().any(
+          (e) =>
+              {
+                'number-of-matches-within-limits',
+                'limit',
+                'next',
+                'next-page',
+                'continuation-token',
+              }.contains(e.name.local) ||
+              (e.name.local == 'status' &&
+                  !RegExp(r'^HTTP/[^ ]+ 2[0-9][0-9]( |$)')
+                      .hasMatch(e.innerText.trim())),
+        )) {
+      throw const CloudBackupException(
+        'Incomplete WebDAV listing; server pagination or limits unsupported',
+      );
     }
     final entries = <CloudBackupEntry>[];
     final seen = <String>{};

@@ -22,6 +22,7 @@ import '../sync/sync_settings_page.dart';
 
 String _stageLabel(AppLocalizations l10n, CloudBackupStage stage) =>
     switch (stage) {
+      CloudBackupStage.deleting => l10n.cloudBackupDeleting,
       CloudBackupStage.uploading => l10n.cloudBackupUploadProgress,
       CloudBackupStage.verifying => l10n.cloudBackupVerifyProgress,
       CloudBackupStage.downloading => l10n.cloudBackupDownloadProgress,
@@ -396,6 +397,8 @@ class _CloudBackupBrowserState extends ConsumerState<CloudBackupBrowser> {
   /// "downloaded" dialog.
   String? downloading;
   bool loading = false;
+  bool deleting = false;
+  String? deletionStatus;
 
   @override
   void initState() {
@@ -403,11 +406,11 @@ class _CloudBackupBrowserState extends ConsumerState<CloudBackupBrowser> {
     _load(reset: true);
   }
 
-  Future<void> _load({bool reset = false}) async {
-    if (loading) return;
+  Future<void> _load({bool reset = false, bool preserveError = false}) async {
+    if (loading || deleting) return;
     setState(() {
       loading = true;
-      error = null;
+      if (!preserveError) error = null;
       if (reset) {
         entries.clear();
         tokens.clear();
@@ -426,11 +429,11 @@ class _CloudBackupBrowserState extends ConsumerState<CloudBackupBrowser> {
       setState(() {
         final seen = entries.map((e) => e.objectName).toSet();
         entries.addAll(page.entries.where((e) => seen.add(e.objectName)));
-        entries.sort(
-          (a, b) => (b.createdAt ?? b.lastModified ?? DateTime(0)).compareTo(
-            a.createdAt ?? a.lastModified ?? DateTime(0),
-          ),
-        );
+        entries.sort((a, b) {
+          final order = (b.createdAt ?? b.lastModified ?? DateTime(0))
+              .compareTo(a.createdAt ?? a.lastModified ?? DateTime(0));
+          return order != 0 ? order : b.objectName.compareTo(a.objectName);
+        });
         next = page.continuationToken;
       });
     } catch (e) {
@@ -466,6 +469,73 @@ class _CloudBackupBrowserState extends ConsumerState<CloudBackupBrowser> {
     }
   }
 
+  Future<void> _delete({CloudBackupEntry? entry}) async {
+    if (loading || deleting || downloading != null) return;
+    final coordinator = ref.read(cloudBackupCoordinatorProvider);
+    setState(() {
+      deleting = true;
+      error = null;
+      deletionStatus = null;
+    });
+    try {
+      CloudBackupCleanupPlan? plan;
+      if (entry == null) {
+        plan = await coordinator.prepareCleanup(widget.providerId);
+        if (!mounted) return;
+        if (plan.remove.isEmpty) {
+          setState(
+            () => deletionStatus = context.l10n.cloudBackupNothingToClean,
+          );
+          return;
+        }
+      }
+      if (!mounted) return;
+      final message = entry != null
+          ? '${entry.objectName}\n${_entryTitle(entry)}\n${context.l10n.cloudBackupDeleteWarning}'
+          : '${context.l10n.cloudBackupRetain}\n${plan!.keep.map((e) => '${_entryTitle(e)}\n${e.objectName}').join('\n\n')}\n\n'
+                '${context.l10n.cloudBackupCleanupCount(plan.remove.length, cloudBackupFileSize(context.l10n, plan.totalBytes))}';
+      final ok = await confirmDialog(
+        context,
+        title: entry == null
+            ? context.l10n.cloudBackupCleanup
+            : context.l10n.commonDelete,
+        message: '$message\n\n${context.l10n.s3DeleteMarkerNote}',
+        confirmLabel: context.l10n.commonDelete,
+        destructive: true,
+      );
+      if (!ok) return;
+      final result = entry != null
+          ? await coordinator.deleteOne(entry)
+          : await coordinator.executeCleanup(plan!);
+      if (!mounted) return;
+      setState(() {
+        deletionStatus = context.l10n.cloudBackupDeletionResult(
+          result.removed.length,
+          result.failed.length,
+          result.unknown.length,
+        );
+        if (result.targetChanged) {
+          error = context.l10n.cloudBackupTargetChanged;
+        } else if (!result.complete) {
+          error = {
+            if (result.unknown.isNotEmpty)
+              context.l10n.cloudBackupDeleteUnknown,
+            for (final problem in result.failed.values)
+              describeCloudBackupError(context.l10n, problem),
+          }.join('\n');
+        }
+      });
+    } catch (e) {
+      if (mounted)
+        setState(() => error = describeCloudBackupError(context.l10n, e));
+    } finally {
+      if (mounted) {
+        setState(() => deleting = false);
+        await _load(reset: true, preserveError: true);
+      }
+    }
+  }
+
   /// The timestamp a backup is known by, or the raw object name when the
   /// listing carried no usable date. Nothing here changes which object is
   /// downloaded: the entry is passed through untouched.
@@ -483,7 +553,7 @@ class _CloudBackupBrowserState extends ConsumerState<CloudBackupBrowser> {
         title: Text(l10n.cloudBackupBrowse),
         actions: <Widget>[
           IconButton(
-            onPressed: loading ? null : () => _load(reset: true),
+            onPressed: loading || deleting ? null : () => _load(reset: true),
             icon: const Icon(Icons.refresh),
             tooltip: l10n.commonRefresh,
           ),
@@ -496,7 +566,28 @@ class _CloudBackupBrowserState extends ConsumerState<CloudBackupBrowser> {
               padding: const EdgeInsets.all(AppDimens.gutter),
               child: Text(l10n.cloudBackupSelectFile),
             ),
-            if (loading) const LinearProgressIndicator(),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppDimens.gutter),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  style: TextButton.styleFrom(
+                    foregroundColor: theme.colorScheme.error,
+                  ),
+                  onPressed: loading || deleting || downloading != null
+                      ? null
+                      : () => _delete(),
+                  icon: const Icon(Icons.delete_sweep_outlined),
+                  label: Text(l10n.cloudBackupCleanup),
+                ),
+              ),
+            ),
+            if (deletionStatus != null)
+              Padding(
+                padding: const EdgeInsets.all(AppDimens.gutter),
+                child: Text(deletionStatus!),
+              ),
+            if (loading || deleting) const LinearProgressIndicator(),
             if (error != null)
               Padding(
                 padding: const EdgeInsets.symmetric(
@@ -536,8 +627,29 @@ class _CloudBackupBrowserState extends ConsumerState<CloudBackupBrowser> {
                         height: AppDimens.iconSize,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Icon(Icons.download),
-                onTap: loading || downloading != null
+                    : Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.download),
+                            tooltip: l10n.cloudBackupDownload,
+                            onPressed:
+                                loading || deleting || downloading != null
+                                ? null
+                                : () => _download(entry),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete_outline),
+                            tooltip: l10n.commonDelete,
+                            color: theme.colorScheme.error,
+                            onPressed:
+                                loading || deleting || downloading != null
+                                ? null
+                                : () => _delete(entry: entry),
+                          ),
+                        ],
+                      ),
+                onTap: loading || deleting || downloading != null
                     ? null
                     : () => _download(entry),
               ),
@@ -545,7 +657,7 @@ class _CloudBackupBrowserState extends ConsumerState<CloudBackupBrowser> {
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 child: TextButton(
-                  onPressed: loading ? null : _load,
+                  onPressed: loading || deleting ? null : _load,
                   child: Text(l10n.commonContinue),
                 ),
               ),
@@ -646,7 +758,9 @@ class _DownloadedBackupDialogState
       } else {
         await manager.restoreMerge(file);
       }
-      if (mounted) { await showMissingDictionaryNotice(context, ref); }
+      if (mounted) {
+        await showMissingDictionaryNotice(context, ref);
+      }
       ref.invalidate(bookSummariesProvider);
       ref.invalidate(statisticsProvider);
       ref.invalidate(todayProgressProvider);
