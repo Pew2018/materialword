@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/database/app_database.dart';
 import '../core/models/enums.dart';
 import '../l10n/l10n.dart';
+import 'appearance_store.dart';
 import 'navigation.dart';
 import 'providers.dart';
 import 'theme.dart';
@@ -18,22 +21,45 @@ class MaterialWordApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    _persistAppearance(ref);
+
     final StudySettingsRow? settings = ref.watch(settingsProvider).value;
-    final ThemePreference preference = ThemePreference.fromCode(
-      settings?.themeMode,
-    );
-    final Color accent = parseAccent(settings?.accentColor);
+    final AppearanceSnapshot snapshot = ref
+        .watch(appearanceStoreProvider)
+        .current;
     // Device-local: a sync never changes the language of another device, and a
     // language switch never touches the learning data.
     final AppLanguage language = ref.watch(languageProvider);
 
+    // The settings row is the only source of truth once it exists. Until then
+    // a trusted snapshot paints the last theme; an untrusted one (upgraded
+    // install, no file yet) stays a blank surface so the default blue is never
+    // drawn and then replaced.
+    final bool showShell = settings != null || snapshot.trusted;
+    final ThemePreference preference = settings != null
+        ? ThemePreference.fromCode(settings.themeMode)
+        : snapshot.theme;
+    final Color accent = settings != null
+        ? parseAccent(settings.accentColor)
+        : parseAccent(snapshot.accentColor);
+
     return MaterialApp(
+      // A new key when the shell appears drops the neutral theme instead of
+      // animating from it. Later accent edits keep this key, so they still
+      // update the existing [MaterialApp] immediately.
+      key: ValueKey<String>(
+        showShell ? 'appearance-ready' : 'appearance-pending',
+      ),
       title: 'MaterialWord',
       scrollBehavior: const ClassicScrollBehavior(),
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.of(Brightness.light, accent),
-      darkTheme: AppTheme.of(Brightness.dark, accent),
-      themeMode: switch (preference) {
+      theme: showShell
+          ? AppTheme.of(Brightness.light, accent)
+          : _neutralTheme(Brightness.light),
+      darkTheme: showShell
+          ? AppTheme.of(Brightness.dark, accent)
+          : _neutralTheme(Brightness.dark),
+      themeMode: switch (showShell ? preference : ThemePreference.system) {
         ThemePreference.system => ThemeMode.system,
         ThemePreference.light => ThemeMode.light,
         ThemePreference.dark => ThemeMode.dark,
@@ -44,7 +70,63 @@ class MaterialWordApp extends ConsumerWidget {
       locale: language.locale,
       supportedLocales: AppLocalizations.supportedLocales,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
-      home: const AppShell(),
+      home: showShell ? const AppShell() : const _PendingAppearance(),
+    );
+  }
+}
+
+/// Writes the settings row into the local snapshot the first time it differs
+/// from a trusted snapshot (including the upgraded-install case, where the
+/// snapshot is not trusted yet). An equal trusted pair is left alone so the
+/// file write cannot rebuild the theme.
+void _persistAppearance(WidgetRef ref) {
+  ref.listen<AsyncValue<StudySettingsRow>>(settingsProvider, (
+    AsyncValue<StudySettingsRow>? _,
+    AsyncValue<StudySettingsRow> next,
+  ) {
+    final StudySettingsRow? row = next.value;
+    if (row == null) return;
+    final AppearanceStore store = ref.read(appearanceStoreProvider);
+    final ThemePreference theme = ThemePreference.fromCode(row.themeMode);
+    final String accent = row.accentColor;
+    final AppearanceSnapshot snapshot = store.current;
+    final bool same =
+        snapshot.trusted &&
+        snapshot.theme == theme &&
+        parseAccent(snapshot.accentColor) == parseAccent(accent);
+    if (same) return;
+    unawaited(store.write(theme: theme, accentColor: accent));
+  });
+}
+
+/// Flat surface used before an untrusted appearance can be resolved.
+///
+/// No accent, no [AppTheme], no bar and no progress indicator: only the
+/// platform brightness chooses the background.
+ThemeData _neutralTheme(Brightness brightness) {
+  final bool dark = brightness == Brightness.dark;
+  final Color background = dark
+      ? AppColors.darkBackground
+      : AppColors.lightBackground;
+  return ThemeData(
+    useMaterial3: false,
+    brightness: brightness,
+    scaffoldBackgroundColor: background,
+    canvasColor: background,
+  );
+}
+
+class _PendingAppearance extends StatelessWidget {
+  const _PendingAppearance();
+
+  @override
+  Widget build(BuildContext context) {
+    final bool dark =
+        MediaQuery.platformBrightnessOf(context) == Brightness.dark;
+    return Scaffold(
+      backgroundColor: dark
+          ? AppColors.darkBackground
+          : AppColors.lightBackground,
     );
   }
 }

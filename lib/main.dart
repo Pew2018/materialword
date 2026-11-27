@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'app/appearance_store.dart';
 import 'app/app.dart';
 import 'app/providers.dart';
 import 'core/database/app_database.dart';
@@ -31,6 +32,15 @@ Future<void> main() async {
     onTimeout: () => MemoryLanguageStore(AppLanguage.system),
   );
 
+  // Same bound as the language file: theme and accent are device-local and
+  // must be known before the shell paints, but a stuck read cannot hold the
+  // window back. On timeout the in-memory default is trusted so launch still
+  // proceeds with system + the classic blue.
+  final AppearanceStore appearance = await DeviceAppearanceStore.load().timeout(
+    const Duration(seconds: 2),
+    onTimeout: MemoryAppearanceStore.new,
+  );
+
   // The first frame never waits for the database. A blocked first frame is
   // indistinguishable from "the app did not start" — the macOS window simply
   // never appears — and the repair below is a no-op on a healthy install.
@@ -39,6 +49,7 @@ Future<void> main() async {
       overrides: [
         databaseProvider.overrideWithValue(database),
         languageStoreProvider.overrideWithValue(language),
+        appearanceStoreProvider.overrideWithValue(appearance),
       ],
       child: const MaterialWordApp(),
     ),

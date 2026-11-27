@@ -38,6 +38,7 @@ import '../services/sync/sync_provider.dart';
 import '../services/sync/webdav_sync_provider.dart';
 import '../services/screen_awake.dart';
 import '../services/tts_service.dart';
+import 'appearance_store.dart';
 import 'theme.dart';
 
 /// Overridden in `main()` (and in tests) with a real database.
@@ -200,6 +201,14 @@ class LanguageController extends Notifier<AppLanguage> {
 
 final NotifierProvider<LanguageController, AppLanguage> languageProvider =
     NotifierProvider<LanguageController, AppLanguage>(LanguageController.new);
+
+/// Device-local theme and accent captured before the database opens.
+///
+/// The default is an in-memory fresh-install snapshot (system + classic blue,
+/// trusted). Widget tests pump [MaterialWordApp] without preparing a file, and
+/// `main()` overrides this with the value read from disk before the first frame.
+final Provider<AppearanceStore> appearanceStoreProvider =
+    Provider<AppearanceStore>((Ref ref) => MemoryAppearanceStore());
 
 final StreamProvider<StudySettingsRow> settingsProvider =
     StreamProvider<StudySettingsRow>(

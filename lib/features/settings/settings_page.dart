@@ -59,6 +59,20 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           ttsRate: ttsRate,
           ttsAutoSpeak: ttsAutoSpeak,
         );
+    // Theme and accent are device-local. Mirror them into the startup snapshot
+    // in this same save so the next launch does not wait for the settings
+    // stream to backfill the file. Other fields never touch that file.
+    if (theme != null || accentColor != null) {
+      final StudySettingsRow row = await ref
+          .read(settingsRepositoryProvider)
+          .load();
+      await ref
+          .read(appearanceStoreProvider)
+          .write(
+            theme: ThemePreference.fromCode(row.themeMode),
+            accentColor: row.accentColor,
+          );
+    }
     // Only the derived "today" numbers depend on the targets; statistics do
     // not, so they are not invalidated here.
     if (newTarget != null || reviewLimit != null || bookValue != null) {
