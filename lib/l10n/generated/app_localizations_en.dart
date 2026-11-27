@@ -1216,7 +1216,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String exportDone(int books, int words) {
-    return 'Exported $books word lists · $words words (no study history).';
+    return 'Exported a learning package with $books word lists · $words words and their study progress.';
   }
 
   @override
@@ -1273,7 +1273,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String exportDoneSingle(int count) {
-    return 'Exported $count words (no study history).';
+    return 'Exported a learning package with $count words and their study progress.';
   }
 
   @override
@@ -3505,13 +3505,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get importIssueEmpty => '(empty)';
 
   @override
-  String get exportFormatTxt => 'Plain text (one word per line)';
+  String get exportFormatTxt =>
+      'Learning package · plain text (one word per line)';
 
   @override
-  String get exportFormatCsv => 'CSV (with meanings and examples)';
+  String get exportFormatCsv =>
+      'Learning package · CSV (with meanings and examples)';
 
   @override
-  String get exportFormatJson => 'JSON (structured, lossless round trip)';
+  String get exportFormatJson =>
+      'Learning package · JSON (structured, lossless round trip)';
 
   @override
   String get createFolderFailed =>

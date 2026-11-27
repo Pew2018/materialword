@@ -790,9 +790,9 @@ class _LabeledBlock extends StatelessWidget {
 /// Pinned bottom action area.
 ///
 /// A plain surface with a single hairline divider — not a floating card with a
-/// second button inside it. The reveal button is a 40dp classic button inside a
-/// 48dp touch target, capped at a readable width on desktop instead of
-/// stretching across the whole window.
+/// second button inside it. The reveal button fills the action strip (no Space
+/// keycap beside it); Space / Enter still reveal via shortcuts. Capped at a
+/// readable width on desktop instead of stretching across the whole window.
 class _AnswerBar extends StatelessWidget {
   const _AnswerBar({
     required this.revealed,
@@ -857,61 +857,21 @@ class _AnswerBar extends StatelessWidget {
                             ),
                           ],
                         )
-                      : Row(
-                          children: <Widget>[
-                            Expanded(
-                              child: ElevatedButton(
-                                onPressed: onReveal,
-                                style: ElevatedButton.styleFrom(
-                                  minimumSize: const Size.fromHeight(40),
-                                ),
-                                child: Text(context.l10n.showMeaning),
-                              ),
+                      : SizedBox(
+                          width: double.infinity,
+                          height: 40,
+                          child: ElevatedButton(
+                            onPressed: onReveal,
+                            style: ElevatedButton.styleFrom(
+                              minimumSize: const Size.fromHeight(40),
                             ),
-                            // The shortcut lives next to the action, never
-                            // inside its label: "显示释义（Space）" read like a
-                            // developer tool.
-                            if (desktop) ...<Widget>[
-                              AppSpacing.w8,
-                              const _KeyHint('Space'),
-                            ],
-                          ],
+                            child: Text(context.l10n.showMeaning),
+                          ),
                         ),
                 ),
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Small keycap shown on desktop only.
-class _KeyHint extends StatelessWidget {
-  const _KeyHint(this.label);
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    return Tooltip(
-      message: context.l10n.keyHintShowMeaning(label),
-      child: Container(
-        height: 24,
-        padding: const EdgeInsets.symmetric(horizontal: 6),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          border: Border.all(color: theme.dividerColor),
-          borderRadius: BorderRadius.circular(AppDimens.chipRadius),
-        ),
-        child: Text(
-          label,
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.textTheme.bodySmall?.color,
-            fontSize: 11,
-          ),
         ),
       ),
     );

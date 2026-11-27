@@ -509,13 +509,15 @@ class AppTheme {
 
     final ThemeData base2 = ThemeData(
       useMaterial3: false,
-      // Secondary pages slide in horizontally with a short travel and a subtle
-      // fade — never "up from the bottom", which reads like a modal. Android
-      // additionally follows the system predictive-back gesture (the builder
-      // falls back to the same horizontal fade when the gesture is not used).
+      // Secondary pages slide in horizontally — never "up from the bottom",
+      // which reads like a modal. Android uses the same Cupertino slide as
+      // iOS/macOS so the first frame already paints the final app-bar and
+      // scaffold colours (PredictiveBack's fade-forwards fallback used to
+      // flash a transparent bar). System predictive-back stays enabled in the
+      // manifest; only the page-transition builder changes.
       pageTransitionsTheme: const PageTransitionsTheme(
         builders: {
-          TargetPlatform.android: PredictiveBackPageTransitionsBuilder(),
+          TargetPlatform.android: CupertinoPageTransitionsBuilder(),
           TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
           TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
           TargetPlatform.windows: FadeForwardsPageTransitionsBuilder(),

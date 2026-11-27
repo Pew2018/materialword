@@ -14,6 +14,6 @@ const String buildCommit = String.fromEnvironment(
 
 /// Entries in `assets/dictionary/ecdict_core.db`, from its `.meta.json`.
 /// Kept as a constant so the About page never has to open the dictionary.
-const int dictionaryEntryCount = 26282;
+const int dictionaryEntryCount = 57835;
 
 const String dictionaryLicense = 'MIT';

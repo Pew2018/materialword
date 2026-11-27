@@ -2159,7 +2159,7 @@ abstract class AppLocalizations {
   /// No description provided for @exportDone.
   ///
   /// In en, this message translates to:
-  /// **'Exported {books} word lists · {words} words (no study history).'**
+  /// **'Exported a learning package with {books} word lists · {words} words and their study progress.'**
   String exportDone(int books, int words);
 
   /// No description provided for @exportFailed.
@@ -2255,7 +2255,7 @@ abstract class AppLocalizations {
   /// No description provided for @exportDoneSingle.
   ///
   /// In en, this message translates to:
-  /// **'Exported {count} words (no study history).'**
+  /// **'Exported a learning package with {count} words and their study progress.'**
   String exportDoneSingle(int count);
 
   /// No description provided for @searchWordsHint.
@@ -5783,19 +5783,19 @@ abstract class AppLocalizations {
   /// No description provided for @exportFormatTxt.
   ///
   /// In en, this message translates to:
-  /// **'Plain text (one word per line)'**
+  /// **'Learning package · plain text (one word per line)'**
   String get exportFormatTxt;
 
   /// No description provided for @exportFormatCsv.
   ///
   /// In en, this message translates to:
-  /// **'CSV (with meanings and examples)'**
+  /// **'Learning package · CSV (with meanings and examples)'**
   String get exportFormatCsv;
 
   /// No description provided for @exportFormatJson.
   ///
   /// In en, this message translates to:
-  /// **'JSON (structured, lossless round trip)'**
+  /// **'Learning package · JSON (structured, lossless round trip)'**
   String get exportFormatJson;
 
   /// No description provided for @createFolderFailed.

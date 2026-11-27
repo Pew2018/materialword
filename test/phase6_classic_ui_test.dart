@@ -186,10 +186,10 @@ void main() {
     );
     await settle(tester);
 
-    // The shortcut is a hint next to the action, never part of its label.
+    // Reveal fills the action strip; Space is a shortcut only, never a keycap.
     expect(find.text('显示释义'), findsOneWidget);
     expect(find.textContaining('（Space）'), findsNothing);
-    expect(find.text('Space'), findsOneWidget);
+    expect(find.text('Space'), findsNothing);
 
     // No second elevated white layer wrapped around the button.
     final Iterable<Material> surfaces = tester.widgetList<Material>(

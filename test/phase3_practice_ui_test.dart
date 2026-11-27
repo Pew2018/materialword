@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:materialword/l10n/l10n.dart';
@@ -51,6 +53,7 @@ void main() {
     WidgetTester tester,
     PracticeKind kind, {
     List<String> words = const <String>['alpha', 'beta', 'gamma'],
+    TargetPlatform platform = TargetPlatform.android,
   }) async {
     final TestEnv env = await TestEnv.create();
     addTearDown(env.dispose);
@@ -66,7 +69,7 @@ void main() {
           localizationsDelegates: AppLocalizations.localizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,
           locale: const Locale('zh'),
-          theme: AppTheme.light(),
+          theme: AppTheme.light(platform: platform),
           home: PracticePage(kind: kind),
         ),
       ),
@@ -89,7 +92,10 @@ void main() {
     await settle(tester);
 
     expect(find.text('错误'), findsOneWidget);
-    expect(find.text('正确拼写：$answer'), findsOneWidget);
+    expect(find.text(answer), findsOneWidget);
+    expect(find.textContaining('正确拼写'), findsNothing);
+    expect(find.textContaining('你的答案'), findsNothing);
+    expect(find.textContaining('不会改变这个单词的复习间隔'), findsNothing);
     final events = await env.db.select(env.db.reviewEvents).get();
     expect(events.length, 1);
     expect(
@@ -101,7 +107,7 @@ void main() {
     await clean(tester);
   });
 
-  testWidgets('multiple choice accepts a tap and shows the correct option', (
+  testWidgets('multiple choice accepts a tap and shows the word', (
     WidgetTester tester,
   ) async {
     final env = await pumpPractice(
@@ -109,6 +115,10 @@ void main() {
       PracticeKind.choice,
       words: <String>['alpha', 'beta', 'gamma', 'delta'],
     );
+    final String answer = (await env.study.practiceBatch(
+      now: env.clock.now(),
+      kind: PracticeKind.choice,
+    )).words.first.word;
     // Tap every option until one is accepted; the drill records one event only.
     final Finder options = find.byType(OutlinedButton);
     expect(options, findsWidgets);
@@ -116,13 +126,75 @@ void main() {
     await settle(tester);
     // Answered either way: the feedback card and the "next" button appear.
     expect(find.text('下一题'), findsOneWidget);
-    expect(find.textContaining('正确拼写：').evaluate().isNotEmpty, isTrue);
+    expect(find.text(answer), findsWidgets);
+    expect(find.textContaining('正确拼写'), findsNothing);
+    expect(find.textContaining('你的答案'), findsNothing);
+    expect(find.textContaining('不会改变这个单词的复习间隔'), findsNothing);
+    expect(
+      find.text('正确').evaluate().isNotEmpty ||
+          find.text('错误').evaluate().isNotEmpty,
+      isTrue,
+    );
     final events = await env.db.select(env.db.reviewEvents).get();
     expect(events.length, 1);
     expect(
       events.single.mode,
       ReviewEventMode.forPractice(PracticeKind.choice),
     );
+    expect(tester.takeException(), isNull);
+    await clean(tester);
+  });
+
+  testWidgets('desktop choice uses 1–4 then Space for next', (
+    WidgetTester tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    final TestEnv env = await pumpPractice(
+      tester,
+      PracticeKind.choice,
+      words: <String>['alpha', 'beta', 'gamma', 'delta'],
+      platform: TargetPlatform.macOS,
+    );
+    expect(find.byType(OutlinedButton), findsWidgets);
+    await tester.sendKeyEvent(LogicalKeyboardKey.digit1);
+    await settle(tester);
+    expect(find.text('下一题'), findsOneWidget);
+    expect(find.textContaining('正确拼写'), findsNothing);
+    await tester.sendKeyEvent(LogicalKeyboardKey.space);
+    await settle(tester);
+    // Either the next question or the results screen.
+    expect(
+      find.text('下一题').evaluate().isEmpty ||
+          find.byType(OutlinedButton).evaluate().isNotEmpty ||
+          find.text('查看结果').evaluate().isNotEmpty ||
+          find.textContaining('正确').evaluate().isNotEmpty,
+      isTrue,
+    );
+    final events = await env.db.select(env.db.reviewEvents).get();
+    expect(events, isNotEmpty);
+    expect(tester.takeException(), isNull);
+    await clean(tester);
+  });
+
+  testWidgets('desktop spelling keeps Space in the text field', (
+    WidgetTester tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    await pumpPractice(
+      tester,
+      PracticeKind.spelling,
+      platform: TargetPlatform.macOS,
+    );
+    await tester.tap(find.byType(TextField));
+    await settle(tester);
+    await tester.enterText(find.byType(TextField), 'a');
+    await tester.sendKeyEvent(LogicalKeyboardKey.space);
+    await settle(tester);
+    // Space must not advance the question while the field owns focus.
+    expect(find.text('下一题'), findsNothing);
+    expect(find.text('查看结果'), findsNothing);
     expect(tester.takeException(), isNull);
     await clean(tester);
   });

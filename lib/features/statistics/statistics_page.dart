@@ -239,7 +239,6 @@ class StatisticsPage extends ConsumerWidget {
                             value: context.l10n.valueTimes(
                               data.breakdown.practiceByKind[kind]!,
                             ),
-                            subtle: true,
                             indent: 16,
                           ),
                       _LineRow(
@@ -248,7 +247,9 @@ class StatisticsPage extends ConsumerWidget {
                       ),
                       _LineRow(
                         label: context.l10n.distinctWordsAnswered,
-                        value: '${data.distinctAnsweredWords}',
+                        value: context.l10n.wordCountPlural(
+                          data.distinctAnsweredWords,
+                        ),
                       ),
                       _LineRow(
                         label: context.l10n.undoneAnswers,
@@ -385,33 +386,21 @@ class StatisticsPage extends ConsumerWidget {
 
 /// "label ————— value" row used by the breakdown and forecast blocks.
 class _LineRow extends StatelessWidget {
-  const _LineRow({
-    required this.label,
-    required this.value,
-    this.subtle = false,
-    this.indent = 0,
-  });
+  const _LineRow({required this.label, required this.value, this.indent = 0});
 
   final String label;
   final String value;
 
-  /// A child row of the row above it (e.g. one practice mode under Practice).
-  final bool subtle;
-
-  /// Real layout indent in logical pixels. Child rows used to be pushed right
-  /// by a full-width space character in the label, which made the label and the
-  /// number sit on different type scales and shifted with the font.
+  /// Real layout indent in logical pixels for child rows (e.g. one practice
+  /// mode under Practice). Indent only — same type scale as the parent row.
   final double indent;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    // One style for both sides: a subtle row is *small* on the left and right,
-    // a normal row is medium on both sides. The number only adds tabular
-    // figures so the column stays aligned.
-    final TextStyle? style = subtle
-        ? theme.textTheme.bodySmall
-        : theme.textTheme.bodyMedium;
+    // One bodyMedium style for every row and both sides. Child rows keep an
+    // indent but never drop to bodySmall.
+    final TextStyle? style = theme.textTheme.bodyMedium;
     return Padding(
       padding: EdgeInsets.only(left: indent),
       child: Padding(

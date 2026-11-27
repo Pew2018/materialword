@@ -712,7 +712,7 @@
   },
   "chooseFormat": "Choose Format",
   "exportCancelled": "Export canceled.",
-  "exportDone": "Exported {books} word lists · {words} words (no study history).",
+  "exportDone": "Exported a learning package with {books} word lists · {words} words and their study progress.",
   "@exportDone": {
     "placeholders": {
       "books": {
@@ -758,7 +758,7 @@
     }
   },
   "protectiveBackupFailed": "Couldn't create the safety backup, so nothing was changed.",
-  "exportDoneSingle": "Exported {count} words (no study history).",
+  "exportDoneSingle": "Exported a learning package with {count} words and their study progress.",
   "@exportDoneSingle": {
     "placeholders": {
       "count": {
@@ -2197,9 +2197,9 @@
   "importIssueNotEntry": "Not a valid entry (expected text or an object)",
   "importIssueInvalidEntry": "Invalid entry",
   "importIssueEmpty": "(empty)",
-  "exportFormatTxt": "Plain text (one word per line)",
-  "exportFormatCsv": "CSV (with meanings and examples)",
-  "exportFormatJson": "JSON (structured, lossless round trip)",
+  "exportFormatTxt": "Learning package · plain text (one word per line)",
+  "exportFormatCsv": "Learning package · CSV (with meanings and examples)",
+  "exportFormatJson": "Learning package · JSON (structured, lossless round trip)",
   "createFolderFailed": "Couldn't create the folder. Check the permissions and try again.",
   "s3Endpoint": "Endpoint",
   "s3EndpointHint": "https://s3.us-east-1.amazonaws.com",

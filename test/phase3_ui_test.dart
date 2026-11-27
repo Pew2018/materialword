@@ -18,15 +18,15 @@ import 'helpers/test_dictionary.dart';
 import 'helpers/test_env.dart';
 
 void main() {
-  test('UI Android uses predictive back, Apple keeps the native slide', () {
+  test('UI Android, iOS and macOS share the Cupertino horizontal slide', () {
     final theme = AppTheme.light();
     expect(theme.useMaterial3, isFalse);
-    // Secondary pages slide in horizontally (and follow the system back
-    // gesture on Android U+). Never "up from the bottom": that reads as a
-    // modal and was the reported "page pops in" problem.
+    // Secondary pages slide in horizontally on Android too — same Cupertino
+    // builder as iOS/macOS — so the first frame already paints the final
+    // app-bar colour. Never "up from the bottom": that reads as a modal.
     expect(
       theme.pageTransitionsTheme.builders[TargetPlatform.android],
-      isA<PredictiveBackPageTransitionsBuilder>(),
+      isA<CupertinoPageTransitionsBuilder>(),
     );
     expect(
       theme.pageTransitionsTheme.builders[TargetPlatform.iOS],

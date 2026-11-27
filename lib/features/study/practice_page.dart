@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/providers.dart';
@@ -68,6 +69,9 @@ class _PracticePageState extends ConsumerState<PracticePage>
     WidgetsBinding.instance.addObserver(this);
     _tts = ref.read(ttsServiceProvider);
     _screen = ref.read(screenAwakeProvider);
+    // Rebuild desktop bindings when the typed field gains or loses focus so
+    // digits / Space are never stolen from an active TextField.
+    _focus.addListener(_onAnswerFocusChanged);
     _session = PracticeSession(
       ref.read(studyRepositoryProvider),
       ref.read(settingsRepositoryProvider),
@@ -75,6 +79,10 @@ class _PracticePageState extends ConsumerState<PracticePage>
     )..addListener(_onChanged);
     _start();
     _applyScreenAwake();
+  }
+
+  void _onAnswerFocusChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _applyScreenAwake() async {
@@ -90,6 +98,7 @@ class _PracticePageState extends ConsumerState<PracticePage>
     _session.removeListener(_onChanged);
     _session.dispose();
     _controller.dispose();
+    _focus.removeListener(_onAnswerFocusChanged);
     _focus.dispose();
     // Stop any pronunciation started for the previous card.
     _tts.stop();
@@ -249,7 +258,8 @@ class _PracticePageState extends ConsumerState<PracticePage>
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool hasQuestion = _session.current != null;
-    return Scaffold(
+    final bool desktop = isDesktopPlatform(context);
+    final Widget scaffold = Scaffold(
       appBar: ClassicAppBar(
         title: Text(widget.kind.label(context.l10n)),
         actions: <Widget>[
@@ -312,6 +322,43 @@ class _PracticePageState extends ConsumerState<PracticePage>
         ),
       ),
     );
+    if (!desktop) return scaffold;
+    // Desktop only: 1–4 pick a choice before an answer; Space advances after.
+    // Bindings are empty while the typed field owns focus so digits and Space
+    // stay with the input. No keycap labels are drawn.
+    return CallbackShortcuts(
+      bindings: _desktopBindings(),
+      child: Focus(autofocus: true, child: scaffold),
+    );
+  }
+
+  Map<ShortcutActivator, VoidCallback> _desktopBindings() {
+    if (_focus.hasFocus) return const <ShortcutActivator, VoidCallback>{};
+    if (_session.isFeedback) {
+      return <ShortcutActivator, VoidCallback>{
+        const SingleActivator(LogicalKeyboardKey.space): _next,
+      };
+    }
+    if (_session.phase != PracticePhase.question ||
+        _session.isBusy ||
+        widget.kind != PracticeKind.choice) {
+      return const <ShortcutActivator, VoidCallback>{};
+    }
+    final PracticeQuestion? question = _session.current;
+    if (question == null) return const <ShortcutActivator, VoidCallback>{};
+    final List<LogicalKeyboardKey> digits = <LogicalKeyboardKey>[
+      LogicalKeyboardKey.digit1,
+      LogicalKeyboardKey.digit2,
+      LogicalKeyboardKey.digit3,
+      LogicalKeyboardKey.digit4,
+    ];
+    final Map<ShortcutActivator, VoidCallback> bindings =
+        <ShortcutActivator, VoidCallback>{};
+    for (int i = 0; i < digits.length && i < question.options.length; i++) {
+      final int index = i;
+      bindings[SingleActivator(digits[i])] = () => _submitChoice(index);
+    }
+    return bindings;
   }
 
   Widget _buildBody(ThemeData theme) {
@@ -512,16 +559,10 @@ class _FeedbackCard extends StatelessWidget {
             ],
           ),
           AppSpacing.h8,
-          SelectableText(context.l10n.correctSpelling(outcome.answer)),
-          if (!outcome.correct && outcome.submitted.trim().isNotEmpty)
-            Text(
-              context.l10n.yourAnswer(outcome.submitted.trim()),
-              style: theme.textTheme.bodySmall,
-            ),
-          Text(
-            context.l10n.practiceAnswerNote,
-            style: theme.textTheme.bodySmall,
-          ),
+          // Just the word itself — never restate a highlighted choice as
+          // "correct spelling", never echo the wrong typed string, and never
+          // repeat the interval note under every answer.
+          SelectableText(outcome.answer, style: theme.textTheme.titleMedium),
         ],
       ),
     );

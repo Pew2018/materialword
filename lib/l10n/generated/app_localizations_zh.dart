@@ -1135,7 +1135,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String exportDone(int books, int words) {
-    return '已导出 $books 个词书、$words 条词条内容（不含学习记录）';
+    return '已导出学习包：包含 $books 个词书、$words 条词条及其学习进度';
   }
 
   @override
@@ -1189,7 +1189,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String exportDoneSingle(int count) {
-    return '已导出 $count 个单词（不含学习记录）';
+    return '已导出学习包：包含 $count 个单词及其学习进度';
   }
 
   @override
@@ -3213,13 +3213,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get importIssueEmpty => '(空)';
 
   @override
-  String get exportFormatTxt => '纯文本（每行一个单词）';
+  String get exportFormatTxt => '学习包 · 纯文本内容（每行一个单词）';
 
   @override
-  String get exportFormatCsv => 'CSV（含释义与例句）';
+  String get exportFormatCsv => '学习包 · CSV 内容（含释义与例句）';
 
   @override
-  String get exportFormatJson => 'JSON（结构化字段，可无损往返）';
+  String get exportFormatJson => '学习包 · JSON 内容（结构化字段，可无损往返）';
 
   @override
   String get createFolderFailed => '无法创建文件夹，请检查权限后重试。';
