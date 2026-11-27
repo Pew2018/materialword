@@ -83,41 +83,100 @@ void main() {
       theme,
       Typography.material2014(platform: theme.platform).englishLike,
     );
-    expect(classic.textTheme.headlineMedium?.fontSize, 26);
+    expect(theme.appBarTheme.elevation, 1);
+    expect(classic.textTheme.headlineMedium?.fontSize, 38);
+    expect(classic.textTheme.headlineMedium?.fontWeight, FontWeight.w500);
     expect(classic.textTheme.headlineSmall?.fontSize, 22);
+    expect(classic.textTheme.bodyLarge?.fontSize, 17);
     expect(classic.textTheme.bodyMedium?.fontSize, 14);
+    expect(classic.textTheme.labelLarge?.fontSize, 14);
+    expect(classic.textTheme.labelLarge?.fontWeight, FontWeight.w500);
     expect(classic.textTheme.titleMedium?.fontWeight, FontWeight.w500);
+    final ShapeBorder chip = theme.chipTheme.shape!;
+    expect(
+      (chip as RoundedRectangleBorder).borderRadius,
+      BorderRadius.circular(2),
+    );
 
-    final TextTheme stock = Typography.material2018(platform: theme.platform)
-        .englishLike;
+    final TextTheme stock = Typography.material2018().englishLike;
     final ThemeData modern = ThemeData.localize(
       AppTheme.light(typography: TypographyScale.material2018),
       stock,
     );
     expect(modern.useMaterial3, isFalse);
+    expect(modern.appBarTheme.elevation, 4);
+    expect(modern.bottomNavigationBarTheme.elevation, 8);
+    for (final ButtonStyle? style in <ButtonStyle?>[
+      modern.elevatedButtonTheme.style,
+      modern.filledButtonTheme.style,
+      modern.outlinedButtonTheme.style,
+      modern.textButtonTheme.style,
+    ]) {
+      expect(radiusOf(style), BorderRadius.circular(4));
+      expect(style?.minimumSize?.resolve(<WidgetState>{})?.height, 36);
+    }
+    final ShapeBorder modernCard = modern.cardTheme.shape!;
     expect(
-      radiusOf(modern.elevatedButtonTheme.style),
-      BorderRadius.circular(2),
+      (modernCard as RoundedRectangleBorder).borderRadius,
+      BorderRadius.circular(4),
     );
+    final ShapeBorder modernChip = modern.chipTheme.shape!;
+    expect(
+      (modernChip as RoundedRectangleBorder).borderRadius,
+      BorderRadius.circular(16),
+    );
+    expect(modern.textTheme.headlineMedium?.fontSize, isNot(38));
+    expect(modern.textTheme.bodyLarge?.fontSize, isNot(17));
     expect(
       modern.textTheme.headlineMedium?.fontSize,
       stock.headlineMedium?.fontSize,
     );
     expect(
-      modern.textTheme.headlineSmall?.fontSize,
-      stock.headlineSmall?.fontSize,
+      modern.textTheme.headlineMedium?.letterSpacing,
+      stock.headlineMedium?.letterSpacing,
     );
-    expect(
-      modern.textTheme.titleMedium?.fontWeight,
-      stock.titleMedium?.fontWeight,
-    );
+    expect(modern.textTheme.bodyLarge?.fontSize, stock.bodyLarge?.fontSize);
     expect(
       modern.textTheme.bodyLarge?.letterSpacing,
       stock.bodyLarge?.letterSpacing,
     );
+    final ThemeData modernPainted = AppTheme.withLocalizedComponentStyles(
+      modern,
+    );
+    expect(modernPainted.appBarTheme.titleTextStyle?.color, Colors.white);
     expect(
-      modern.appBarTheme.titleTextStyle?.fontSize,
-      AppDimens.appBarTitleSize,
+      modernPainted.appBarTheme.titleTextStyle?.fontSize,
+      stock.titleLarge?.fontSize,
+    );
+    expect(
+      modernPainted.elevatedButtonTheme.style?.textStyle
+          ?.resolve(<WidgetState>{})
+          ?.fontSize,
+      stock.labelLarge?.fontSize,
+    );
+    expect(
+      modernPainted.elevatedButtonTheme.style?.textStyle
+          ?.resolve(<WidgetState>{})
+          ?.fontWeight,
+      stock.labelLarge?.fontWeight,
+    );
+    expect(
+      modernPainted.elevatedButtonTheme.style?.textStyle
+          ?.resolve(<WidgetState>{})
+          ?.letterSpacing,
+      stock.labelLarge?.letterSpacing,
+    );
+    expect(
+      modernPainted.bottomNavigationBarTheme.selectedLabelStyle?.fontSize,
+      stock.bodySmall?.fontSize,
+    );
+    expect(
+      modernPainted.bottomNavigationBarTheme.selectedLabelStyle?.fontWeight,
+      stock.bodySmall?.fontWeight,
+    );
+    expect(
+      modernPainted.inputDecorationTheme.hintStyle?.fontSize,
+      stock.bodyMedium?.fontSize,
     );
   });
 

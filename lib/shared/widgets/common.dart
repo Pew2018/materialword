@@ -156,15 +156,16 @@ class ProgressRow extends StatelessWidget {
             const Spacer(),
             Text(
               '$done / $total',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w500,
+              style: theme.classicStyle(
+                theme.textTheme.bodyMedium,
+                weight: FontWeight.w500,
               ),
             ),
           ],
         ),
         const SizedBox(height: 6),
         ClipRRect(
-          borderRadius: BorderRadius.circular(2),
+          borderRadius: theme.cardRadius,
           child: LinearProgressIndicator(
             value: ratio,
             minHeight: 3,
@@ -208,8 +209,9 @@ class StatBlock extends StatelessWidget {
         children: <Widget>[
           Text(
             value,
-            style: theme.textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.w500,
+            style: theme.classicStyle(
+              theme.textTheme.headlineSmall,
+              weight: FontWeight.w500,
               color: color,
             ),
           ),
@@ -291,9 +293,10 @@ class SectionHeader extends StatelessWidget {
           Expanded(
             child: Text(
               title,
-              style: theme.textTheme.bodySmall?.copyWith(
+              style: theme.classicStyle(
+                theme.textTheme.bodySmall,
                 color: theme.colorScheme.primary,
-                fontWeight: FontWeight.w500,
+                weight: FontWeight.w500,
                 letterSpacing: 0.4,
               ),
             ),
@@ -488,10 +491,10 @@ class TagChip extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: theme.textTheme.bodySmall?.copyWith(
+        style: theme.classicStyle(
+          theme.textTheme.bodySmall,
           color: base,
-          fontSize: dense ? 11 : 12,
-          fontWeight: FontWeight.w500,
+          weight: FontWeight.w500,
         ),
       ),
     );
@@ -563,7 +566,7 @@ class ErrorBanner extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.unknown.withValues(alpha: 0.08),
         border: Border.all(color: AppColors.unknown.withValues(alpha: 0.4)),
-        borderRadius: BorderRadius.circular(AppDimens.radius),
+        borderRadius: theme.surfaceRadius,
       ),
       child: Row(
         children: <Widget>[
@@ -602,7 +605,7 @@ class NoticeBanner extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.hazy.withValues(alpha: 0.08),
         border: Border.all(color: AppColors.hazy.withValues(alpha: 0.4)),
-        borderRadius: BorderRadius.circular(AppDimens.radius),
+        borderRadius: theme.surfaceRadius,
       ),
       child: Row(
         children: <Widget>[

@@ -300,7 +300,6 @@ class _WordBookDetailPageState extends ConsumerState<WordBookDetailPage> {
                                     ),
                                     style: theme.textTheme.bodySmall?.copyWith(
                                       color: AppColors.unknown,
-                                      fontSize: 11,
                                     ),
                                   ),
                                 )
@@ -309,9 +308,7 @@ class _WordBookDetailPageState extends ConsumerState<WordBookDetailPage> {
                                   padding: const EdgeInsets.only(top: 2),
                                   child: Text(
                                     '${next.month}/${next.day}',
-                                    style: theme.textTheme.bodySmall?.copyWith(
-                                      fontSize: 11,
-                                    ),
+                                    style: theme.textTheme.bodySmall,
                                   ),
                                 ),
                             ],

@@ -265,7 +265,7 @@ class ClassicSelectChip<T> extends StatelessWidget {
       builder: (BuildContext anchorContext) => Material(
         color: Colors.transparent,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppDimens.chipRadius),
+          borderRadius: theme.chipRadius,
           side: BorderSide(
             color: active ? theme.colorScheme.primary : theme.dividerColor,
           ),

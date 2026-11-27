@@ -198,22 +198,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               // sits in Appearance right under the colour picker and never
               // travels through sync.
               const _LanguageSetting(),
-              for (final TypographyScale scale in TypographyScale.values)
-                RadioListTile<String>(
-                  dense: true,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-                  value: scale.code,
-                  groupValue: settings.typographyScale,
-                  onChanged: (String? value) =>
-                      _save(typography: TypographyScale.fromCode(value)),
-                  title: Text(scale.label(l10n)),
-                ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: Text(
-                  l10n.typographyScaleHint,
-                  style: theme.textTheme.bodySmall,
-                ),
+              _TypographySetting(
+                value: TypographyScale.fromCode(settings.typographyScale),
+                onChanged: (TypographyScale value) => _save(typography: value),
               ),
             ],
           ),
@@ -880,6 +867,34 @@ class _LanguageSetting extends ConsumerWidget {
         onChanged: (AppLanguage value) async {
           await ref.read(languageProvider.notifier).select(value);
         },
+      ),
+    );
+  }
+}
+
+/// Type-scale picker. Same field and menu as the language row.
+class _TypographySetting extends StatelessWidget {
+  const _TypographySetting({required this.value, required this.onChanged});
+
+  final TypographyScale value;
+  final ValueChanged<TypographyScale> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppLocalizations l10n = context.l10n;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      child: ClassicSelect<TypographyScale>(
+        label: l10n.typographyScale,
+        value: value,
+        options: <ClassicOption<TypographyScale>>[
+          for (final TypographyScale scale in TypographyScale.values)
+            ClassicOption<TypographyScale>(
+              value: scale,
+              label: scale.label(l10n),
+            ),
+        ],
+        onChanged: onChanged,
       ),
     );
   }

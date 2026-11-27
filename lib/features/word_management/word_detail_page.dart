@@ -631,8 +631,10 @@ class _DictionaryPreview extends StatelessWidget {
                           const SizedBox(height: 4),
                           Text(
                             value,
-                            style: Theme.of(context).textTheme.bodyLarge
-                                ?.copyWith(height: 1.5),
+                            style: Theme.of(context).classicStyle(
+                              Theme.of(context).textTheme.bodyLarge,
+                              height: 1.5,
+                            ),
                           ),
                         ],
                       ),

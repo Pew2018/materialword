@@ -464,16 +464,16 @@ class _PromptCard extends StatelessWidget {
         if (question.kind == PracticeKind.cloze)
           SelectableText(
             question.prompt,
-            style: theme.textTheme.bodyLarge?.copyWith(
-              fontSize: 18,
-              height: 1.6,
-            ),
+            style: theme.classicStyle(theme.textTheme.bodyLarge, height: 1.6),
           )
         else
           SelectableText(
             question.prompt,
             textAlign: TextAlign.center,
-            style: theme.textTheme.headlineSmall?.copyWith(height: 1.4),
+            style: theme.classicStyle(
+              theme.textTheme.headlineSmall,
+              height: 1.4,
+            ),
           ),
         if (question.kind == PracticeKind.dictation && showHint) ...<Widget>[
           AppSpacing.h12,
@@ -536,7 +536,7 @@ class _FeedbackCard extends StatelessWidget {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(AppDimens.radius),
+        borderRadius: theme.surfaceRadius,
         border: Border.all(color: color.withValues(alpha: 0.4)),
       ),
       child: Column(

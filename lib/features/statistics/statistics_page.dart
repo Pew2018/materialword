@@ -392,15 +392,18 @@ class _LineRow extends StatelessWidget {
   final String value;
 
   /// Real layout indent in logical pixels for child rows (e.g. one practice
-  /// mode under Practice). Indent only — same type scale as the parent row.
+  /// mode under Practice). The child line stays [TextTheme.bodyMedium]; the
+  /// parent line is [TextTheme.bodyLarge], so the child is one step smaller.
   final double indent;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    // One bodyMedium style for every row and both sides. Child rows keep an
-    // indent but never drop to bodySmall.
-    final TextStyle? style = theme.textTheme.bodyMedium;
+    // Both sides of a row share one role. A practice child keeps the bullet
+    // prefix and bodyMedium; it does not drop to bodySmall.
+    final TextStyle? style = indent > 0
+        ? theme.textTheme.bodyMedium
+        : theme.textTheme.bodyLarge;
     return Padding(
       padding: EdgeInsets.only(left: indent),
       child: Padding(

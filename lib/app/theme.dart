@@ -49,7 +49,6 @@ class AppDimens {
   const AppDimens._();
 
   static const double appBarHeight = 56;
-  static const double appBarTitleSize = 20;
   static const double listItemHeight = 56;
   static const double twoLineItemHeight = 72;
   static const double iconSize = 24;
@@ -386,15 +385,18 @@ class AppTheme {
   ///
   /// `ElevatedButton` and `FilledButton` both point here, so the pair can never
   /// drift apart again: same background, always-white ink and icon, the same
-  /// disabled pair, the classic 2dp corner, the 88×40 minimum and the 16dp
-  /// horizontal padding. Only [elevation] differs, because an elevated button
-  /// is meant to lift off the surface while a filled one sits on it.
+  /// disabled pair and the 16dp horizontal padding. Only [elevation] differs,
+  /// because an elevated button is meant to lift off the surface while a
+  /// filled one sits on it. Material 2014 keeps the 2dp corner and the 88×40
+  /// minimum; Material 2018 passes the Material 2 4dp corner and 64×36 minimum.
   ///
   /// The overlay is white-tinted: the global splash colour follows the accent,
   /// which is invisible on top of an accent-coloured fill.
   static ButtonStyle solidButtonStyle({
     required Color background,
     double elevation = 0,
+    Size minimumSize = const Size(88, 40),
+    double radius = AppDimens.buttonRadius,
   }) {
     final Color disabledBackground = Color.lerp(
       background,
@@ -429,17 +431,12 @@ class AppTheme {
         }
         return null;
       }),
-      minimumSize: const WidgetStatePropertyAll<Size>(Size(88, 40)),
+      minimumSize: WidgetStatePropertyAll<Size>(minimumSize),
       padding: const WidgetStatePropertyAll<EdgeInsetsGeometry>(
         EdgeInsets.symmetric(horizontal: 16),
       ),
       shape: WidgetStatePropertyAll<OutlinedBorder>(
-        RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppDimens.buttonRadius),
-        ),
-      ),
-      textStyle: const WidgetStatePropertyAll<TextStyle>(
-        TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+        RoundedRectangleBorder(borderRadius: BorderRadius.circular(radius)),
       ),
     );
   }
@@ -475,18 +472,22 @@ class AppTheme {
         : AppColors.dividerLight;
 
     // Material 2014 keeps the classic sizes this app already ships.
-    // Material 2018 is Flutter's scale as-is: no size overrides.
-    final Typography typography =
-        typographyScale == TypographyScale.material2018
+    // Material 2018 is Flutter's scale as-is: no size, weight or spacing
+    // overrides. The study word's 38 / w500 / 0.2 / 1.15 lives on the 2014
+    // headline role, so the page does not write its own font metrics.
+    final bool material2018 = typographyScale == TypographyScale.material2018;
+    final Typography typography = material2018
         ? Typography.material2018(platform: platform)
         : Typography.material2014(platform: platform);
     final TextTheme base = isDark ? typography.white : typography.black;
-    final TextTheme sized = typographyScale == TypographyScale.material2018
+    final TextTheme sized = material2018
         ? base
         : base.copyWith(
             headlineMedium: base.headlineMedium?.copyWith(
-              fontSize: 26,
-              fontWeight: FontWeight.w400,
+              fontSize: 38,
+              fontWeight: FontWeight.w500,
+              letterSpacing: 0.2,
+              height: 1.15,
             ),
             headlineSmall: base.headlineSmall?.copyWith(
               fontSize: 22,
@@ -500,9 +501,13 @@ class AppTheme {
               fontSize: 16,
               fontWeight: FontWeight.w500,
             ),
-            bodyLarge: base.bodyLarge?.copyWith(fontSize: 16),
+            bodyLarge: base.bodyLarge?.copyWith(fontSize: 17),
             bodyMedium: base.bodyMedium?.copyWith(fontSize: 14),
             bodySmall: base.bodySmall?.copyWith(fontSize: 12),
+            labelLarge: base.labelLarge?.copyWith(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
           );
 
     final TextTheme textTheme = sized.apply(
@@ -559,7 +564,12 @@ class AppTheme {
       splashFactory: InkRipple.splashFactory,
       typography: typography,
       textTheme: textTheme,
-      visualDensity: VisualDensity.standard,
+      visualDensity: material2018
+          ? VisualDensity.adaptivePlatformDensity
+          : VisualDensity.standard,
+      extensions: <ThemeExtension<dynamic>>[
+        AppTypeScale(classic: !material2018),
+      ],
       materialTapTargetSize: MaterialTapTargetSize.padded,
       splashColor: primary.withValues(alpha: isDark ? 0.18 : 0.14),
       highlightColor: primary.withValues(alpha: isDark ? 0.10 : 0.08),
@@ -576,27 +586,22 @@ class AppTheme {
         unselectedIconTheme: IconThemeData(color: textSecondary),
         selectedLabelTextStyle: TextStyle(
           color: primary,
-          fontSize: 12,
-          fontWeight: FontWeight.w500,
+          fontWeight: material2018 ? null : FontWeight.w500,
         ),
-        unselectedLabelTextStyle: TextStyle(color: textSecondary, fontSize: 12),
+        unselectedLabelTextStyle: TextStyle(color: textSecondary),
       ),
     );
 
-    return base2.copyWith(
+    final ThemeData themed = base2.copyWith(
       appBarTheme: AppBarTheme(
         toolbarHeight: AppDimens.appBarHeight,
-        elevation: 1,
+        elevation: material2018 ? 4 : 1,
         centerTitle: false,
         backgroundColor: isDark
             ? Color.alphaBlend(primary.withValues(alpha: 0.16), surface)
             : filledAccent,
         foregroundColor: Colors.white,
-        titleTextStyle: TextStyle(
-          fontSize: AppDimens.appBarTitleSize,
-          fontWeight: FontWeight.w500,
-          color: Colors.white,
-        ),
+        titleTextStyle: const TextStyle(color: Colors.white),
         iconTheme: IconThemeData(size: AppDimens.iconSize, color: Colors.white),
         actionsIconTheme: IconThemeData(
           size: AppDimens.iconSize,
@@ -607,8 +612,10 @@ class AppTheme {
         elevation: 1,
         margin: EdgeInsets.zero,
         color: surface,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.all(Radius.circular(AppDimens.cardRadius)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(
+            Radius.circular(material2018 ? 4 : AppDimens.cardRadius),
+          ),
         ),
       ),
       dividerTheme: DividerThemeData(color: divider, thickness: 1, space: 1),
@@ -618,21 +625,24 @@ class AppTheme {
         minVerticalPadding: 8,
         selectedColor: primary,
         selectedTileColor: primary.withValues(alpha: 0.06),
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.all(Radius.circular(AppDimens.cardRadius)),
-        ),
+        shape: material2018
+            ? null
+            : const RoundedRectangleBorder(
+                borderRadius: BorderRadius.all(
+                  Radius.circular(AppDimens.cardRadius),
+                ),
+              ),
       ),
       bottomNavigationBarTheme: BottomNavigationBarThemeData(
         backgroundColor: surface,
         selectedItemColor: primary,
         unselectedItemColor: textSecondary,
         type: BottomNavigationBarType.fixed,
-        elevation: 3,
-        selectedLabelStyle: const TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w500,
+        elevation: material2018 ? 8 : 3,
+        selectedLabelStyle: TextStyle(
+          fontWeight: material2018 ? null : FontWeight.w500,
         ),
-        unselectedLabelStyle: const TextStyle(fontSize: 12),
+        unselectedLabelStyle: const TextStyle(),
       ),
       // One definition for both filled button classes. `FilledButton` used to
       // fall back to the Material defaults (a 20dp pill with an automatically
@@ -641,32 +651,47 @@ class AppTheme {
       // deliberate difference: an elevated button lifts off the surface, a
       // filled one sits on it.
       elevatedButtonTheme: ElevatedButtonThemeData(
-        style: solidButtonStyle(background: filledAccent, elevation: 2),
+        style: material2018
+            ? solidButtonStyle(
+                background: filledAccent,
+                elevation: 2,
+                minimumSize: const Size(64, 36),
+                radius: 4,
+              )
+            : solidButtonStyle(background: filledAccent, elevation: 2),
       ),
       filledButtonTheme: FilledButtonThemeData(
-        style: solidButtonStyle(background: filledAccent),
+        style: material2018
+            ? solidButtonStyle(
+                background: filledAccent,
+                minimumSize: const Size(64, 36),
+                radius: 4,
+              )
+            : solidButtonStyle(background: filledAccent),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          minimumSize: const Size(88, 40),
+          minimumSize: material2018 ? const Size(64, 36) : const Size(88, 40),
           padding: const EdgeInsets.symmetric(horizontal: 16),
           foregroundColor: primary,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppDimens.buttonRadius),
+            borderRadius: BorderRadius.circular(
+              material2018 ? 4 : AppDimens.buttonRadius,
+            ),
           ),
           side: BorderSide(color: divider),
-          textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
-          minimumSize: const Size(64, 40),
-          padding: const EdgeInsets.symmetric(horizontal: 12),
+          minimumSize: material2018 ? const Size(64, 36) : const Size(64, 40),
+          padding: EdgeInsets.symmetric(horizontal: material2018 ? 16 : 12),
           foregroundColor: primary,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppDimens.buttonRadius),
+            borderRadius: BorderRadius.circular(
+              material2018 ? 4 : AppDimens.buttonRadius,
+            ),
           ),
-          textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
         ),
       ),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
@@ -674,6 +699,9 @@ class AppTheme {
         foregroundColor: Colors.white,
         elevation: 6,
         shape: const CircleBorder(),
+        sizeConstraints: material2018
+            ? const BoxConstraints.tightFor(width: 56, height: 56)
+            : null,
       ),
       dialogTheme: DialogThemeData(
         elevation: 24,
@@ -688,16 +716,17 @@ class AppTheme {
         labelColor: Colors.white,
         unselectedLabelColor: Colors.white,
         indicatorColor: Colors.white,
-        labelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-        unselectedLabelStyle: const TextStyle(fontSize: 14),
+        labelStyle: TextStyle(
+          fontWeight: material2018 ? null : FontWeight.w500,
+        ),
+        unselectedLabelStyle: const TextStyle(),
       ),
       inputDecorationTheme: InputDecorationTheme(
-        isDense: true,
+        isDense: material2018 ? null : true,
         filled: false,
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 12,
-          vertical: 12,
-        ),
+        contentPadding: material2018
+            ? null
+            : const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppDimens.radius),
           borderSide: BorderSide(color: divider),
@@ -710,17 +739,18 @@ class AppTheme {
           borderRadius: BorderRadius.circular(AppDimens.radius),
           borderSide: BorderSide(color: primary, width: 2),
         ),
-        hintStyle: TextStyle(color: textSecondary, fontSize: 14),
-        labelStyle: TextStyle(color: textSecondary, fontSize: 14),
+        hintStyle: TextStyle(color: textSecondary),
+        labelStyle: TextStyle(color: textSecondary),
         prefixIconColor: textSecondary,
         suffixIconColor: textSecondary,
       ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
+        elevation: material2018 ? 6 : null,
         backgroundColor: isDark
             ? AppColors.darkSurface
             : const Color(0xFF323232),
-        contentTextStyle: const TextStyle(color: Colors.white, fontSize: 14),
+        contentTextStyle: const TextStyle(color: Colors.white),
         actionTextColor: isDark ? primary : const Color(0xFF80D8FF),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppDimens.radius),
@@ -789,9 +819,106 @@ class AppTheme {
         side: BorderSide(color: divider),
         labelStyle: textTheme.bodySmall,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppDimens.chipRadius),
+          borderRadius: BorderRadius.circular(
+            material2018 ? 16 : AppDimens.chipRadius,
+          ),
         ),
       ),
+    );
+    return withLocalizedComponentStyles(themed);
+  }
+
+  /// Copies text roles onto component themes.
+  ///
+  /// [ThemeData.localize] rewrites [ThemeData.textTheme] only. Buttons, the
+  /// app bar, bars, tabs, fields and snack bars keep the styles captured
+  /// here, so call this again with the localized theme. Material 2018 then
+  /// follows that script's 2018 sizes; 2014 keeps the pinned ones.
+  static ThemeData withLocalizedComponentStyles(ThemeData theme) {
+    final TextTheme text = theme.textTheme;
+    final TextStyle? labelLarge = text.labelLarge;
+    final TextStyle? bodyMedium = text.bodyMedium;
+    final TextStyle? bodySmall = text.bodySmall;
+
+    ButtonStyle? labeled(ButtonStyle? style) {
+      if (style == null || labelLarge == null) return style;
+      return style.copyWith(
+        textStyle: WidgetStatePropertyAll<TextStyle?>(labelLarge),
+      );
+    }
+
+    // A null weight keeps the role. Material 2014 sets w500 on the selected
+    // bar, rail and tab; Material 2018 leaves the weight unset so the role's
+    // own weight and letter spacing stay.
+    TextStyle? roleOn(TextStyle? role, TextStyle? painted, {Color? color}) {
+      if (role == null) return null;
+      return role.copyWith(
+        color: color ?? painted?.color,
+        fontWeight: painted?.fontWeight,
+      );
+    }
+
+    final TextStyle? railSelected =
+        theme.navigationRailTheme.selectedLabelTextStyle;
+    final TextStyle? railUnselected =
+        theme.navigationRailTheme.unselectedLabelTextStyle;
+
+    return theme.copyWith(
+      appBarTheme: theme.appBarTheme.copyWith(
+        titleTextStyle: text.titleLarge?.copyWith(color: Colors.white),
+      ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: labeled(theme.elevatedButtonTheme.style),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: labeled(theme.filledButtonTheme.style),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: labeled(theme.outlinedButtonTheme.style),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: labeled(theme.textButtonTheme.style),
+      ),
+      navigationRailTheme: theme.navigationRailTheme.copyWith(
+        selectedLabelTextStyle: roleOn(bodySmall, railSelected),
+        unselectedLabelTextStyle: roleOn(bodySmall, railUnselected),
+      ),
+      bottomNavigationBarTheme: theme.bottomNavigationBarTheme.copyWith(
+        selectedLabelStyle: roleOn(
+          bodySmall,
+          theme.bottomNavigationBarTheme.selectedLabelStyle,
+        ),
+        unselectedLabelStyle: roleOn(
+          bodySmall,
+          theme.bottomNavigationBarTheme.unselectedLabelStyle,
+        ),
+      ),
+      tabBarTheme: theme.tabBarTheme.copyWith(
+        labelStyle: roleOn(labelLarge, theme.tabBarTheme.labelStyle),
+        unselectedLabelStyle: roleOn(
+          labelLarge,
+          theme.tabBarTheme.unselectedLabelStyle,
+        ),
+      ),
+      inputDecorationTheme: theme.inputDecorationTheme.copyWith(
+        hintStyle: bodyMedium?.copyWith(
+          color: theme.inputDecorationTheme.hintStyle?.color,
+        ),
+        labelStyle: bodyMedium?.copyWith(
+          color: theme.inputDecorationTheme.labelStyle?.color,
+        ),
+      ),
+      snackBarTheme: theme.snackBarTheme.copyWith(
+        contentTextStyle: bodyMedium?.copyWith(
+          color: theme.snackBarTheme.contentTextStyle?.color ?? Colors.white,
+        ),
+      ),
+      dialogTheme: theme.dialogTheme.copyWith(
+        titleTextStyle: text.titleLarge,
+        contentTextStyle: text.bodyMedium,
+      ),
+      popupMenuTheme: theme.popupMenuTheme.copyWith(textStyle: text.bodyMedium),
+      chipTheme: theme.chipTheme.copyWith(labelStyle: text.bodySmall),
     );
   }
 
@@ -821,6 +948,66 @@ class AppTheme {
   /// Interactive secondary controls share the user's chosen hue.
   static Color _secondaryOf(Color accent, bool isDark) =>
       isDark ? _lighten(accent, 0.22) : accent;
+}
+
+/// Which type scale [AppTheme] built. Widgets use it to keep Material 2014
+/// weights, spacing and line heights off the Material 2018 roles.
+class AppTypeScale extends ThemeExtension<AppTypeScale> {
+  const AppTypeScale({required this.classic});
+
+  final bool classic;
+
+  @override
+  AppTypeScale copyWith({bool? classic}) =>
+      AppTypeScale(classic: classic ?? this.classic);
+
+  @override
+  AppTypeScale lerp(ThemeExtension<AppTypeScale>? other, double t) {
+    if (other is! AppTypeScale) return this;
+    return t < 0.5 ? this : other;
+  }
+}
+
+extension AppTypeScaleTheme on ThemeData {
+  bool get isClassicType => extension<AppTypeScale>()?.classic ?? true;
+
+  /// Colour and [fontStyle] always apply. Weight, spacing and line height
+  /// apply only on Material 2014.
+  TextStyle? classicStyle(
+    TextStyle? role, {
+    FontWeight? weight,
+    double? letterSpacing,
+    double? height,
+    Color? color,
+    FontStyle? fontStyle,
+  }) {
+    if (role == null) return null;
+    final TextStyle painted = role.copyWith(color: color, fontStyle: fontStyle);
+    if (!isClassicType) return painted;
+    return painted.copyWith(
+      fontWeight: weight,
+      letterSpacing: letterSpacing,
+      height: height,
+    );
+  }
+
+  BorderRadius get buttonRadius => _controlRadius(
+    elevatedButtonTheme.style?.shape?.resolve(<WidgetState>{}),
+  );
+
+  BorderRadius get cardRadius => _controlRadius(cardTheme.shape);
+
+  BorderRadius get chipRadius => _controlRadius(chipTheme.shape);
+
+  /// Dialogs, fields, menus and banners share this corner.
+  BorderRadius get surfaceRadius => _controlRadius(dialogTheme.shape);
+}
+
+BorderRadius _controlRadius(ShapeBorder? shape) {
+  if (shape is RoundedRectangleBorder && shape.borderRadius is BorderRadius) {
+    return shape.borderRadius as BorderRadius;
+  }
+  return BorderRadius.zero;
 }
 
 /// Spacing helpers so paddings stay consistent across screens.

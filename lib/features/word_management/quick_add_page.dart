@@ -779,7 +779,7 @@ class _LookupLine extends StatelessWidget {
         border: Border.all(
           color: theme.colorScheme.primary.withValues(alpha: 0.2),
         ),
-        borderRadius: BorderRadius.circular(AppDimens.radius),
+        borderRadius: theme.surfaceRadius,
       ),
       child: Row(
         children: <Widget>[

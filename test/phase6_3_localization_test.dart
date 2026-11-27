@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:materialword/app/app.dart';
+import 'package:materialword/app/appearance_store.dart';
 import 'package:materialword/app/providers.dart';
 import 'package:materialword/app/theme.dart';
 import 'package:materialword/core/errors/app_error.dart';
@@ -14,6 +15,7 @@ import 'package:materialword/l10n/l10n.dart';
 import 'package:materialword/l10n/language_store.dart';
 import 'package:materialword/services/word_intake_service.dart';
 import 'package:materialword/services/tts_service.dart';
+import 'package:materialword/shared/widgets/classic_select.dart';
 
 import 'helpers/test_env.dart';
 
@@ -274,9 +276,76 @@ void main() {
           .dy;
       expect(languageY, greaterThan(accentY), reason: '语言入口必须在强调色区域下方');
 
-      await _reveal(tester, find.text(l10n.typographyMaterial2018));
-      expect(find.text(l10n.typographyMaterial2014), findsOneWidget);
-      expect(find.text(l10n.typographyMaterial2018), findsOneWidget);
+      await _reveal(tester, find.text(l10n.typographyScale));
+      expect(find.text(l10n.typographyScale), findsOneWidget);
+      final double typeY = tester
+          .getTopLeft(find.text(l10n.typographyScale))
+          .dy;
+      expect(typeY, greaterThan(languageY), reason: '字体风格在语言选择下方');
+      expect(find.byType(RadioListTile<String>), findsNWidgets(3));
+    });
+
+    testWidgets('字体风格与语言共用选择框，选中后保存 Material 2018', (tester) async {
+      final TestEnv env = await _pumpApp(tester, size: const Size(920, 1400));
+      final AppLocalizations l10n = await AppLocalizations.delegate.load(
+        const Locale('zh'),
+      );
+      expect(
+        (await env.settings.load()).typographyScale,
+        TypographyScale.material2014.code,
+      );
+
+      await tester.tap(find.text(l10n.navSettings).last);
+      await _settle(tester);
+      final Finder select = find.byType(ClassicSelect<TypographyScale>);
+      await _reveal(tester, select);
+      expect(find.text(l10n.typographyMaterial2018), findsNothing);
+
+      await tester.tap(select);
+      await _settle(tester);
+      await tester.tap(find.text(l10n.typographyMaterial2018));
+      await _settle(tester);
+
+      expect(
+        (await env.settings.load()).typographyScale,
+        TypographyScale.material2018.code,
+      );
+    });
+
+    test('默认和两行旧快照仍是 Material 2014', () async {
+      expect(
+        AppearanceSnapshot.defaults().typography,
+        TypographyScale.material2014,
+      );
+      final Directory support = await Directory.systemTemp.createTemp(
+        'mw_type_legacy',
+      );
+      final Directory documents = await Directory.systemTemp.createTemp(
+        'mw_type_legacy_docs',
+      );
+      addTearDown(() async {
+        if (support.existsSync()) support.deleteSync(recursive: true);
+        if (documents.existsSync()) documents.deleteSync(recursive: true);
+      });
+      File(
+        '${support.path}${Platform.pathSeparator}'
+        '${DeviceAppearanceStore.fileName}',
+      ).writeAsStringSync('light\n#1565C0\n');
+      final AppearanceStore loaded = await DeviceAppearanceStore.load(
+        supportDirectory: support,
+        documentsDirectory: documents,
+      );
+      expect(loaded.current.typography, TypographyScale.material2014);
+
+      File(
+        '${support.path}${Platform.pathSeparator}'
+        '${DeviceAppearanceStore.fileName}',
+      ).writeAsStringSync('dark\n#009688\n');
+      final AppearanceStore second = await DeviceAppearanceStore.load(
+        supportDirectory: support,
+        documentsDirectory: documents,
+      );
+      expect(second.current.typography, TypographyScale.material2014);
     });
 
     testWidgets('LANG05/LANG06/LANG11 切换语言即时生效且不丢路由', (tester) async {

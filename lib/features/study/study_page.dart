@@ -520,12 +520,7 @@ class _WordBody extends StatelessWidget {
         SelectableText(
           word.word,
           textAlign: TextAlign.center,
-          style: theme.textTheme.headlineMedium?.copyWith(
-            fontSize: 38,
-            fontWeight: FontWeight.w500,
-            letterSpacing: 0.2,
-            height: 1.15,
-          ),
+          style: theme.textTheme.headlineMedium,
         ),
         const SizedBox(height: 6),
         Row(
@@ -639,10 +634,7 @@ class _WordBody extends StatelessWidget {
             word.translation.isEmpty
                 ? context.l10n.noChineseMeaning
                 : word.translation,
-            style: theme.textTheme.bodyLarge?.copyWith(
-              fontSize: 17,
-              height: 1.6,
-            ),
+            style: theme.classicStyle(theme.textTheme.bodyLarge, height: 1.6),
           ),
           if (word.definition.isNotEmpty) ...<Widget>[
             AppSpacing.h12,
@@ -651,7 +643,8 @@ class _WordBody extends StatelessWidget {
               expanded: false,
               child: Text(
                 word.definition,
-                style: theme.textTheme.bodyMedium?.copyWith(
+                style: theme.classicStyle(
+                  theme.textTheme.bodyMedium,
                   height: 1.55,
                   color: theme.textTheme.bodySmall?.color,
                 ),
@@ -732,9 +725,10 @@ class _DisclosureSectionState extends State<_DisclosureSection> {
                 AppSpacing.w4,
                 Text(
                   widget.title,
-                  style: theme.textTheme.bodyMedium?.copyWith(
+                  style: theme.classicStyle(
+                    theme.textTheme.bodyMedium,
                     color: theme.colorScheme.primary,
-                    fontWeight: FontWeight.w500,
+                    weight: FontWeight.w500,
                   ),
                 ),
               ],
@@ -776,7 +770,8 @@ class _LabeledBlock extends StatelessWidget {
         Expanded(
           child: SelectableText(
             child,
-            style: theme.textTheme.bodyMedium?.copyWith(
+            style: theme.classicStyle(
+              theme.textTheme.bodyMedium,
               height: 1.5,
               fontStyle: italic ? FontStyle.italic : FontStyle.normal,
             ),
@@ -893,6 +888,7 @@ class _AnswerButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final TextTheme text = Theme.of(context).textTheme;
     return Expanded(
       child: SizedBox(
         height: 48,
@@ -905,7 +901,7 @@ class _AnswerButton extends StatelessWidget {
             padding: EdgeInsets.zero,
             minimumSize: const Size.fromHeight(48),
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(AppDimens.buttonRadius),
+              borderRadius: Theme.of(context).buttonRadius,
             ),
           ),
           child: Column(
@@ -913,15 +909,16 @@ class _AnswerButton extends StatelessWidget {
             children: <Widget>[
               Text(
                 label,
-                style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w500,
+                style: Theme.of(context).classicStyle(
+                  text.titleSmall,
+                  color: Colors.white,
+                  weight: FontWeight.w500,
                 ),
               ),
               if (shortcut != null)
                 Text(
                   shortcut!,
-                  style: const TextStyle(fontSize: 11, color: Colors.white70),
+                  style: text.labelSmall?.copyWith(color: Colors.white70),
                 ),
             ],
           ),

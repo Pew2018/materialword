@@ -74,6 +74,12 @@ class MaterialWordApp extends ConsumerWidget {
       supportedLocales: AppLocalizations.supportedLocales,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       home: showShell ? const AppShell() : const _PendingAppearance(),
+      builder: (BuildContext context, Widget? child) {
+        return Theme(
+          data: AppTheme.withLocalizedComponentStyles(Theme.of(context)),
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
     );
   }
 }

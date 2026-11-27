@@ -619,12 +619,17 @@ class _BottomNavItem extends StatelessWidget {
                     destination.label(context.l10n),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 12,
-                      height: 1.1,
-                      color: animatedColor,
-                      fontWeight: selected ? FontWeight.w500 : FontWeight.w400,
-                    ),
+                    style: () {
+                      final ThemeData theme = Theme.of(context);
+                      final TextStyle? label = theme.textTheme.bodySmall
+                          ?.copyWith(height: 1.1, color: animatedColor);
+                      if (!theme.isClassicType) return label;
+                      return label?.copyWith(
+                        fontWeight: selected
+                            ? FontWeight.w500
+                            : FontWeight.w400,
+                      );
+                    }(),
                   ),
                 ),
               ],
@@ -670,8 +675,9 @@ class _SideNavigation extends StatelessWidget {
                         'MaterialWord',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
+                        style: theme.classicStyle(
+                          theme.textTheme.titleMedium,
+                          weight: FontWeight.w600,
                         ),
                       ),
                     ),
@@ -742,7 +748,7 @@ class _RailItem extends StatelessWidget {
           color: selected
               ? theme.colorScheme.primary.withValues(alpha: 0.06)
               : Colors.transparent,
-          borderRadius: BorderRadius.circular(AppDimens.cardRadius),
+          borderRadius: theme.cardRadius,
           clipBehavior: Clip.hardEdge,
           child: InkWell(
             onTap: onTap,
@@ -766,12 +772,14 @@ class _RailItem extends StatelessWidget {
                         destination.label(context.l10n),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodyLarge?.copyWith(
-                          color: color,
-                          fontWeight: selected
-                              ? FontWeight.w500
-                              : FontWeight.w400,
-                        ),
+                        style: theme.isClassicType
+                            ? theme.textTheme.bodyLarge?.copyWith(
+                                color: color,
+                                fontWeight: selected
+                                    ? FontWeight.w500
+                                    : FontWeight.w400,
+                              )
+                            : theme.textTheme.bodyLarge?.copyWith(color: color),
                       ),
                     ),
                   ],

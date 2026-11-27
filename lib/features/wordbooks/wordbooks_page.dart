@@ -200,7 +200,7 @@ class WordBooksPage extends ConsumerWidget {
                         const SizedBox(height: 8),
                         Text(
                           context.l10n.exportContentNote,
-                          style: const TextStyle(fontSize: 12),
+                          style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ],
                     ),
@@ -582,7 +582,7 @@ class _BookRow extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(right: 12),
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(2),
+                borderRadius: theme.cardRadius,
                 child: LinearProgressIndicator(
                   value: summary.progress,
                   minHeight: 3,

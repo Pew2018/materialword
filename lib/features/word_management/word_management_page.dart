@@ -1000,8 +1000,9 @@ class _WordDetailPaneState extends ConsumerState<_WordDetailPane> {
             Expanded(
               child: Text(
                 row.word.word,
-                style: theme.textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w500,
+                style: theme.classicStyle(
+                  theme.textTheme.headlineSmall,
+                  weight: FontWeight.w500,
                 ),
               ),
             ),
@@ -1016,13 +1017,13 @@ class _WordDetailPaneState extends ConsumerState<_WordDetailPane> {
           translation.isEmpty
               ? context.l10n.noChineseMeaningShort
               : translation,
-          style: theme.textTheme.bodyLarge?.copyWith(height: 1.5),
+          style: theme.classicStyle(theme.textTheme.bodyLarge, height: 1.5),
         ),
         if (definition.isNotEmpty) ...<Widget>[
           AppSpacing.h8,
           Text(
             definition,
-            style: theme.textTheme.bodySmall?.copyWith(height: 1.5),
+            style: theme.classicStyle(theme.textTheme.bodySmall, height: 1.5),
           ),
         ],
         AppSpacing.h16,
