@@ -521,7 +521,7 @@
   "dictionaryResultsCount": "查询结果（{count}）",
   "noDictionaryMatch": "词典中没有此单词。你可以手动添加，稍后补充释义。",
   "addTermAsWord": "添加「{term}」",
-  "dictionaryHint": "点右侧「+」把单词加入当前词书；已有单词会保留学习进度和笔记。",
+  "dictionaryHint": "点一行查看单词。点右侧「+」把单词加入当前词书；已有单词会保留学习进度和笔记。",
   "dictionarySearchFailed": "无法查询词典。",
   "addFailed": "添加失败，请重试。",
   "tagCreateFirst": "请先在标签管理中创建标签。",

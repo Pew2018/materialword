@@ -1217,7 +1217,7 @@
       }
     }
   },
-  "dictionaryHint": "Use + to add a word to the current list. Existing words keep their progress and notes.",
+  "dictionaryHint": "Tap a row to view the word. Use + to add it to the current list. Existing words keep their progress and notes.",
   "dictionarySearchFailed": "Couldn't search the dictionary.",
   "addFailed": "Couldn't add. Try again.",
   "tagCreateFirst": "Create a tag in Tags first.",

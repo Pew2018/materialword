@@ -15,6 +15,7 @@ import '../../services/dictionary_service.dart';
 import '../../services/word_form_guesser.dart';
 import '../../services/word_intake_service.dart';
 import '../../shared/widgets/common.dart';
+import '../word_management/word_detail_page.dart';
 
 /// Offline dictionary search. Words can be pushed straight into the current book.
 ///
@@ -35,6 +36,7 @@ class _DictionaryPageState extends ConsumerState<DictionaryPage> {
   Timer? _debounce;
   List<DictionaryEntry> _results = const <DictionaryEntry>[];
   List<WordWithState> _mine = const <WordWithState>[];
+  Map<String, Word> _owned = const <String, Word>{};
   bool _searching = false;
   String? _error;
   String _term = '';
@@ -111,6 +113,7 @@ class _DictionaryPageState extends ConsumerState<DictionaryPage> {
       if (term.isEmpty) {
         _results = const <DictionaryEntry>[];
         _mine = const <WordWithState>[];
+        _owned = const <String, Word>{};
         _forms = const <WordFormCandidate>[];
       }
     });
@@ -126,7 +129,10 @@ class _DictionaryPageState extends ConsumerState<DictionaryPage> {
       );
       final List<WordWithState> mine = await ref
           .read(wordRepositoryProvider)
-          .listWords(query: term, limit: 20);
+          .listWords(query: term, limit: 20, matchDefinition: false);
+      final Map<String, Word> owned = await ref
+          .read(wordRepositoryProvider)
+          .byNormalizedKeys(found.map((DictionaryEntry entry) => entry.word));
       // Base-form hints are only ever shown when the candidate really exists in
       // the dictionary; the app never invents a relation or merges two entries.
       final List<WordFormCandidate> forms = <WordFormCandidate>[];
@@ -148,6 +154,7 @@ class _DictionaryPageState extends ConsumerState<DictionaryPage> {
       setState(() {
         _results = found;
         _mine = mine;
+        _owned = owned;
         _forms = forms;
         _searching = false;
         _error = null;
@@ -160,6 +167,43 @@ class _DictionaryPageState extends ConsumerState<DictionaryPage> {
         _error = context.l10n.dictionarySearchFailed;
       });
     }
+  }
+
+  Future<void> _openSaved(Word word) async {
+    final StudySettingsRow settings = await ref
+        .read(settingsRepositoryProvider)
+        .load();
+    final String? current = settings.currentWordBookId;
+    String? bookId;
+    if (current != null) {
+      final Set<String> linked = await ref
+          .read(wordBookRepositoryProvider)
+          .liveWordIds(current, <String>[word.id]);
+      if (linked.contains(word.id)) bookId = current;
+    }
+    if (!mounted) return;
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) =>
+            WordDetailPage(wordId: word.id, bookId: bookId),
+      ),
+    );
+    if (mounted && _term.isNotEmpty) await _run(_term);
+  }
+
+  Future<void> _openEntry(DictionaryEntry entry) async {
+    final Word? saved = _owned[entry.word];
+    if (saved != null) {
+      await _openSaved(saved);
+      return;
+    }
+    if (!mounted) return;
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) => WordDetailPage.preview(entry: entry),
+      ),
+    );
+    if (mounted && _term.isNotEmpty) await _run(_term);
   }
 
   Future<void> _add(DictionaryEntry entry) async {
@@ -333,21 +377,7 @@ class _DictionaryPageState extends ConsumerState<DictionaryPage> {
                             : context.l10n.unlearnedLabel,
                         dense: true,
                       ),
-                      onTap: () => _add(
-                        DictionaryEntry(
-                          word: row.word.normalized,
-                          display: row.word.word,
-                          phonetic: row.word.phonetic,
-                          partOfSpeech: row.word.partOfSpeech,
-                          translation: row.word.translation,
-                          definition: row.word.definition,
-                          examTags: row.word.examTags,
-                          bncRank: row.word.bncRank,
-                          frqRank: row.word.frqRank,
-                          collins: 0,
-                          oxford: 0,
-                        ),
-                      ),
+                      onTap: () => _openSaved(row.word),
                     ),
                 ],
               ),
@@ -394,6 +424,7 @@ class _DictionaryPageState extends ConsumerState<DictionaryPage> {
                   for (final DictionaryEntry entry in _results)
                     SettingsTile(
                       title: entry.display,
+                      onTap: () => _openEntry(entry),
                       subtitle: [
                         if (entry.phonetic.isNotEmpty) '/${entry.phonetic}/',
                         if (entry.translation.isNotEmpty)

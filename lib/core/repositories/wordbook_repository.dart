@@ -299,6 +299,24 @@ SELECT b.id, b.name, b.description, b.source_type, b.source_url,
     return removed;
   }
 
+  /// Live membership of [wordIds] in [bookId]. Tombstoned links are excluded.
+  Future<Set<String>> liveWordIds(
+    String bookId,
+    Iterable<String> wordIds,
+  ) async {
+    final List<String> ids = wordIds.toSet().toList(growable: false);
+    if (ids.isEmpty) return const <String>{};
+    final List<WordBookEntry> rows =
+        await (db.select(db.wordBookEntries)..where(
+              (t) =>
+                  t.wordBookId.equals(bookId) &
+                  t.wordId.isIn(ids) &
+                  t.deletedAt.isNull(),
+            ))
+            .get();
+    return rows.map((WordBookEntry row) => row.wordId).toSet();
+  }
+
   Future<int> wordCount(String bookId) async {
     final QueryRow row = await db
         .customSelect(

@@ -1763,7 +1763,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get dictionaryHint => '点右侧「+」把单词加入当前词书；已有单词会保留学习进度和笔记。';
+  String get dictionaryHint => '点一行查看单词。点右侧「+」把单词加入当前词书；已有单词会保留学习进度和笔记。';
 
   @override
   String get dictionarySearchFailed => '无法查询词典。';

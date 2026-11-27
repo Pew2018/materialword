@@ -3227,7 +3227,7 @@ abstract class AppLocalizations {
   /// No description provided for @dictionaryHint.
   ///
   /// In en, this message translates to:
-  /// **'Use + to add a word to the current list. Existing words keep their progress and notes.'**
+  /// **'Tap a row to view the word. Use + to add it to the current list. Existing words keep their progress and notes.'**
   String get dictionaryHint;
 
   /// No description provided for @dictionarySearchFailed.

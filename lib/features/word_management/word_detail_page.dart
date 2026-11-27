@@ -12,16 +12,28 @@ import '../../l10n/relative_time.dart';
 import '../../l10n/source_labels.dart';
 import '../../core/text/dictionary_text.dart';
 import '../../core/time_utils.dart';
+import '../../services/dictionary_service.dart';
 import '../../shared/widgets/common.dart';
 import 'word_metadata_widgets.dart';
 
 /// Edit one word: meaning, phonetic, examples, personal note — plus its current
 /// learning state and raw answer history.
+///
+/// [WordDetailPage.preview] shows the same word-info layout for a dictionary
+/// entry that has not been saved. It does not write a word row.
 class WordDetailPage extends ConsumerStatefulWidget {
-  const WordDetailPage({super.key, required this.wordId, this.bookId});
+  const WordDetailPage({super.key, required String wordId, this.bookId})
+    : wordId = wordId,
+      preview = null;
 
-  final String wordId;
+  const WordDetailPage.preview({super.key, required DictionaryEntry entry})
+    : wordId = null,
+      bookId = null,
+      preview = entry;
+
+  final String? wordId;
   final String? bookId;
+  final DictionaryEntry? preview;
 
   @override
   ConsumerState<WordDetailPage> createState() => _WordDetailPageState();
@@ -47,7 +59,7 @@ class _WordDetailPageState extends ConsumerState<WordDetailPage> {
   @override
   void initState() {
     super.initState();
-    _load();
+    if (widget.preview == null) _load();
   }
 
   @override
@@ -68,18 +80,18 @@ class _WordDetailPageState extends ConsumerState<WordDetailPage> {
   }
 
   Future<void> _load() async {
-    final Word? word = await ref
-        .read(wordRepositoryProvider)
-        .byId(widget.wordId);
+    final String? wordId = widget.wordId;
+    if (wordId == null) return;
+    final Word? word = await ref.read(wordRepositoryProvider).byId(wordId);
     final LearningState? state = await ref
         .read(wordRepositoryProvider)
-        .stateFor(widget.wordId);
+        .stateFor(wordId);
     final List<ReviewEvent> events = await ref
         .read(wordRepositoryProvider)
-        .eventsForWord(widget.wordId);
+        .eventsForWord(wordId);
     final manualMastery = await ref
         .read(studyRepositoryProvider)
-        .hasManualMastery(widget.wordId);
+        .hasManualMastery(wordId);
     if (!mounted) return;
     setState(() {
       _manualMastery = manualMastery;
@@ -102,13 +114,14 @@ class _WordDetailPageState extends ConsumerState<WordDetailPage> {
   }
 
   Future<void> _save() async {
-    if (_wordRow == null) return;
+    final String? wordId = widget.wordId;
+    if (_wordRow == null || wordId == null) return;
     setState(() => _saving = true);
     try {
       await ref
           .read(wordRepositoryProvider)
           .updateContent(
-            widget.wordId,
+            wordId,
             text: _word.text,
             phonetic: _phonetic.text,
             partOfSpeech: _pos.text,
@@ -167,11 +180,12 @@ class _WordDetailPageState extends ConsumerState<WordDetailPage> {
           ? context.l10n.unmarkMastered
           : context.l10n.markMastered,
     );
-    if (!ok || !mounted) return;
+    final String? wordId = widget.wordId;
+    if (!ok || !mounted || wordId == null) return;
     final String device = await ref.read(settingsRepositoryProvider).deviceId();
     final repo = ref.read(studyRepositoryProvider);
     await (undo ? repo.unmarkMastered : repo.markMastered)(
-      wordId: widget.wordId,
+      wordId: wordId,
       deviceId: device,
       now: ref.read(clockProvider).now(),
       eventId: const Uuid().v4(),
@@ -189,12 +203,13 @@ class _WordDetailPageState extends ConsumerState<WordDetailPage> {
       confirmLabel: context.l10n.reset,
       destructive: true,
     );
-    if (!ok) return;
+    final String? wordId = widget.wordId;
+    if (!ok || wordId == null) return;
     final String device = await ref.read(settingsRepositoryProvider).deviceId();
     await ref
         .read(studyRepositoryProvider)
         .resetProgress(
-          wordId: widget.wordId,
+          wordId: wordId,
           deviceId: device,
           now: ref.read(clockProvider).now(),
           eventId: const Uuid().v4(),
@@ -206,6 +221,9 @@ class _WordDetailPageState extends ConsumerState<WordDetailPage> {
 
   @override
   Widget build(BuildContext context) {
+    final DictionaryEntry? preview = widget.preview;
+    if (preview != null) return _DictionaryPreview(entry: preview);
+    final String wordId = widget.wordId!;
     final ThemeData theme = Theme.of(context);
     if (_loading) {
       return Scaffold(
@@ -227,7 +245,7 @@ class _WordDetailPageState extends ConsumerState<WordDetailPage> {
       appBar: ClassicAppBar(
         title: Text(_wordRow!.word),
         actions: <Widget>[
-          FavoriteButton(wordId: widget.wordId),
+          FavoriteButton(wordId: wordId),
           PopupMenuButton<String>(
             onSelected: (String value) async {
               switch (value) {
@@ -240,7 +258,8 @@ class _WordDetailPageState extends ConsumerState<WordDetailPage> {
                 case 'reset':
                   await _resetProgress();
                 case 'remove':
-                  if (widget.bookId == null) return;
+                  final String? bookId = widget.bookId;
+                  if (bookId == null) return;
                   final bool ok = await confirmDialog(
                     context,
                     title: context.l10n.removeFromWordList,
@@ -254,8 +273,8 @@ class _WordDetailPageState extends ConsumerState<WordDetailPage> {
                   await ref
                       .read(wordBookRepositoryProvider)
                       .removeWord(
-                        widget.bookId!,
-                        widget.wordId,
+                        bookId,
+                        wordId,
                         now: ref.read(clockProvider).now(),
                       );
                   ref.invalidate(bookSummariesProvider);
@@ -273,10 +292,7 @@ class _WordDetailPageState extends ConsumerState<WordDetailPage> {
                   if (!ok) return;
                   await ref
                       .read(wordRepositoryProvider)
-                      .softDelete(
-                        widget.wordId,
-                        now: ref.read(clockProvider).now(),
-                      );
+                      .softDelete(wordId, now: ref.read(clockProvider).now());
                   ref.invalidate(bookSummariesProvider);
                   ref.invalidate(statisticsProvider);
                   ref.invalidate(todayProgressProvider);
@@ -321,7 +337,7 @@ class _WordDetailPageState extends ConsumerState<WordDetailPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                WordTagsEditor(wordId: widget.wordId),
+                WordTagsEditor(wordId: wordId),
                 _StateCard(word: _wordRow!, state: _state),
                 AppSpacing.h16,
                 SectionCard(
@@ -566,6 +582,70 @@ class _StateCard extends StatelessWidget {
               style: theme.textTheme.bodySmall,
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Read-only word info for a dictionary hit that is not in the library yet.
+class _DictionaryPreview extends StatelessWidget {
+  const _DictionaryPreview({required this.entry});
+
+  final DictionaryEntry entry;
+
+  @override
+  Widget build(BuildContext context) {
+    final String translation = normalizeDictionaryText(entry.translation);
+    final String definition = normalizeDictionaryText(entry.definition);
+    final List<(String, String)> fields = <(String, String)>[
+      (context.l10n.wordField, entry.display),
+      if (entry.phonetic.isNotEmpty) (context.l10n.phonetics, entry.phonetic),
+      if (entry.partOfSpeech.isNotEmpty)
+        (context.l10n.partOfSpeech, entry.partOfSpeech),
+      if (translation.isNotEmpty) (context.l10n.chineseMeaning, translation),
+      if (definition.isNotEmpty) (context.l10n.englishDefinition, definition),
+    ];
+    return Scaffold(
+      appBar: ClassicAppBar(title: Text(entry.display)),
+      body: ListView(
+        padding: const EdgeInsets.all(AppDimens.gutter),
+        children: <Widget>[
+          ContentWidth(
+            maxWidth: 760,
+            child: SectionCard(
+              title: context.l10n.wordInfo,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  for (final (String label, String value) in fields)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            label,
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            value,
+                            style: Theme.of(context).textTheme.bodyLarge
+                                ?.copyWith(height: 1.5),
+                          ),
+                        ],
+                      ),
+                    ),
+                  if (entry.tagLabel.isNotEmpty)
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TagChip(label: entry.tagLabel, dense: true),
+                    ),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
     );

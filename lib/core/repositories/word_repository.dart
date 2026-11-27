@@ -55,6 +55,22 @@ class WordRepository {
     return query.getSingleOrNull();
   }
 
+  /// Live words keyed by their normalised spelling. Unknown keys are omitted.
+  Future<Map<String, Word>> byNormalizedKeys(Iterable<String> keys) async {
+    final List<String> normalized = keys
+        .map(normalizeWordKey)
+        .where((String key) => key.isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+    if (normalized.isEmpty) return const <String, Word>{};
+    final List<Word> rows =
+        await (db.select(db.words)..where(
+              (t) => t.normalized.isIn(normalized) & t.deletedAt.isNull(),
+            ))
+            .get();
+    return <String, Word>{for (final Word word in rows) word.normalized: word};
+  }
+
   /// Full text-ish search over word, translation and note.
   ///
   /// Callers that show the result of an *async* search must guard against
@@ -88,20 +104,26 @@ class WordRepository {
     return watchSearch(query, bookId: bookId, limit: limit);
   }
 
+  /// [matchDefinition] includes the English definition. The dictionary page
+  /// turns it off so a gloss such as "observe" cannot surface an unrelated
+  /// headword; word lists keep it on.
   Future<List<WordWithState>> listWords({
     String? bookId,
     String query = '',
     int limit = listLimit,
+    bool matchDefinition = true,
   }) {
     final needle = '%${query.trim().toLowerCase()}%';
     final joined = _joinedWords(bookId);
     if (query.trim().isNotEmpty) {
-      joined.where(
-        db.words.normalized.like(needle) |
-            db.words.translation.like(needle) |
-            db.words.definition.like(needle) |
-            db.words.note.like(needle),
-      );
+      Expression<bool> match =
+          db.words.normalized.like(needle) |
+          db.words.translation.like(needle) |
+          db.words.note.like(needle);
+      if (matchDefinition) {
+        match = match | db.words.definition.like(needle);
+      }
+      joined.where(match);
     }
     joined.orderBy([
       OrderingTerm(expression: db.words.normalized),

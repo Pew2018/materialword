@@ -1972,7 +1972,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get dictionaryHint =>
-      'Use + to add a word to the current list. Existing words keep their progress and notes.';
+      'Tap a row to view the word. Use + to add it to the current list. Existing words keep their progress and notes.';
 
   @override
   String get dictionarySearchFailed => 'Couldn\'t search the dictionary.';

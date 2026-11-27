@@ -228,7 +228,7 @@
 | 219 | `dictMissingNote` | 词典未收录也可以直接保存，之后可在单词详情中补充释义。 | You can save even if the dictionary doesn't have it, and fill in the meaning later. | quick_add_page.dart |
 | 220 | `dictNotFoundManual` | 未找到释义，可手动添加。 | No meaning found. You can add one by hand. | quick_add_page.dart |
 | 221 | `dictionaryEmptyBody` | 在 {count} 个英语单词中查找，并可直接加入词书。 | Search {count} English words and add them straight to a word list. | dictionary_page.dart |
-| 222 | `dictionaryHint` | 点右侧「+」把单词加入当前词书；已有单词会保留学习进度和笔记。 | Use + to add a word to the current list. Existing words keep their progress and notes. | dictionary_page.dart |
+| 222 | `dictionaryHint` | 点一行查看单词。点右侧「+」把单词加入当前词书；已有单词会保留学习进度和笔记。 | Tap a row to view the word. Use + to add it to the current list. Existing words keep their progress and notes. | dictionary_page.dart |
 | 223 | `dictionaryResultsCount` | 查询结果（{count}） | Results ({count}) | dictionary_page.dart |
 | 224 | `dictionarySearchFailed` | 无法查询词典。 | Couldn't search the dictionary. | dictionary_page.dart |
 | 225 | `difficultWords` | 困难词 | Difficult Words | dashboard_page.dart, sprint_page.dart, statistics_page.dart |
