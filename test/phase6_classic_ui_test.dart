@@ -78,6 +78,47 @@ void main() {
     );
     // Nothing in the app is allowed to reintroduce the 10–12dp button.
     expect(AppDimens.buttonRadius, lessThanOrEqualTo(4));
+
+    final ThemeData classic = ThemeData.localize(
+      theme,
+      Typography.material2014(platform: theme.platform).englishLike,
+    );
+    expect(classic.textTheme.headlineMedium?.fontSize, 26);
+    expect(classic.textTheme.headlineSmall?.fontSize, 22);
+    expect(classic.textTheme.bodyMedium?.fontSize, 14);
+    expect(classic.textTheme.titleMedium?.fontWeight, FontWeight.w500);
+
+    final TextTheme stock = Typography.material2018(platform: theme.platform)
+        .englishLike;
+    final ThemeData modern = ThemeData.localize(
+      AppTheme.light(typography: TypographyScale.material2018),
+      stock,
+    );
+    expect(modern.useMaterial3, isFalse);
+    expect(
+      radiusOf(modern.elevatedButtonTheme.style),
+      BorderRadius.circular(2),
+    );
+    expect(
+      modern.textTheme.headlineMedium?.fontSize,
+      stock.headlineMedium?.fontSize,
+    );
+    expect(
+      modern.textTheme.headlineSmall?.fontSize,
+      stock.headlineSmall?.fontSize,
+    );
+    expect(
+      modern.textTheme.titleMedium?.fontWeight,
+      stock.titleMedium?.fontWeight,
+    );
+    expect(
+      modern.textTheme.bodyLarge?.letterSpacing,
+      stock.bodyLarge?.letterSpacing,
+    );
+    expect(
+      modern.appBarTheme.titleTextStyle?.fontSize,
+      AppDimens.appBarTitleSize,
+    );
   });
 
   testWidgets('bottom bar: five equal rectangles, no tint, no pill', (

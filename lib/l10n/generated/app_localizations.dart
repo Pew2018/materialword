@@ -296,6 +296,30 @@ abstract class AppLocalizations {
   /// **'Dark'**
   String get themeDark;
 
+  /// No description provided for @typographyScale.
+  ///
+  /// In en, this message translates to:
+  /// **'Typography'**
+  String get typographyScale;
+
+  /// No description provided for @typographyMaterial2014.
+  ///
+  /// In en, this message translates to:
+  /// **'Material 2014'**
+  String get typographyMaterial2014;
+
+  /// No description provided for @typographyMaterial2018.
+  ///
+  /// In en, this message translates to:
+  /// **'Material 2018'**
+  String get typographyMaterial2018;
+
+  /// No description provided for @typographyScaleHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Material 2014 keeps the current type sizes. Material 2018 uses Flutter\'s 2018 type scale. Buttons and the app bar stay as they are.'**
+  String get typographyScaleHint;
+
   /// No description provided for @accentColor.
   ///
   /// In en, this message translates to:

@@ -26,7 +26,11 @@ void main() {
         supportDirectory: support,
         documentsDirectory: documents,
       );
-      await created.write(theme: ThemePreference.light, accentColor: '#009688');
+      await created.write(
+        theme: ThemePreference.light,
+        accentColor: '#009688',
+        typography: TypographyScale.material2014,
+      );
 
       final AppearanceStore loaded = await DeviceAppearanceStore.load(
         supportDirectory: support,
@@ -35,6 +39,43 @@ void main() {
       expect(loaded.current.trusted, isTrue);
       expect(loaded.current.theme, ThemePreference.light);
       expect(loaded.current.accentColor, '#009688');
+      expect(loaded.current.typography, TypographyScale.material2014);
+    });
+
+    test('两行旧快照仍是 Material 2014', () async {
+      final Directory support = await _temp('mw_appearance_legacy');
+      final Directory documents = await _temp('mw_docs_legacy_type');
+      File(
+        '${support.path}${Platform.pathSeparator}'
+        '${DeviceAppearanceStore.fileName}',
+      ).writeAsStringSync('dark\n#009688\n');
+      final AppearanceStore loaded = await DeviceAppearanceStore.load(
+        supportDirectory: support,
+        documentsDirectory: documents,
+      );
+      expect(loaded.current.trusted, isTrue);
+      expect(loaded.current.theme, ThemePreference.dark);
+      expect(loaded.current.accentColor, '#009688');
+      expect(loaded.current.typography, TypographyScale.material2014);
+    });
+
+    test('第三行记下 Material 2018', () async {
+      final Directory support = await _temp('mw_appearance_2018');
+      final Directory documents = await _temp('mw_docs_2018');
+      final AppearanceStore created = await DeviceAppearanceStore.load(
+        supportDirectory: support,
+        documentsDirectory: documents,
+      );
+      await created.write(
+        theme: ThemePreference.light,
+        accentColor: '#1565C0',
+        typography: TypographyScale.material2018,
+      );
+      final AppearanceStore loaded = await DeviceAppearanceStore.load(
+        supportDirectory: support,
+        documentsDirectory: documents,
+      );
+      expect(loaded.current.typography, TypographyScale.material2018);
     });
 
     test('坏内容视为没有快照：旧安装不可信，新安装回退默认可信', () async {
@@ -165,10 +206,15 @@ void main() {
         ),
         documentsDirectory: documents,
       );
-      await store.write(theme: ThemePreference.dark, accentColor: '#009688');
+      await store.write(
+        theme: ThemePreference.dark,
+        accentColor: '#009688',
+        typography: TypographyScale.material2018,
+      );
       expect(store.current.trusted, isTrue);
       expect(store.current.theme, ThemePreference.dark);
       expect(store.current.accentColor, '#009688');
+      expect(store.current.typography, TypographyScale.material2018);
     });
   });
 
@@ -342,6 +388,7 @@ Future<Directory> _temp(String prefix) async {
 StudySettingsRow _settings({
   String themeMode = 'system',
   String accentColor = '#1565C0',
+  String typographyScale = 'material2014',
 }) {
   return StudySettingsRow(
     id: 1,
@@ -350,6 +397,7 @@ StudySettingsRow _settings({
     studyMode: 'mixed',
     themeMode: themeMode,
     accentColor: accentColor,
+    typographyScale: typographyScale,
     ttsVoice: '',
     ttsLocale: 'en-US',
     ttsRate: 50,

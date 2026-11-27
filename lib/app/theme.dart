@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
 
+import '../core/models/enums.dart';
+
 /// Static colours that are *not* part of the accent system: surfaces, text and
 /// the three answer levels. Everything that should react to the user's accent
 /// colour comes from `Theme.of(context).colorScheme` instead of these values.
@@ -309,23 +311,35 @@ Color parseAccent(String? stored) {
 class AppTheme {
   const AppTheme._();
 
-  static ThemeData light({Color? accent, TargetPlatform? platform}) => _build(
+  static ThemeData light({
+    Color? accent,
+    TargetPlatform? platform,
+    TypographyScale typography = TypographyScale.material2014,
+  }) => _build(
     Brightness.light,
     accent ?? AppColors.defaultAccent,
     platform ?? defaultTargetPlatform,
+    typography,
   );
 
-  static ThemeData dark({Color? accent, TargetPlatform? platform}) => _build(
+  static ThemeData dark({
+    Color? accent,
+    TargetPlatform? platform,
+    TypographyScale typography = TypographyScale.material2014,
+  }) => _build(
     Brightness.dark,
     accent ?? AppColors.defaultAccent,
     platform ?? defaultTargetPlatform,
+    typography,
   );
 
   static ThemeData of(
     Brightness brightness,
     Color accent, {
     TargetPlatform? platform,
-  }) => _build(brightness, accent, platform ?? defaultTargetPlatform);
+    TypographyScale typography = TypographyScale.material2014,
+  }) =>
+      _build(brightness, accent, platform ?? defaultTargetPlatform, typography);
 
   /// The foreground colour that keeps text readable on [background].
   ///
@@ -434,6 +448,7 @@ class AppTheme {
     Brightness brightness,
     Color accent,
     TargetPlatform platform,
+    TypographyScale typographyScale,
   ) {
     final bool isDark = brightness == Brightness.dark;
 
@@ -459,34 +474,41 @@ class AppTheme {
         ? AppColors.dividerDark
         : AppColors.dividerLight;
 
-    // Typography.material2014 is the classic Material Design text scale
-    // (Roboto 14/16/20/24...). It is what gives the app its "Android 7" feel.
-    final Typography typography = Typography.material2014(platform: platform);
+    // Material 2014 keeps the classic sizes this app already ships.
+    // Material 2018 is Flutter's scale as-is: no size overrides.
+    final Typography typography =
+        typographyScale == TypographyScale.material2018
+        ? Typography.material2018(platform: platform)
+        : Typography.material2014(platform: platform);
     final TextTheme base = isDark ? typography.white : typography.black;
+    final TextTheme sized = typographyScale == TypographyScale.material2018
+        ? base
+        : base.copyWith(
+            headlineMedium: base.headlineMedium?.copyWith(
+              fontSize: 26,
+              fontWeight: FontWeight.w400,
+            ),
+            headlineSmall: base.headlineSmall?.copyWith(
+              fontSize: 22,
+              fontWeight: FontWeight.w400,
+            ),
+            titleLarge: base.titleLarge?.copyWith(
+              fontSize: 20,
+              fontWeight: FontWeight.w500,
+            ),
+            titleMedium: base.titleMedium?.copyWith(
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+            ),
+            bodyLarge: base.bodyLarge?.copyWith(fontSize: 16),
+            bodyMedium: base.bodyMedium?.copyWith(fontSize: 14),
+            bodySmall: base.bodySmall?.copyWith(fontSize: 12),
+          );
 
-    final TextTheme textTheme = base
-        .copyWith(
-          headlineMedium: base.headlineMedium?.copyWith(
-            fontSize: 26,
-            fontWeight: FontWeight.w400,
-          ),
-          headlineSmall: base.headlineSmall?.copyWith(
-            fontSize: 22,
-            fontWeight: FontWeight.w400,
-          ),
-          titleLarge: base.titleLarge?.copyWith(
-            fontSize: 20,
-            fontWeight: FontWeight.w500,
-          ),
-          titleMedium: base.titleMedium?.copyWith(
-            fontSize: 16,
-            fontWeight: FontWeight.w500,
-          ),
-          bodyLarge: base.bodyLarge?.copyWith(fontSize: 16),
-          bodyMedium: base.bodyMedium?.copyWith(fontSize: 14),
-          bodySmall: base.bodySmall?.copyWith(fontSize: 12),
-        )
-        .apply(bodyColor: textPrimary, displayColor: textPrimary);
+    final TextTheme textTheme = sized.apply(
+      bodyColor: textPrimary,
+      displayColor: textPrimary,
+    );
 
     final ColorScheme scheme =
         ColorScheme.fromSwatch(

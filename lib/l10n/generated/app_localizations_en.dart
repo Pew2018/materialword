@@ -111,6 +111,19 @@ class AppLocalizationsEn extends AppLocalizations {
   String get themeDark => 'Dark';
 
   @override
+  String get typographyScale => 'Typography';
+
+  @override
+  String get typographyMaterial2014 => 'Material 2014';
+
+  @override
+  String get typographyMaterial2018 => 'Material 2018';
+
+  @override
+  String get typographyScaleHint =>
+      'Material 2014 keeps the current type sizes. Material 2018 uses Flutter\'s 2018 type scale. Buttons and the app bar stay as they are.';
+
+  @override
   String get accentColor => 'Accent Color';
 
   @override

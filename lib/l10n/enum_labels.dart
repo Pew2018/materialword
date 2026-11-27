@@ -34,6 +34,13 @@ extension ThemePreferenceLabels on ThemePreference {
   };
 }
 
+extension TypographyScaleLabels on TypographyScale {
+  String label(AppLocalizations l10n) => switch (this) {
+    TypographyScale.material2014 => l10n.typographyMaterial2014,
+    TypographyScale.material2018 => l10n.typographyMaterial2018,
+  };
+}
+
 extension StudyModeLabels on StudyMode {
   String label(AppLocalizations l10n) => switch (this) {
     StudyMode.mixed => l10n.modeMixed,

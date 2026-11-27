@@ -82,6 +82,7 @@ class SettingsRepository {
     StudyMode? studyMode,
     ThemePreference? theme,
     String? accentColor,
+    TypographyScale? typography,
     String? ttsVoice,
     String? ttsLocale,
     int? ttsRate,
@@ -119,6 +120,9 @@ class SettingsRepository {
       accentColor: accentColor == null
           ? const Value<String>.absent()
           : Value<String>(accentColor),
+      typographyScale: typography == null
+          ? const Value<String>.absent()
+          : Value<String>(typography.code),
       ttsVoice: ttsVoice == null
           ? const Value<String>.absent()
           : Value<String>(ttsVoice),

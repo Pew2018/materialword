@@ -104,6 +104,7 @@ void main() {
         final settings = await SettingsRepository(db).load();
         expect(settings.dailyNewTarget, 42);
         expect(settings.themeMode, 'dark');
+        expect(settings.typographyScale, 'material2014');
         expect(settings.currentWordBookId, 'book');
         expect(await db.readMeta('device_id'), 'original-device');
         expect(
@@ -141,7 +142,7 @@ void main() {
           (await db.customSelect('PRAGMA user_version').getSingle()).read<int>(
             'user_version',
           ),
-          3,
+          AppDatabase.currentSchemaVersion,
         );
         expect(await db.select(db.userTags).get(), isEmpty);
       },

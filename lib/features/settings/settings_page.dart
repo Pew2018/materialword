@@ -40,6 +40,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     StudyMode? mode,
     ThemePreference? theme,
     String? accentColor,
+    TypographyScale? typography,
     String? ttsVoice,
     String? ttsLocale,
     int? ttsRate,
@@ -54,6 +55,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           studyMode: mode,
           theme: theme,
           accentColor: accentColor,
+          typography: typography,
           ttsVoice: ttsVoice,
           ttsLocale: ttsLocale,
           ttsRate: ttsRate,
@@ -62,7 +64,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     // Theme and accent are device-local. Mirror them into the startup snapshot
     // in this same save so the next launch does not wait for the settings
     // stream to backfill the file. Other fields never touch that file.
-    if (theme != null || accentColor != null) {
+    if (theme != null || accentColor != null || typography != null) {
       final StudySettingsRow row = await ref
           .read(settingsRepositoryProvider)
           .load();
@@ -71,6 +73,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           .write(
             theme: ThemePreference.fromCode(row.themeMode),
             accentColor: row.accentColor,
+            typography: TypographyScale.fromCode(row.typographyScale),
           );
     }
     // Only the derived "today" numbers depend on the targets; statistics do
@@ -195,6 +198,23 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               // sits in Appearance right under the colour picker and never
               // travels through sync.
               const _LanguageSetting(),
+              for (final TypographyScale scale in TypographyScale.values)
+                RadioListTile<String>(
+                  dense: true,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                  value: scale.code,
+                  groupValue: settings.typographyScale,
+                  onChanged: (String? value) =>
+                      _save(typography: TypographyScale.fromCode(value)),
+                  title: Text(scale.label(l10n)),
+                ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Text(
+                  l10n.typographyScaleHint,
+                  style: theme.textTheme.bodySmall,
+                ),
+              ),
             ],
           ),
           SectionHeader(title: l10n.sectionPronunciation),

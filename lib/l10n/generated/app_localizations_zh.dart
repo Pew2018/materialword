@@ -111,6 +111,19 @@ class AppLocalizationsZh extends AppLocalizations {
   String get themeDark => '深色';
 
   @override
+  String get typographyScale => '字体风格';
+
+  @override
+  String get typographyMaterial2014 => 'Material 2014';
+
+  @override
+  String get typographyMaterial2018 => 'Material 2018';
+
+  @override
+  String get typographyScaleHint =>
+      'Material 2014 保持当前字号。Material 2018 使用 Flutter 自带的 2018 字号，按钮和顶栏不变。';
+
+  @override
   String get accentColor => '强调色';
 
   @override

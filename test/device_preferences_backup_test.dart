@@ -34,6 +34,7 @@ void main() {
           'deviceSettings',
           'themeMode',
           'accentColor',
+          'typographyScale',
           'ttsVoice',
           'ttsLocale',
           'ttsRate',

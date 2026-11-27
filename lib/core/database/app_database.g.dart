@@ -3537,6 +3537,18 @@ class $StudySettingsTable extends StudySettings
     requiredDuringInsert: false,
     defaultValue: const Constant('#1565C0'),
   );
+  static const VerificationMeta _typographyScaleMeta = const VerificationMeta(
+    'typographyScale',
+  );
+  @override
+  late final GeneratedColumn<String> typographyScale = GeneratedColumn<String>(
+    'typography_scale',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('material2014'),
+  );
   static const VerificationMeta _ttsVoiceMeta = const VerificationMeta(
     'ttsVoice',
   );
@@ -3597,6 +3609,7 @@ class $StudySettingsTable extends StudySettings
     studyMode,
     themeMode,
     accentColor,
+    typographyScale,
     ttsVoice,
     ttsLocale,
     ttsRate,
@@ -3665,6 +3678,15 @@ class $StudySettingsTable extends StudySettings
         ),
       );
     }
+    if (data.containsKey('typography_scale')) {
+      context.handle(
+        _typographyScaleMeta,
+        typographyScale.isAcceptableOrUnknown(
+          data['typography_scale']!,
+          _typographyScaleMeta,
+        ),
+      );
+    }
     if (data.containsKey('tts_voice')) {
       context.handle(
         _ttsVoiceMeta,
@@ -3729,6 +3751,10 @@ class $StudySettingsTable extends StudySettings
         DriftSqlType.string,
         data['${effectivePrefix}accent_color'],
       )!,
+      typographyScale: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}typography_scale'],
+      )!,
       ttsVoice: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}tts_voice'],
@@ -3763,6 +3789,9 @@ class StudySettingsRow extends DataClass
   final String studyMode;
   final String themeMode;
   final String accentColor;
+
+  /// `material2014` (classic sizes) or `material2018` (Flutter's 2018 scale).
+  final String typographyScale;
   final String ttsVoice;
   final String ttsLocale;
   final int ttsRate;
@@ -3775,6 +3804,7 @@ class StudySettingsRow extends DataClass
     required this.studyMode,
     required this.themeMode,
     required this.accentColor,
+    required this.typographyScale,
     required this.ttsVoice,
     required this.ttsLocale,
     required this.ttsRate,
@@ -3792,6 +3822,7 @@ class StudySettingsRow extends DataClass
     map['study_mode'] = Variable<String>(studyMode);
     map['theme_mode'] = Variable<String>(themeMode);
     map['accent_color'] = Variable<String>(accentColor);
+    map['typography_scale'] = Variable<String>(typographyScale);
     map['tts_voice'] = Variable<String>(ttsVoice);
     map['tts_locale'] = Variable<String>(ttsLocale);
     map['tts_rate'] = Variable<int>(ttsRate);
@@ -3810,6 +3841,7 @@ class StudySettingsRow extends DataClass
       studyMode: Value(studyMode),
       themeMode: Value(themeMode),
       accentColor: Value(accentColor),
+      typographyScale: Value(typographyScale),
       ttsVoice: Value(ttsVoice),
       ttsLocale: Value(ttsLocale),
       ttsRate: Value(ttsRate),
@@ -3832,6 +3864,7 @@ class StudySettingsRow extends DataClass
       studyMode: serializer.fromJson<String>(json['studyMode']),
       themeMode: serializer.fromJson<String>(json['themeMode']),
       accentColor: serializer.fromJson<String>(json['accentColor']),
+      typographyScale: serializer.fromJson<String>(json['typographyScale']),
       ttsVoice: serializer.fromJson<String>(json['ttsVoice']),
       ttsLocale: serializer.fromJson<String>(json['ttsLocale']),
       ttsRate: serializer.fromJson<int>(json['ttsRate']),
@@ -3849,6 +3882,7 @@ class StudySettingsRow extends DataClass
       'studyMode': serializer.toJson<String>(studyMode),
       'themeMode': serializer.toJson<String>(themeMode),
       'accentColor': serializer.toJson<String>(accentColor),
+      'typographyScale': serializer.toJson<String>(typographyScale),
       'ttsVoice': serializer.toJson<String>(ttsVoice),
       'ttsLocale': serializer.toJson<String>(ttsLocale),
       'ttsRate': serializer.toJson<int>(ttsRate),
@@ -3864,6 +3898,7 @@ class StudySettingsRow extends DataClass
     String? studyMode,
     String? themeMode,
     String? accentColor,
+    String? typographyScale,
     String? ttsVoice,
     String? ttsLocale,
     int? ttsRate,
@@ -3878,6 +3913,7 @@ class StudySettingsRow extends DataClass
     studyMode: studyMode ?? this.studyMode,
     themeMode: themeMode ?? this.themeMode,
     accentColor: accentColor ?? this.accentColor,
+    typographyScale: typographyScale ?? this.typographyScale,
     ttsVoice: ttsVoice ?? this.ttsVoice,
     ttsLocale: ttsLocale ?? this.ttsLocale,
     ttsRate: ttsRate ?? this.ttsRate,
@@ -3900,6 +3936,9 @@ class StudySettingsRow extends DataClass
       accentColor: data.accentColor.present
           ? data.accentColor.value
           : this.accentColor,
+      typographyScale: data.typographyScale.present
+          ? data.typographyScale.value
+          : this.typographyScale,
       ttsVoice: data.ttsVoice.present ? data.ttsVoice.value : this.ttsVoice,
       ttsLocale: data.ttsLocale.present ? data.ttsLocale.value : this.ttsLocale,
       ttsRate: data.ttsRate.present ? data.ttsRate.value : this.ttsRate,
@@ -3919,6 +3958,7 @@ class StudySettingsRow extends DataClass
           ..write('studyMode: $studyMode, ')
           ..write('themeMode: $themeMode, ')
           ..write('accentColor: $accentColor, ')
+          ..write('typographyScale: $typographyScale, ')
           ..write('ttsVoice: $ttsVoice, ')
           ..write('ttsLocale: $ttsLocale, ')
           ..write('ttsRate: $ttsRate, ')
@@ -3936,6 +3976,7 @@ class StudySettingsRow extends DataClass
     studyMode,
     themeMode,
     accentColor,
+    typographyScale,
     ttsVoice,
     ttsLocale,
     ttsRate,
@@ -3952,6 +3993,7 @@ class StudySettingsRow extends DataClass
           other.studyMode == this.studyMode &&
           other.themeMode == this.themeMode &&
           other.accentColor == this.accentColor &&
+          other.typographyScale == this.typographyScale &&
           other.ttsVoice == this.ttsVoice &&
           other.ttsLocale == this.ttsLocale &&
           other.ttsRate == this.ttsRate &&
@@ -3966,6 +4008,7 @@ class StudySettingsCompanion extends UpdateCompanion<StudySettingsRow> {
   final Value<String> studyMode;
   final Value<String> themeMode;
   final Value<String> accentColor;
+  final Value<String> typographyScale;
   final Value<String> ttsVoice;
   final Value<String> ttsLocale;
   final Value<int> ttsRate;
@@ -3978,6 +4021,7 @@ class StudySettingsCompanion extends UpdateCompanion<StudySettingsRow> {
     this.studyMode = const Value.absent(),
     this.themeMode = const Value.absent(),
     this.accentColor = const Value.absent(),
+    this.typographyScale = const Value.absent(),
     this.ttsVoice = const Value.absent(),
     this.ttsLocale = const Value.absent(),
     this.ttsRate = const Value.absent(),
@@ -3991,6 +4035,7 @@ class StudySettingsCompanion extends UpdateCompanion<StudySettingsRow> {
     this.studyMode = const Value.absent(),
     this.themeMode = const Value.absent(),
     this.accentColor = const Value.absent(),
+    this.typographyScale = const Value.absent(),
     this.ttsVoice = const Value.absent(),
     this.ttsLocale = const Value.absent(),
     this.ttsRate = const Value.absent(),
@@ -4004,6 +4049,7 @@ class StudySettingsCompanion extends UpdateCompanion<StudySettingsRow> {
     Expression<String>? studyMode,
     Expression<String>? themeMode,
     Expression<String>? accentColor,
+    Expression<String>? typographyScale,
     Expression<String>? ttsVoice,
     Expression<String>? ttsLocale,
     Expression<int>? ttsRate,
@@ -4017,6 +4063,7 @@ class StudySettingsCompanion extends UpdateCompanion<StudySettingsRow> {
       if (studyMode != null) 'study_mode': studyMode,
       if (themeMode != null) 'theme_mode': themeMode,
       if (accentColor != null) 'accent_color': accentColor,
+      if (typographyScale != null) 'typography_scale': typographyScale,
       if (ttsVoice != null) 'tts_voice': ttsVoice,
       if (ttsLocale != null) 'tts_locale': ttsLocale,
       if (ttsRate != null) 'tts_rate': ttsRate,
@@ -4032,6 +4079,7 @@ class StudySettingsCompanion extends UpdateCompanion<StudySettingsRow> {
     Value<String>? studyMode,
     Value<String>? themeMode,
     Value<String>? accentColor,
+    Value<String>? typographyScale,
     Value<String>? ttsVoice,
     Value<String>? ttsLocale,
     Value<int>? ttsRate,
@@ -4045,6 +4093,7 @@ class StudySettingsCompanion extends UpdateCompanion<StudySettingsRow> {
       studyMode: studyMode ?? this.studyMode,
       themeMode: themeMode ?? this.themeMode,
       accentColor: accentColor ?? this.accentColor,
+      typographyScale: typographyScale ?? this.typographyScale,
       ttsVoice: ttsVoice ?? this.ttsVoice,
       ttsLocale: ttsLocale ?? this.ttsLocale,
       ttsRate: ttsRate ?? this.ttsRate,
@@ -4076,6 +4125,9 @@ class StudySettingsCompanion extends UpdateCompanion<StudySettingsRow> {
     if (accentColor.present) {
       map['accent_color'] = Variable<String>(accentColor.value);
     }
+    if (typographyScale.present) {
+      map['typography_scale'] = Variable<String>(typographyScale.value);
+    }
     if (ttsVoice.present) {
       map['tts_voice'] = Variable<String>(ttsVoice.value);
     }
@@ -4101,6 +4153,7 @@ class StudySettingsCompanion extends UpdateCompanion<StudySettingsRow> {
           ..write('studyMode: $studyMode, ')
           ..write('themeMode: $themeMode, ')
           ..write('accentColor: $accentColor, ')
+          ..write('typographyScale: $typographyScale, ')
           ..write('ttsVoice: $ttsVoice, ')
           ..write('ttsLocale: $ttsLocale, ')
           ..write('ttsRate: $ttsRate, ')
@@ -9080,6 +9133,7 @@ typedef $$StudySettingsTableCreateCompanionBuilder =
       Value<String> studyMode,
       Value<String> themeMode,
       Value<String> accentColor,
+      Value<String> typographyScale,
       Value<String> ttsVoice,
       Value<String> ttsLocale,
       Value<int> ttsRate,
@@ -9094,6 +9148,7 @@ typedef $$StudySettingsTableUpdateCompanionBuilder =
       Value<String> studyMode,
       Value<String> themeMode,
       Value<String> accentColor,
+      Value<String> typographyScale,
       Value<String> ttsVoice,
       Value<String> ttsLocale,
       Value<int> ttsRate,
@@ -9141,6 +9196,11 @@ class $$StudySettingsTableFilterComposer
 
   ColumnFilters<String> get accentColor => $composableBuilder(
     column: $table.accentColor,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get typographyScale => $composableBuilder(
+    column: $table.typographyScale,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -9209,6 +9269,11 @@ class $$StudySettingsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get typographyScale => $composableBuilder(
+    column: $table.typographyScale,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get ttsVoice => $composableBuilder(
     column: $table.ttsVoice,
     builder: (column) => ColumnOrderings(column),
@@ -9265,6 +9330,11 @@ class $$StudySettingsTableAnnotationComposer
 
   GeneratedColumn<String> get accentColor => $composableBuilder(
     column: $table.accentColor,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get typographyScale => $composableBuilder(
+    column: $table.typographyScale,
     builder: (column) => column,
   );
 
@@ -9325,6 +9395,7 @@ class $$StudySettingsTableTableManager
                 Value<String> studyMode = const Value.absent(),
                 Value<String> themeMode = const Value.absent(),
                 Value<String> accentColor = const Value.absent(),
+                Value<String> typographyScale = const Value.absent(),
                 Value<String> ttsVoice = const Value.absent(),
                 Value<String> ttsLocale = const Value.absent(),
                 Value<int> ttsRate = const Value.absent(),
@@ -9337,6 +9408,7 @@ class $$StudySettingsTableTableManager
                 studyMode: studyMode,
                 themeMode: themeMode,
                 accentColor: accentColor,
+                typographyScale: typographyScale,
                 ttsVoice: ttsVoice,
                 ttsLocale: ttsLocale,
                 ttsRate: ttsRate,
@@ -9351,6 +9423,7 @@ class $$StudySettingsTableTableManager
                 Value<String> studyMode = const Value.absent(),
                 Value<String> themeMode = const Value.absent(),
                 Value<String> accentColor = const Value.absent(),
+                Value<String> typographyScale = const Value.absent(),
                 Value<String> ttsVoice = const Value.absent(),
                 Value<String> ttsLocale = const Value.absent(),
                 Value<int> ttsRate = const Value.absent(),
@@ -9363,6 +9436,7 @@ class $$StudySettingsTableTableManager
                 studyMode: studyMode,
                 themeMode: themeMode,
                 accentColor: accentColor,
+                typographyScale: typographyScale,
                 ttsVoice: ttsVoice,
                 ttsLocale: ttsLocale,
                 ttsRate: ttsRate,

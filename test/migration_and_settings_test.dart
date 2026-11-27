@@ -38,6 +38,7 @@ void main() {
       expect(row.dailyReviewLimit, 88);
       expect(row.accentColor, '#00796B');
       expect(row.themeMode, ThemePreference.dark.code);
+      expect(row.typographyScale, TypographyScale.material2014.code);
       expect(row.studyMode, StudyMode.mixed.code);
       await env.dispose();
     });
@@ -47,6 +48,12 @@ void main() {
       for (int value in <int>[11, 22, 33, 44]) {
         await env.settings.save(dailyNewTarget: value);
       }
+      expect((await env.settings.load()).dailyNewTarget, 44);
+      await env.settings.save(typography: TypographyScale.material2018);
+      expect(
+        (await env.settings.load()).typographyScale,
+        TypographyScale.material2018.code,
+      );
       expect((await env.settings.load()).dailyNewTarget, 44);
       await env.dispose();
     });

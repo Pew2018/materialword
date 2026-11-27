@@ -138,7 +138,7 @@ class ReviewEvents extends Table {
 /// Settings are split into two groups (see `docs/sync-protocol.md`):
 ///  * **shared** — learning goals that should follow the user across devices:
 ///    `dailyNewTarget`, `dailyReviewLimit`, `studyMode`.
-///  * **device-specific** — `themeMode`, `accentColor`, TTS options,
+///  * **device-specific** — `themeMode`, `accentColor`, `typographyScale`, TTS options,
 ///    `currentWordBookId` and every sync credential: these describe *this*
 ///    device and are never applied from an incoming dataset.
 @TableIndex(name: 'idx_settings_id', columns: {#id})
@@ -152,6 +152,10 @@ class StudySettings extends Table {
   TextColumn get studyMode => text().withDefault(const Constant('mixed'))();
   TextColumn get themeMode => text().withDefault(const Constant('system'))();
   TextColumn get accentColor => text().withDefault(const Constant('#1565C0'))();
+
+  /// `material2014` (classic sizes) or `material2018` (Flutter's 2018 scale).
+  TextColumn get typographyScale =>
+      text().withDefault(const Constant('material2014'))();
   TextColumn get ttsVoice => text().withDefault(const Constant(''))();
   TextColumn get ttsLocale => text().withDefault(const Constant('en-US'))();
   IntColumn get ttsRate => integer().withDefault(const Constant(50))();

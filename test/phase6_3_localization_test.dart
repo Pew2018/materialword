@@ -71,6 +71,19 @@ Future<void> _reveal(
   Finder target, {
   double delta = 200,
 }) async {
+  // Already on screen: do not call scrollUntilVisible. Its final
+  // ensureVisible aligns the target to the top of the scroll view, which
+  // drops earlier rows once the page can scroll further than the viewport.
+  if (target.evaluate().isNotEmpty) {
+    final Rect rect = tester.getRect(target);
+    final Size screen = tester.view.physicalSize / tester.view.devicePixelRatio;
+    final bool onScreen =
+        rect.top >= 0 &&
+        rect.bottom <= screen.height &&
+        rect.left >= 0 &&
+        rect.right <= screen.width;
+    if (onScreen) return;
+  }
   await tester.scrollUntilVisible(target, delta, scrollable: _pageScrollable());
   await _settle(tester);
 }
@@ -260,6 +273,10 @@ void main() {
           .getTopLeft(find.text(l10n.appLanguage))
           .dy;
       expect(languageY, greaterThan(accentY), reason: '语言入口必须在强调色区域下方');
+
+      await _reveal(tester, find.text(l10n.typographyMaterial2018));
+      expect(find.text(l10n.typographyMaterial2014), findsOneWidget);
+      expect(find.text(l10n.typographyMaterial2018), findsOneWidget);
     });
 
     testWidgets('LANG05/LANG06/LANG11 切换语言即时生效且不丢路由', (tester) async {

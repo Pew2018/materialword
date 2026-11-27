@@ -1,7 +1,7 @@
 # 当前设备偏好边界（v5）
 
 所有新本地备份、云端备份、双向同步及默认导出排除 themeMode、accentColor、
-ttsVoice、ttsLocale、ttsRate、ttsAutoSpeak、keepScreenOn。历史备份中的设备偏好
+typographyScale、ttsVoice、ttsLocale、ttsRate、ttsAutoSpeak、keepScreenOn。历史备份中的设备偏好
 在合并、快照和云端恢复时一律忽略。导出历史恢复副本时也移除 deviceSettings。
 本机设置功能保留；每日目标、复习上限、学习模式及冲刺计划继续共享。
 以下为历史实现记录，v4 设备设置迁移规则已被本节取代。

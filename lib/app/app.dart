@@ -42,6 +42,9 @@ class MaterialWordApp extends ConsumerWidget {
     final Color accent = settings != null
         ? parseAccent(settings.accentColor)
         : parseAccent(snapshot.accentColor);
+    final TypographyScale typography = settings != null
+        ? TypographyScale.fromCode(settings.typographyScale)
+        : snapshot.typography;
 
     return MaterialApp(
       // A new key when the shell appears drops the neutral theme instead of
@@ -54,10 +57,10 @@ class MaterialWordApp extends ConsumerWidget {
       scrollBehavior: const ClassicScrollBehavior(),
       debugShowCheckedModeBanner: false,
       theme: showShell
-          ? AppTheme.of(Brightness.light, accent)
+          ? AppTheme.of(Brightness.light, accent, typography: typography)
           : _neutralTheme(Brightness.light),
       darkTheme: showShell
-          ? AppTheme.of(Brightness.dark, accent)
+          ? AppTheme.of(Brightness.dark, accent, typography: typography)
           : _neutralTheme(Brightness.dark),
       themeMode: switch (showShell ? preference : ThemePreference.system) {
         ThemePreference.system => ThemeMode.system,
@@ -89,13 +92,19 @@ void _persistAppearance(WidgetRef ref) {
     final AppearanceStore store = ref.read(appearanceStoreProvider);
     final ThemePreference theme = ThemePreference.fromCode(row.themeMode);
     final String accent = row.accentColor;
+    final TypographyScale typography = TypographyScale.fromCode(
+      row.typographyScale,
+    );
     final AppearanceSnapshot snapshot = store.current;
     final bool same =
         snapshot.trusted &&
         snapshot.theme == theme &&
+        snapshot.typography == typography &&
         parseAccent(snapshot.accentColor) == parseAccent(accent);
     if (same) return;
-    unawaited(store.write(theme: theme, accentColor: accent));
+    unawaited(
+      store.write(theme: theme, accentColor: accent, typography: typography),
+    );
   });
 }
 

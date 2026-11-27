@@ -18,6 +18,8 @@ part 'app_database.g.dart';
 ///    is dropped and no row is deleted, so user data survives untouched.
 ///  * v3 — event day anchors/provenance, metadata and identity/version tables.
 ///    Creation/upgrades are explicitly transactional, including DDL and backfill.
+///  * v4 — device-local Material type scale (`study_settings.typography_scale`).
+///    Existing rows keep `material2014`, which is the current classic scale.
 @DriftDatabase(
   tables: [
     Words,
@@ -41,7 +43,7 @@ class AppDatabase extends _$AppDatabase {
   /// directory (never inside the project, never synced as a raw file).
   AppDatabase.open() : super(driftDatabase(name: 'materialword'));
 
-  static const int currentSchemaVersion = 3;
+  static const int currentSchemaVersion = 4;
 
   /// Meta key guarding the one-off repair of dictionary text that was stored
   /// with literal `\n` escapes before the normaliser existed.
@@ -114,6 +116,9 @@ UPDATE review_events SET day_start_source = CASE WHEN EXISTS(
   answered_at - ((answered_at % 86400000 + 86400000) % 86400000))
 WHERE day_start_utc IS NULL
 """);
+      }
+      if (from < 4) {
+        await m.addColumn(studySettings, studySettings.typographyScale);
       }
     }),
     beforeOpen: (OpeningDetails details) async {

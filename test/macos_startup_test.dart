@@ -142,6 +142,7 @@ VALUES (1, 17, 100, 'book-1', 'mixed', 'dark');
       final StudySettingsRow settings = await SettingsRepository(db).load();
       expect(settings.dailyNewTarget, 17);
       expect(settings.themeMode, ThemePreference.dark.code, reason: '用户主题保留');
+      expect(settings.typographyScale, TypographyScale.material2014.code);
       expect(settings.currentWordBookId, 'book-1');
 
       final int entries = await _count(db, 'word_book_entries');
