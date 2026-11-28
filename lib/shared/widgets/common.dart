@@ -486,7 +486,9 @@ class TagChip extends StatelessWidget {
       ),
       decoration: BoxDecoration(
         color: base.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(3),
+        borderRadius: theme.isClassicType
+            ? const BorderRadius.all(Radius.circular(3))
+            : theme.chipRadius,
         border: Border.all(color: base.withValues(alpha: 0.35)),
       ),
       child: Text(

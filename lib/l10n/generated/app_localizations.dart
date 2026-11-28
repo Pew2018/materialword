@@ -299,7 +299,7 @@ abstract class AppLocalizations {
   /// No description provided for @typographyScale.
   ///
   /// In en, this message translates to:
-  /// **'Typography'**
+  /// **'Material style'**
   String get typographyScale;
 
   /// No description provided for @typographyMaterial2014.

@@ -111,7 +111,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get themeDark => '深色';
 
   @override
-  String get typographyScale => '字体风格';
+  String get typographyScale => '界面风格';
 
   @override
   String get typographyMaterial2014 => 'Material 2014';

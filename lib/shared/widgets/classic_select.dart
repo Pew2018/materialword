@@ -306,9 +306,10 @@ class ClassicSelectChip<T> extends StatelessWidget {
                     text,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodySmall?.copyWith(
+                    style: theme.classicStyle(
+                      theme.textTheme.bodySmall,
                       color: active ? theme.colorScheme.primary : null,
-                      fontWeight: FontWeight.w500,
+                      weight: FontWeight.w500,
                     ),
                   ),
                 ),

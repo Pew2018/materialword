@@ -12,6 +12,7 @@ import 'package:materialword/core/models/enums.dart';
 import 'package:materialword/features/study/study_page.dart';
 import 'package:materialword/services/tts_service.dart';
 import 'package:materialword/shared/widgets/classic_select.dart';
+import 'package:materialword/shared/widgets/common.dart';
 
 import 'helpers/test_env.dart';
 
@@ -178,6 +179,61 @@ void main() {
       modernPainted.inputDecorationTheme.hintStyle?.fontSize,
       stock.bodyMedium?.fontSize,
     );
+  });
+
+  testWidgets('Material 2018 keeps its bar elevation and tag shape', (
+    WidgetTester tester,
+  ) async {
+    Future<void> pump(ThemeData theme) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          locale: const Locale('zh'),
+          theme: theme,
+          home: Scaffold(
+            body: const TagChip(label: 'CET'),
+            bottomNavigationBar: ClassicBottomNavigationBar(
+              currentIndex: 0,
+              onTap: (_) {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    BorderRadius tagRadius() {
+      final DecoratedBox box = tester.widget<DecoratedBox>(
+        find
+            .descendant(
+              of: find.byType(TagChip),
+              matching: find.byType(DecoratedBox),
+            )
+            .first,
+      );
+      return (box.decoration as BoxDecoration).borderRadius! as BorderRadius;
+    }
+
+    double barElevation() {
+      final Material material = tester.widget<Material>(
+        find
+            .descendant(
+              of: find.byType(ClassicBottomNavigationBar),
+              matching: find.byType(Material),
+            )
+            .first,
+      );
+      return material.elevation;
+    }
+
+    await pump(AppTheme.light());
+    expect(barElevation(), 3);
+    expect(tagRadius(), const BorderRadius.all(Radius.circular(3)));
+
+    await pump(AppTheme.light(typography: TypographyScale.material2018));
+    expect(barElevation(), 8);
+    expect(tagRadius(), const BorderRadius.all(Radius.circular(16)));
   });
 
   testWidgets('bottom bar: five equal rectangles, no tint, no pill', (

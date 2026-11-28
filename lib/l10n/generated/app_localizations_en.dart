@@ -111,7 +111,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get themeDark => 'Dark';
 
   @override
-  String get typographyScale => 'Typography';
+  String get typographyScale => 'Material style';
 
   @override
   String get typographyMaterial2014 => 'Material 2014';

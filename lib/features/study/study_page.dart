@@ -784,8 +784,8 @@ class _LabeledBlock extends StatelessWidget {
 
 /// Pinned bottom action area.
 ///
-/// A plain surface with a single hairline divider — not a floating card with a
-/// second button inside it. The reveal button fills the action strip (no Space
+/// Material 2014 is a plain surface with a hairline divider. Material 2018
+/// lifts that same bar. The reveal button fills the action strip (no Space
 /// keycap beside it); Space / Enter still reveal via shortcuts. Capped at a
 /// readable width on desktop instead of stretching across the whole window.
 class _AnswerBar extends StatelessWidget {
@@ -808,6 +808,7 @@ class _AnswerBar extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     return Material(
       color: theme.cardColor,
+      elevation: theme.isClassicType ? 0 : 8,
       child: SafeArea(
         top: false,
         child: Column(
@@ -854,11 +855,13 @@ class _AnswerBar extends StatelessWidget {
                         )
                       : SizedBox(
                           width: double.infinity,
-                          height: 40,
+                          height: theme.buttonMinHeight,
                           child: ElevatedButton(
                             onPressed: onReveal,
                             style: ElevatedButton.styleFrom(
-                              minimumSize: const Size.fromHeight(40),
+                              minimumSize: Size.fromHeight(
+                                theme.buttonMinHeight,
+                              ),
                             ),
                             child: Text(context.l10n.showMeaning),
                           ),
@@ -888,7 +891,8 @@ class _AnswerButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final TextTheme text = Theme.of(context).textTheme;
+    final ThemeData theme = Theme.of(context);
+    final TextTheme text = theme.textTheme;
     return Expanded(
       child: SizedBox(
         height: 48,
@@ -897,12 +901,10 @@ class _AnswerButton extends StatelessWidget {
           style: ElevatedButton.styleFrom(
             backgroundColor: color,
             foregroundColor: Colors.white,
-            elevation: 1,
+            elevation: theme.isClassicType ? 1 : theme.solidButtonElevation,
             padding: EdgeInsets.zero,
             minimumSize: const Size.fromHeight(48),
-            shape: RoundedRectangleBorder(
-              borderRadius: Theme.of(context).buttonRadius,
-            ),
+            shape: RoundedRectangleBorder(borderRadius: theme.buttonRadius),
           ),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,

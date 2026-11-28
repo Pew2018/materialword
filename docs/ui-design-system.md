@@ -6,7 +6,9 @@ MaterialWord 的最终视觉目标是“统一、克制、清晰、稳定的经�
 
 ## 基础
 
-- Material Design 1 / 2，`useMaterial3: false`，`Typography.material2014`。
+- Material Design 2 组件，`useMaterial3: false`。默认风格是 Material 2014；
+  设置里的「界面风格」可以改成 Material 2018。两套都包含字号、圆角、高度和阴影，
+  不是只换字体。下面未特别标明的形状和高度都是 2014，切换时不得改掉。
 - 强调色驱动：顶栏、底栏、按钮、开关、滑块、焦点框、选中态都用 `colorScheme.primary`；
   「认识 / 模糊 / 不认识」的语义色与强调色无关。
 - 浅色与深色同时成立：任何颜色都必须从 `ThemeData` 取，不写死白/黑。
@@ -21,7 +23,7 @@ MaterialWord 的最终视觉目标是“统一、克制、清晰、稳定的经�
 | 底栏项 | 0dp（纯矩形） |
 | 头像 / FAB / 色板圆点 | 圆形（唯一允许的圆形） |
 
-不允许出现 8 / 10 / 12 / 16dp 的普通按钮或“胶囊”控件。`FilledButton` 与
+Material 2014 不允许出现 8 / 10 / 12 / 16dp 的普通按钮或“胶囊”控件。`FilledButton` 与
 `ElevatedButton` 共用 `AppTheme.solidButtonStyle()`：同一背景、同一白色前景、
 同一禁用色、同一 2dp 圆角与 88×40 最小尺寸，只有 elevation 不同。
 
@@ -118,12 +120,28 @@ Tertiary 用 `TextButton`；破坏性操作使用红色 `TextButton`。
 - Dialog：Material 的 fade + 轻微缩放，不使用页面滑动。
 - 动画时长 token：fast 140ms / standard 200ms / page 240ms，统一 `Curves.easeInOut`。
 
+## Material 2018
+
+2018 的控件读 `ThemeData`，不读上面的 2014 常数：
+
+| 元素 | 2018 |
+| --- | --- |
+| 按钮 | 4dp 圆角，最小高度 36dp |
+| Card | 4dp，列表项无圆角 |
+| Chip、`TagChip` | 16dp |
+| 顶栏 / 底栏阴影 | 4 / 8 |
+| 学习页操作条 | 阴影 8，仍保留顶部分隔线 |
+| 输入框 | 使用主题默认内边距，不强制 `isDense` |
+| 字号 | `Typography.material2018`。英文用 englishLike，中文用 tall，不再覆盖字号和字重 |
+
+作答按钮保持 48dp，因为桌面端要放下快捷键。圆角和阴影仍跟当前风格。
+
 ## 学习页底部操作区
 
-- 单一 surface + 顶部 1dp 分隔线，**不是**浮起卡片里再放一个按钮。
-- 「显示释义」40dp 高、2dp 圆角，触控区 ≥48dp；桌面端限宽居中。
+- Material 2014：单一 surface + 顶部 1dp 分隔线，**不是**浮起卡片里再放一个按钮。
+- 「显示释义」跟随当前风格的按钮高度（2014 为 40dp），圆角跟按钮主题；桌面端限宽居中。
 - 快捷键是按钮旁边的 keycap 提示，不写进按钮标题。
-- 三个作答按钮等宽、2dp 圆角、高度稳定。
+- 三个作答按钮等宽、高度 48dp。2014 圆角 2dp、阴影 1。
 
 ## 文本
 

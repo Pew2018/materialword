@@ -995,6 +995,17 @@ extension AppTypeScaleTheme on ThemeData {
     elevatedButtonTheme.style?.shape?.resolve(<WidgetState>{}),
   );
 
+  /// Single-line button height. Material 2014 is 40; Material 2018 is 36.
+  double get buttonMinHeight =>
+      elevatedButtonTheme.style?.minimumSize
+          ?.resolve(<WidgetState>{})
+          ?.height ??
+      40;
+
+  /// Elevation of a solid button. Answer buttons keep the 2014 value of 1.
+  double get solidButtonElevation =>
+      elevatedButtonTheme.style?.elevation?.resolve(<WidgetState>{}) ?? 2;
+
   BorderRadius get cardRadius => _controlRadius(cardTheme.shape);
 
   BorderRadius get chipRadius => _controlRadius(chipTheme.shape);

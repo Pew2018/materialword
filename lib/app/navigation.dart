@@ -528,7 +528,7 @@ class ClassicBottomNavigationBar extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     return Material(
       color: theme.bottomNavigationBarTheme.backgroundColor ?? theme.cardColor,
-      elevation: 3,
+      elevation: theme.bottomNavigationBarTheme.elevation ?? 3,
       child: SafeArea(
         top: false,
         child: SizedBox(

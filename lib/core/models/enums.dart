@@ -94,11 +94,11 @@ enum ThemePreference {
       );
 }
 
-/// Which Material type scale the shell uses.
+/// Which complete Material style the shell uses.
 ///
-/// `material2014` is the shipped classic scale (with this app's size
-/// overrides). `material2018` is Flutter's 2018 geometry with no extra size
-/// overrides. The code is stored on this device only.
+/// `material2014` is the shipped classic style: its sizes, weights, corners
+/// and elevations. `material2018` is Flutter's 2018 type scale together with
+/// the 2018 control metrics. The code is stored on this device only.
 enum TypographyScale {
   material2014('material2014'),
   material2018('material2018');

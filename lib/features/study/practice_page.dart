@@ -493,7 +493,9 @@ class _PromptCard extends StatelessWidget {
               child: OutlinedButton(
                 onPressed: onChoice == null ? null : () => onChoice!(i),
                 style: OutlinedButton.styleFrom(
-                  minimumSize: const Size.fromHeight(48),
+                  minimumSize: Size.fromHeight(
+                    theme.isClassicType ? 48 : theme.buttonMinHeight,
+                  ),
                   alignment: Alignment.centerLeft,
                   backgroundColor: _optionColor(context, i),
                 ),
@@ -599,6 +601,9 @@ class _AnswerArea extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final double controlHeight = theme.isClassicType
+        ? 48
+        : theme.buttonMinHeight;
     return Material(
       color: theme.cardColor,
       elevation: 8,
@@ -606,7 +611,7 @@ class _AnswerArea extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
         child: answered
             ? SizedBox(
-                height: 48,
+                height: controlHeight,
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: onNext,
@@ -632,7 +637,6 @@ class _AnswerArea extends StatelessWidget {
                         enableSuggestions: false,
                         onSubmitted: (_) => onSubmit(),
                         decoration: InputDecoration(
-                          isDense: true,
                           hintText: context.l10n.typeTheWord,
                           suffixIcon: onSpeak == null
                               ? null
@@ -646,7 +650,7 @@ class _AnswerArea extends StatelessWidget {
                     ),
                     AppSpacing.w8,
                     SizedBox(
-                      height: 48,
+                      height: controlHeight,
                       child: ElevatedButton(
                         onPressed: busy ? null : onSubmit,
                         child: Text(context.l10n.submit),

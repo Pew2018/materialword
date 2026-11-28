@@ -581,7 +581,6 @@ class _WordManagementPageState extends ConsumerState<WordManagementPage> {
             TextField(
               controller: _search,
               decoration: InputDecoration(
-                isDense: true,
                 hintText: context.l10n.searchWordsHint,
                 prefixIcon: const Icon(
                   Icons.search,

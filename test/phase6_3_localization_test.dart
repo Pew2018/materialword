@@ -281,11 +281,11 @@ void main() {
       final double typeY = tester
           .getTopLeft(find.text(l10n.typographyScale))
           .dy;
-      expect(typeY, greaterThan(languageY), reason: '字体风格在语言选择下方');
+      expect(typeY, greaterThan(languageY), reason: '界面风格在语言选择下方');
       expect(find.byType(RadioListTile<String>), findsNWidgets(3));
     });
 
-    testWidgets('字体风格与语言共用选择框，选中后保存 Material 2018', (tester) async {
+    testWidgets('界面风格与语言共用选择框，选中后保存 Material 2018', (tester) async {
       final TestEnv env = await _pumpApp(tester, size: const Size(920, 1400));
       final AppLocalizations l10n = await AppLocalizations.delegate.load(
         const Locale('zh'),
