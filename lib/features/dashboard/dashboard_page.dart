@@ -34,21 +34,9 @@ class DashboardPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final AsyncValue<TodayProgress> progress = ref.watch(todayProgressProvider);
-    final AsyncValue<List<WordBookSummary>> books = ref.watch(
-      bookSummariesProvider,
-    );
-    final AsyncValue<StudySettingsRow> settings = ref.watch(settingsProvider);
-    final resume = ref.watch(pausedSessionProvider).value;
-    final sprint = ref.watch(sprintPlanProvider).value;
-    final canResume =
-        resume != null &&
-        (resume.bookId == null ||
-            (books.value?.any((b) => b.book.id == resume.bookId) ?? false));
-    final TodayProgress? today = progress.value;
-    final ThemeData theme = Theme.of(context);
-    final AppLocalizations l10n = context.l10n;
-
+    // The list itself watches nothing. Progress, the book list and a paused
+    // session each rebuild only their own child, so a background refresh does
+    // not recreate the scrollable while it is moving.
     return RefreshIndicator(
       onRefresh: () async {
         ref.invalidate(todayProgressProvider);
@@ -58,98 +46,12 @@ class DashboardPage extends ConsumerWidget {
       child: ContentColumn(
         child: ListView(
           padding: const EdgeInsets.only(bottom: 24),
-          children: <Widget>[
-            if (progress.hasError)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                child: ErrorBanner(
-                  message: l10n.errorLoadFailed,
-                  onRetry: () => ref.invalidate(todayProgressProvider),
-                ),
-              ),
-            _BookSelector(
-              books: books.value ?? const <WordBookSummary>[],
-              currentBookId: settings.value?.currentWordBookId,
-              onChanged: (String? id) async {
-                await ref
-                    .read(settingsRepositoryProvider)
-                    .save(currentWordBookId: Value<String?>(id));
-                ref.invalidate(todayProgressProvider);
-              },
-            ),
-            SettingsTile(
-              leading: const Icon(Icons.flag_outlined),
-              title: l10n.specialSprint,
-              subtitle: sprint?.enabled == true
-                  ? l10n.sprintTileSubtitleOn(
-                      sprint!.examDate ?? '',
-                      sprint.roundSize,
-                    )
-                  : l10n.sprintTileSubtitleOff,
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => Navigator.of(context).push<void>(
-                MaterialPageRoute(builder: (_) => const SprintPage()),
-              ),
-            ),
-            if (canResume)
-              SettingsTile(
-                leading: const Icon(Icons.play_circle_outline),
-                title: l10n.continueStudying,
-                subtitle: l10n.resumeProgress(resume.position, resume.total),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => Navigator.of(context).push<void>(
-                  MaterialPageRoute(
-                    builder: (_) => StudyPage(
-                      reviewOnly: resume.mode == StudyMode.reviewOnly,
-                      special: resume.special,
-                      bookIdOverride: resume.bookId,
-                      useGlobalScope: resume.bookId == null,
-                    ),
-                  ),
-                ),
-              ),
-            if (today == null)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 48),
-                child: Center(child: CircularProgressIndicator()),
-              )
-            else if (today.totalWords == 0) ...<Widget>[
-              SectionHeader(
-                title: l10n.todayTasks,
-                trailing: Text(
-                  today.scopedToBook
-                      ? l10n.scopeCurrentList
-                      : l10n.scopeAllLists,
-                  style: theme.textTheme.bodySmall,
-                ),
-              ),
-              const _FirstRunPanel(),
-            ] else ...<Widget>[
-              SectionHeader(
-                title: l10n.todayTasks,
-                trailing: Text(
-                  today.scopedToBook
-                      ? l10n.scopeCurrentList
-                      : l10n.scopeAllLists,
-                  style: theme.textTheme.bodySmall,
-                ),
-              ),
-              _TodayPanel(progress: today),
-              if (today.backlog > 0)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-                  child: Text(
-                    l10n.backlogNote(today.backlog),
-                    style: theme.textTheme.bodySmall,
-                  ),
-                ),
-              SectionHeader(title: l10n.sectionStartStudy),
-              _StartActions(progress: today),
-              SectionHeader(title: l10n.sectionSpecialReview),
-              _SpecialReviewGroup(progress: today),
-              SectionHeader(title: l10n.sectionPractice),
-              const _PracticeActions(),
-            ],
+          children: const <Widget>[
+            _TodayErrorBanner(),
+            _BookSelector(),
+            _SprintEntry(),
+            _ResumeEntry(),
+            _TodaySection(),
           ],
         ),
       ),
@@ -177,20 +79,18 @@ Future<void> _openStudy(
 /// Current-book selector. The trailing "词书" text button was removed: the
 /// navigation bar already has a 词书 destination, and a second entry next to the
 /// selector only added a way to leave the page by accident.
-class _BookSelector extends StatelessWidget {
-  const _BookSelector({
-    required this.books,
-    required this.currentBookId,
-    required this.onChanged,
-  });
-
-  final List<WordBookSummary> books;
-  final String? currentBookId;
-  final ValueChanged<String?> onChanged;
+class _BookSelector extends ConsumerWidget {
+  const _BookSelector();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final ThemeData theme = Theme.of(context);
+    final List<WordBookSummary> books =
+        ref.watch(bookSummariesProvider).value ?? const <WordBookSummary>[];
+    final String? currentBookId = ref
+        .watch(settingsProvider)
+        .value
+        ?.currentWordBookId;
     final bool bookMissing =
         currentBookId != null &&
         !books.any((WordBookSummary b) => b.book.id == currentBookId);
@@ -227,12 +127,149 @@ class _BookSelector extends StatelessWidget {
                       ),
                     ),
                 ],
-                onChanged: (String id) => onChanged(id.isEmpty ? null : id),
+                onChanged: (String id) async {
+                  await ref
+                      .read(settingsRepositoryProvider)
+                      .save(
+                        currentWordBookId: Value<String?>(
+                          id.isEmpty ? null : id,
+                        ),
+                      );
+                  ref.invalidate(todayProgressProvider);
+                },
               ),
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _TodayErrorBanner extends ConsumerWidget {
+  const _TodayErrorBanner();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final AsyncValue<TodayProgress> progress = ref.watch(todayProgressProvider);
+    if (!progress.hasError) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: ErrorBanner(
+        message: context.l10n.errorLoadFailed,
+        onRetry: () => ref.invalidate(todayProgressProvider),
+      ),
+    );
+  }
+}
+
+class _SprintEntry extends ConsumerWidget {
+  const _SprintEntry();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final sprint = ref.watch(sprintPlanProvider).value;
+    final AppLocalizations l10n = context.l10n;
+    return SettingsTile(
+      leading: const Icon(Icons.flag_outlined),
+      title: l10n.specialSprint,
+      subtitle: sprint?.enabled == true
+          ? l10n.sprintTileSubtitleOn(sprint!.examDate ?? '', sprint.roundSize)
+          : l10n.sprintTileSubtitleOff,
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () => Navigator.of(
+        context,
+      ).push<void>(MaterialPageRoute<void>(builder: (_) => const SprintPage())),
+    );
+  }
+}
+
+class _ResumeEntry extends ConsumerWidget {
+  const _ResumeEntry();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final resume = ref.watch(pausedSessionProvider).value;
+    if (resume == null) return const SizedBox.shrink();
+    final List<WordBookSummary>? books = ref.watch(bookSummariesProvider).value;
+    final bool bookGone =
+        resume.bookId != null &&
+        (books?.any((WordBookSummary b) => b.book.id == resume.bookId) != true);
+    if (bookGone) return const SizedBox.shrink();
+    final AppLocalizations l10n = context.l10n;
+    return SettingsTile(
+      leading: const Icon(Icons.play_circle_outline),
+      title: l10n.continueStudying,
+      subtitle: l10n.resumeProgress(resume.position, resume.total),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () => Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => StudyPage(
+            reviewOnly: resume.mode == StudyMode.reviewOnly,
+            special: resume.special,
+            bookIdOverride: resume.bookId,
+            useGlobalScope: resume.bookId == null,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Progress, empty state and the action groups. One child of the list, so a
+/// progress refresh does not rebuild the book selector or the scrollable.
+class _TodaySection extends ConsumerWidget {
+  const _TodaySection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final AsyncValue<TodayProgress> progress = ref.watch(todayProgressProvider);
+    final TodayProgress? today = progress.value;
+    final ThemeData theme = Theme.of(context);
+    final AppLocalizations l10n = context.l10n;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        if (today == null)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 48),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (today.totalWords == 0) ...<Widget>[
+          SectionHeader(
+            title: l10n.todayTasks,
+            trailing: Text(
+              today.scopedToBook ? l10n.scopeCurrentList : l10n.scopeAllLists,
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
+          const _FirstRunPanel(),
+        ] else ...<Widget>[
+          SectionHeader(
+            title: l10n.todayTasks,
+            trailing: Text(
+              today.scopedToBook ? l10n.scopeCurrentList : l10n.scopeAllLists,
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
+          _TodayPanel(progress: today),
+          if (today.backlog > 0)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+              child: Text(
+                l10n.backlogNote(today.backlog),
+                style: theme.textTheme.bodySmall,
+              ),
+            ),
+          SectionHeader(title: l10n.sectionStartStudy),
+          _StartActions(progress: today),
+          SectionHeader(title: l10n.sectionSpecialReview),
+          _SpecialReviewGroup(progress: today),
+          SectionHeader(title: l10n.sectionPractice),
+          const _PracticeActions(),
+        ],
+      ],
     );
   }
 }

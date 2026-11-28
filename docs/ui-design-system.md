@@ -156,9 +156,10 @@ Tertiary 用 `TextButton`；破坏性操作使用红色 `TextButton`。
 
 ## 滚动
 
-- 全局使用 `ClassicScrollBehavior`（`lib/app/app.dart`）：macOS 上强制
-  `ClampingScrollPhysics(parent: RangeMaintainingScrollPhysics())`，去掉桌面端的
-  bouncing 惯性，让页面位置直接跟随手势/滚轮；iOS / Android 保持各自原生物理。
+- 全局使用 `ClassicScrollBehavior`（`lib/app/app.dart`）：不改各平台滚动物理。
+  macOS 保持 `BouncingScrollPhysics(decelerationRate: fast)`，因为系统不转发
+  触控板动量，这段惯性要由框架补上；手指按住时内容仍 1:1 跟随。iOS / Android
+  保持各自原生物理。今日、设置里会随数据库变化的区块各自监听，避免滑动中整页重建。
 - `Slider` 不使用 `divisions`：连续跟手，数值显示取整，只在松手时写库。
 - 不把 `PointerDeviceKind.mouse` 加进全局 drag devices（会破坏文本选择）。
 

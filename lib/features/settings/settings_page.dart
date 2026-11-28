@@ -89,18 +89,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final AsyncValue<StudySettingsRow> settingsAsync = ref.watch(
       settingsProvider,
     );
-    final AsyncValue<List<WordBookSummary>> books = ref.watch(
-      bookSummariesProvider,
-    );
     final StudySettingsRow? settings = settingsAsync.value;
     if (settings == null) {
       return const Center(child: CircularProgressIndicator());
     }
-    final List<WordBookSummary> bookList =
-        books.value ?? const <WordBookSummary>[];
-    final bool bookMissing =
-        settings.currentWordBookId != null &&
-        !bookList.any((b) => b.book.id == settings.currentWordBookId);
 
     final AppLocalizations l10n = context.l10n;
     return ContentColumn(
@@ -138,23 +130,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           SectionHeader(title: l10n.sectionStudy),
           SettingsGroup(
             children: <Widget>[
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-                child: ClassicSelect<String>(
-                  label: l10n.studyWordList,
-                  value: bookMissing ? '' : (settings.currentWordBookId ?? ''),
-                  options: <ClassicOption<String>>[
-                    ClassicOption<String>(value: '', label: l10n.allWordLists),
-                    for (final WordBookSummary summary in bookList)
-                      ClassicOption<String>(
-                        value: summary.book.id,
-                        label: summary.book.name,
-                      ),
-                  ],
-                  onChanged: (String value) => _save(
-                    bookValue: Value<String?>(value.isEmpty ? null : value),
-                  ),
-                ),
+              _StudyBookSetting(
+                onSelected: (String? id) =>
+                    _save(bookValue: Value<String?>(id)),
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
@@ -293,6 +271,44 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Current word list. Watches the book summaries on its own so a background
+/// recount does not rebuild the rest of the settings list mid-scroll.
+class _StudyBookSetting extends ConsumerWidget {
+  const _StudyBookSetting({required this.onSelected});
+
+  final ValueChanged<String?> onSelected;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final StudySettingsRow? settings = ref.watch(settingsProvider).value;
+    if (settings == null) return const SizedBox.shrink();
+    final List<WordBookSummary> bookList =
+        ref.watch(bookSummariesProvider).value ?? const <WordBookSummary>[];
+    final bool bookMissing =
+        settings.currentWordBookId != null &&
+        !bookList.any(
+          (WordBookSummary b) => b.book.id == settings.currentWordBookId,
+        );
+    final AppLocalizations l10n = context.l10n;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      child: ClassicSelect<String>(
+        label: l10n.studyWordList,
+        value: bookMissing ? '' : (settings.currentWordBookId ?? ''),
+        options: <ClassicOption<String>>[
+          ClassicOption<String>(value: '', label: l10n.allWordLists),
+          for (final WordBookSummary summary in bookList)
+            ClassicOption<String>(
+              value: summary.book.id,
+              label: summary.book.name,
+            ),
+        ],
+        onChanged: (String value) => onSelected(value.isEmpty ? null : value),
       ),
     );
   }

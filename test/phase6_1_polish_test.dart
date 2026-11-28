@@ -313,9 +313,7 @@ void main() {
   });
 
   group('SCROLL 滚动物理', () {
-    testWidgets('SCROLL01 macOS 用跟手的 Clamping，其他平台不变', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('SCROLL01 macOS 用桌面快速惯性，其他平台不变', (WidgetTester tester) async {
       const ClassicScrollBehavior behavior = ClassicScrollBehavior();
 
       // `MaterialScrollBehavior.getPlatform` reads the *theme* platform, so the
@@ -346,8 +344,11 @@ void main() {
       }
 
       final ScrollPhysics macos = await physicsOn(TargetPlatform.macOS);
-      expect(macos, isA<ClampingScrollPhysics>());
-      expect(macos, isNot(isA<BouncingScrollPhysics>()));
+      expect(macos, isA<BouncingScrollPhysics>());
+      expect(
+        (macos as BouncingScrollPhysics).decelerationRate,
+        ScrollDecelerationRate.fast,
+      );
       expect(macos.parent, isA<RangeMaintainingScrollPhysics>());
 
       expect(

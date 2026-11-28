@@ -146,26 +146,16 @@ class _PendingAppearance extends StatelessWidget {
   }
 }
 
-/// Keep native platform physics and scrollbars; omit decorative edge effects.
+/// Keep each platform's scroll physics; omit decorative edge effects.
 ///
-/// On macOS Flutter's default desktop physics is a bouncing simulation: the
-/// page keeps travelling after the fingers (or wheel) stop, which reads as
-/// heavy damping in a mostly-static list UI. [ClampingScrollPhysics] on top of
-/// [RangeMaintainingScrollPhysics] follows the gesture directly, stops when the
-/// input stops, and still keeps the scroll offset valid when content grows or
-/// shrinks. Android and iOS keep their own platform behaviour untouched.
+/// The macOS embedder drops trackpad momentum events and expects the framework
+/// to generate that glide. That curve is [BouncingScrollPhysics] with
+/// [ScrollDecelerationRate.fast]: the content tracks the fingers one-to-one,
+/// then eases out. [ClampingScrollPhysics] substitutes Android's fling and
+/// stops hard at the edge, which is what made Today and Settings feel uneven.
+/// iOS and Android keep the physics [ScrollBehavior] already selects for them.
 class ClassicScrollBehavior extends MaterialScrollBehavior {
   const ClassicScrollBehavior();
-
-  @override
-  ScrollPhysics getScrollPhysics(BuildContext context) {
-    if (getPlatform(context) == TargetPlatform.macOS) {
-      return const ClampingScrollPhysics(
-        parent: RangeMaintainingScrollPhysics(),
-      );
-    }
-    return super.getScrollPhysics(context);
-  }
 
   @override
   Widget buildOverscrollIndicator(
