@@ -162,7 +162,7 @@ class _WordBookDetailPageState extends ConsumerState<WordBookDetailPage> {
               ref.invalidate(bookSummariesProvider);
             },
           ),
-          PopupMenuButton<WordBookExportFormat>(
+          AppBarPopupMenuButton<WordBookExportFormat>(
             tooltip: context.l10n.exportListTitle,
             icon: const Icon(Icons.ios_share),
             onSelected: _export,

@@ -833,5 +833,59 @@ void main() {
       );
       await _clean(tester);
     });
+
+    testWidgets('顶栏菜单保留禁用项文字，涟漪不用顶栏的白色', (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(400, 700);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(
+        MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          locale: const Locale('zh'),
+          theme: AppTheme.light(),
+          home: Scaffold(
+            appBar: ClassicAppBar(
+              title: const Text('学习'),
+              actions: <Widget>[
+                AppBarPopupMenuButton<String>(
+                  tooltip: '更多操作',
+                  itemBuilder: (BuildContext context) =>
+                      <PopupMenuEntry<String>>[
+                        const PopupMenuItem<String>(
+                          value: 'skip',
+                          child: Text('跳过'),
+                        ),
+                        const PopupMenuItem<String>(
+                          value: 'undo',
+                          enabled: false,
+                          child: Text('撤销上次作答'),
+                        ),
+                      ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.byTooltip('更多操作'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('跳过'), findsOneWidget);
+      expect(find.text('撤销上次作答'), findsOneWidget);
+      final Color disabled = DefaultTextStyle.of(
+        tester.element(find.text('撤销上次作答')),
+      ).style.color!;
+      expect(disabled.computeLuminance(), lessThan(0.6));
+      final ThemeData menuTheme = Theme.of(tester.element(find.text('跳过')));
+      expect(menuTheme.splashColor.computeLuminance(), lessThan(0.9));
+      expect(
+        tester.getTopLeft(find.text('跳过')).dy,
+        greaterThan(tester.getBottomLeft(find.byType(AppBar)).dy - 4),
+      );
+      expect(tester.takeException(), isNull);
+    });
   });
 }

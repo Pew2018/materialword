@@ -280,7 +280,7 @@ class _StudyPageState extends ConsumerState<StudyPage>
                   !_session.isFinished)
                 FavoriteButton(wordId: _session.current!.word.id),
               if (compact)
-                PopupMenuButton<String>(
+                AppBarPopupMenuButton<String>(
                   tooltip: context.l10n.moreActions,
                   onSelected: (String value) {
                     if (value == 'skip' && !_session.isBusy) _session.skip();

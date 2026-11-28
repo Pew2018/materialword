@@ -246,7 +246,7 @@ class _WordDetailPageState extends ConsumerState<WordDetailPage> {
         title: Text(_wordRow!.word),
         actions: <Widget>[
           FavoriteButton(wordId: wordId),
-          PopupMenuButton<String>(
+          AppBarPopupMenuButton<String>(
             onSelected: (String value) async {
               switch (value) {
                 case 'dict':

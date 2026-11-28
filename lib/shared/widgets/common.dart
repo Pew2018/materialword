@@ -30,6 +30,11 @@ bool isDesktopPlatform(BuildContext context) {
 /// The splash stays a classic transient [InkRipple]: no persistent tint, no
 /// pill, no filled M3 icon button, no change to the 24dp icon or the ≥48dp hit
 /// target that [ThemeData.materialTapTargetSize] already provides.
+///
+/// Those foreground colours are only for controls painted on the bar. A menu
+/// opened from here must use [AppBarPopupMenuButton], which draws itself with
+/// the page theme. Otherwise a disabled row is white-on-white and the ripple
+/// disappears.
 class ClassicAppBar extends StatelessWidget implements PreferredSizeWidget {
   const ClassicAppBar({
     super.key,
@@ -76,6 +81,73 @@ class ClassicAppBar extends StatelessWidget implements PreferredSizeWidget {
         bottom: bottom,
       ),
     );
+  }
+}
+
+/// Overflow menu hosted by [ClassicAppBar].
+///
+/// [PopupMenuButton] captures the bar's theme, whose splash and disabled
+/// colours are translucent white so icons stay visible on the accent fill.
+/// On the white menu that turns a disabled row into an empty strip and hides
+/// the ripple. This button keeps the bar's icon, then opens the menu from the
+/// overlay, below the icon, under the page theme.
+class AppBarPopupMenuButton<T> extends StatelessWidget {
+  const AppBarPopupMenuButton({
+    super.key,
+    required this.itemBuilder,
+    this.onSelected,
+    this.tooltip,
+    this.enabled = true,
+    this.icon,
+  });
+
+  final PopupMenuItemBuilder<T> itemBuilder;
+  final PopupMenuItemSelected<T>? onSelected;
+  final String? tooltip;
+  final bool enabled;
+  final Widget? icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      tooltip: tooltip ?? MaterialLocalizations.of(context).showMenuTooltip,
+      onPressed: enabled ? () => _open(context) : null,
+      icon: icon ?? Icon(Icons.adaptive.more),
+    );
+  }
+
+  Future<void> _open(BuildContext context) async {
+    final List<PopupMenuEntry<T>> items = itemBuilder(context);
+    if (items.isEmpty) return;
+    final NavigatorState navigator = Navigator.of(context);
+    final RenderBox? button = context.findRenderObject() as RenderBox?;
+    final RenderBox? overlay =
+        navigator.overlay?.context.findRenderObject() as RenderBox?;
+    if (button == null ||
+        !button.hasSize ||
+        overlay == null ||
+        !overlay.hasSize) {
+      return;
+    }
+    final Offset topLeft = button.localToGlobal(Offset.zero, ancestor: overlay);
+    final Offset bottomRight = button.localToGlobal(
+      button.size.bottomRight(Offset.zero),
+      ancestor: overlay,
+    );
+    final T? selected = await showMenu<T>(
+      context: navigator.overlay!.context,
+      position: RelativeRect.fromRect(
+        Rect.fromLTRB(
+          topLeft.dx,
+          bottomRight.dy,
+          bottomRight.dx,
+          bottomRight.dy,
+        ),
+        Offset.zero & overlay.size,
+      ),
+      items: items,
+    );
+    if (selected != null) onSelected?.call(selected);
   }
 }
 
