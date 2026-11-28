@@ -10,6 +10,7 @@ import 'package:materialword/features/study/study_page.dart';
 import 'package:materialword/features/settings/settings_page.dart';
 import 'package:materialword/features/word_management/word_detail_page.dart';
 import 'package:materialword/services/tts_service.dart';
+import 'package:materialword/shared/widgets/common.dart';
 
 import 'helpers/l10n_fixture.dart';
 import 'helpers/test_env.dart';
@@ -146,7 +147,7 @@ void main() {
         ),
       );
       await settle(tester);
-      await tester.tap(find.byType(PopupMenuButton<String>));
+      await tester.tap(find.byType(AppBarPopupMenuButton<String>));
       await settle(tester);
       await tester.tap(find.text('取消掌握'));
       await settle(tester);

@@ -6,6 +6,7 @@ import 'package:materialword/app/providers.dart';
 import 'package:materialword/app/theme.dart';
 import 'package:materialword/features/dictionary/dictionary_page.dart';
 import 'package:materialword/l10n/l10n.dart';
+import 'package:materialword/shared/widgets/common.dart';
 
 import 'helpers/test_dictionary.dart';
 import 'helpers/test_env.dart';
@@ -168,7 +169,7 @@ void main() {
     expect(find.text('学习进度'), findsOneWidget);
     expect(find.text('保存'), findsOneWidget);
 
-    await tester.tap(find.byType(PopupMenuButton<String>));
+    await tester.tap(find.byType(AppBarPopupMenuButton<String>));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('移出词书'), findsOneWidget);
@@ -193,7 +194,7 @@ void main() {
     await tester.tap(find.text('未学'));
     await settle(tester);
     expect(find.text('学习进度'), findsOneWidget);
-    await tester.tap(find.byType(PopupMenuButton<String>));
+    await tester.tap(find.byType(AppBarPopupMenuButton<String>));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('移出词书'), findsNothing);
